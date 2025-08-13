@@ -1,26 +1,43 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Search, MapPin, Calendar, Users, FileText, Wind, CloudSun } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Textarea } from "@/components/ui/textarea";
+import { Plus, Search, MapPin, Calendar, Users, FileText, Wind, CloudSun, Clock, Beaker, Trash2, Edit } from "lucide-react";
 import { CreateAirJobModal } from "@/components/create-air-job-modal";
 import { CreatePersonnelModal } from "@/components/create-personnel-modal";
 import { DailyWeatherLog } from "@/components/daily-weather-log";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { AirSample, PersonnelProfile, AirMonitoringJob } from "@shared/schema";
+import { AirSample, PersonnelProfile, AirMonitoringJob, insertAirSampleSchema, type InsertAirSample } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+
+// Air sample form schema
+const airSampleFormSchema = insertAirSampleSchema.extend({
+  startTime: z.string(),
+  endTime: z.string().optional(),
+});
+
+type AirSampleFormData = z.infer<typeof airSampleFormSchema>;
 
 export default function AirMonitoringPage() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [showCreateJobModal, setShowCreateJobModal] = useState(false);
   const [showCreatePersonnelModal, setShowCreatePersonnelModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState<AirMonitoringJob | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [showCreateSampleModal, setShowCreateSampleModal] = useState(false);
+  const [editingSample, setEditingSample] = useState<AirSample | null>(null);
 
   // Fetch air monitoring jobs
   const { data: airJobs = [], isLoading: jobsLoading } = useQuery<AirMonitoringJob[]>({
@@ -30,6 +47,62 @@ export default function AirMonitoringPage() {
   // Fetch personnel for reference
   const { data: personnel = [] } = useQuery<PersonnelProfile[]>({
     queryKey: ["/api/personnel"],
+  });
+
+  // Fetch air samples for selected job
+  const { data: airSamples = [] } = useQuery<AirSample[]>({
+    queryKey: ["/api/air-samples"],
+    enabled: !!selectedJob,
+  });
+
+  // Filter samples for the selected job
+  const jobSamples = useMemo(() => 
+    selectedJob ? airSamples.filter(sample => sample.jobId === selectedJob.id) : [],
+    [airSamples, selectedJob]
+  );
+
+  // Air sample mutations
+  const createSampleMutation = useMutation({
+    mutationFn: async (data: InsertAirSample) => {
+      const response = await fetch('/api/air-samples', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error('Failed to create sample');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/air-samples'] });
+      setShowCreateSampleModal(false);
+      toast({ description: "Air sample created successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        variant: "destructive", 
+        description: error.message || "Failed to create air sample" 
+      });
+    }
+  });
+
+  const deleteSampleMutation = useMutation({
+    mutationFn: async (sampleId: string) => {
+      const response = await fetch(`/api/air-samples/${sampleId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete sample');
+      return response.ok;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/air-samples'] });
+      toast({ description: "Air sample deleted successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        variant: "destructive", 
+        description: error.message || "Failed to delete air sample" 
+      });
+    }
   });
 
   // Filter jobs based on search and status
@@ -328,8 +401,110 @@ export default function AirMonitoringPage() {
                   )}
                 </TabsContent>
                 
-                <TabsContent value="samples">
-                  <p className="text-center py-8 text-gray-500">Air samples functionality will be added here</p>
+                <TabsContent value="samples" className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="font-semibold">Air Samples ({jobSamples.length})</h4>
+                    <Dialog open={showCreateSampleModal} onOpenChange={setShowCreateSampleModal}>
+                      <DialogTrigger asChild>
+                        <Button size="sm">
+                          <Plus className="mr-2 h-4 w-4" />
+                          Add Sample
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-2xl">
+                        <DialogHeader>
+                          <DialogTitle>Add Air Sample</DialogTitle>
+                        </DialogHeader>
+                        <AirSampleForm 
+                          jobId={selectedJob.id}
+                          personnel={personnel}
+                          onSuccess={() => setShowCreateSampleModal(false)}
+                          onSubmit={(data) => createSampleMutation.mutate(data)}
+                          isLoading={createSampleMutation.isPending}
+                        />
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                  
+                  {jobSamples.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Beaker className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                        No Air Samples
+                      </h3>
+                      <p className="text-gray-600 dark:text-gray-400 mb-4">
+                        Start by adding air samples for this monitoring job.
+                      </p>
+                      <Button onClick={() => setShowCreateSampleModal(true)}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add First Sample
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {jobSamples.map((sample) => (
+                        <Card key={sample.id} className="p-4">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="secondary">{sample.sampleType}</Badge>
+                                <Badge variant="outline">{sample.analyte}</Badge>
+                                <Badge className={sample.status === 'collected' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
+                                  {sample.status}
+                                </Badge>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                  <p className="font-medium">Location</p>
+                                  <p className="text-gray-600 dark:text-gray-400">{sample.location || 'Not specified'}</p>
+                                </div>
+                                <div>
+                                  <p className="font-medium">Collected By</p>
+                                  <p className="text-gray-600 dark:text-gray-400">{sample.collectedBy}</p>
+                                </div>
+                                <div>
+                                  <p className="font-medium">Duration</p>
+                                  <p className="text-gray-600 dark:text-gray-400">{sample.samplingDuration || 0} minutes</p>
+                                </div>
+                                <div>
+                                  <p className="font-medium">Flow Rate</p>
+                                  <p className="text-gray-600 dark:text-gray-400">{sample.flowRate || 0} L/min</p>
+                                </div>
+                              </div>
+                              {sample.fieldNotes && (
+                                <div>
+                                  <p className="font-medium text-sm">Notes</p>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400">{sample.fieldNotes}</p>
+                                </div>
+                              )}
+                              <div className="flex items-center text-sm text-gray-500">
+                                <Clock className="h-4 w-4 mr-1" />
+                                {new Date(sample.startTime).toLocaleString()}
+                                {sample.endTime && ` - ${new Date(sample.endTime).toLocaleString()}`}
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setEditingSample(sample)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => deleteSampleMutation.mutate(sample.id)}
+                                disabled={deleteSampleMutation.isPending}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
                 </TabsContent>
                 
                 <TabsContent value="weather">
@@ -376,5 +551,284 @@ export default function AirMonitoringPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// Air Sample Form Component
+interface AirSampleFormProps {
+  jobId: string;
+  personnel: PersonnelProfile[];
+  onSuccess: () => void;
+  onSubmit: (data: InsertAirSample) => void;
+  isLoading: boolean;
+  initialData?: AirSample;
+}
+
+function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initialData }: AirSampleFormProps) {
+  const form = useForm<AirSampleFormData>({
+    resolver: zodResolver(airSampleFormSchema),
+    defaultValues: {
+      jobId,
+      sampleType: initialData?.sampleType || 'personal',
+      analyte: initialData?.analyte || 'asbestos',
+      location: initialData?.location || '',
+      collectedBy: initialData?.collectedBy || '',
+      startTime: initialData?.startTime ? new Date(initialData.startTime).toISOString().slice(0, 16) : '',
+      endTime: initialData?.endTime ? new Date(initialData.endTime).toISOString().slice(0, 16) : '',
+      flowRate: initialData?.flowRate?.toString() || '',
+      samplingDuration: initialData?.samplingDuration || undefined,
+      analysisMethod: initialData?.analysisMethod || '',
+      fieldNotes: initialData?.fieldNotes || '',
+      status: initialData?.status || 'collecting',
+    },
+  });
+
+  const handleSubmit = (data: AirSampleFormData) => {
+    const submitData: InsertAirSample = {
+      ...data,
+      startTime: new Date(data.startTime),
+      endTime: data.endTime ? new Date(data.endTime) : undefined,
+      flowRate: data.flowRate ? parseFloat(data.flowRate as string) : undefined,
+    };
+    onSubmit(submitData);
+  };
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="sampleType"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Sample Type</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="personal">Personal</SelectItem>
+                    <SelectItem value="area">Area</SelectItem>
+                    <SelectItem value="background">Background</SelectItem>
+                    <SelectItem value="outdoor">Outdoor</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="analyte"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Analyte</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="asbestos">Asbestos</SelectItem>
+                    <SelectItem value="lead">Lead</SelectItem>
+                    <SelectItem value="cadmium">Cadmium</SelectItem>
+                    <SelectItem value="hexavalent_chromium">Hexavalent Chromium</SelectItem>
+                    <SelectItem value="silica">Silica</SelectItem>
+                    <SelectItem value="heavy_metals">Heavy Metals</SelectItem>
+                    <SelectItem value="benzene">Benzene</SelectItem>
+                    <SelectItem value="toluene">Toluene</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <FormField
+          control={form.control}
+          name="location"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Location</FormLabel>
+              <FormControl>
+                <Input {...field} value={field.value || ''} placeholder="e.g., Basement Boiler Room - Worker Breathing Zone" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="collectedBy"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Collected By</FormLabel>
+              <Select onValueChange={field.onChange} value={field.value}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select personnel" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {personnel.map((person) => (
+                    <SelectItem key={person.id} value={`${person.firstName} ${person.lastName}`}>
+                      {person.firstName} {person.lastName} - {person.jobTitle}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="startTime"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Start Time</FormLabel>
+                <FormControl>
+                  <Input type="datetime-local" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="endTime"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>End Time (Optional)</FormLabel>
+                <FormControl>
+                  <Input type="datetime-local" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="flowRate"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Flow Rate (L/min)</FormLabel>
+                <FormControl>
+                  <Input 
+                    type="number" 
+                    step="0.1" 
+                    placeholder="2.0"
+                    {...field}
+                    value={field.value || ''}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="samplingDuration"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Duration (minutes)</FormLabel>
+                <FormControl>
+                  <Input 
+                    type="number" 
+                    placeholder="480"
+                    value={field.value?.toString() || ''}
+                    onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <FormField
+          control={form.control}
+          name="analysisMethod"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Analysis Method</FormLabel>
+              <FormControl>
+                <Input {...field} value={field.value || ''} placeholder="e.g., PCM (NIOSH 7400)" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="fieldNotes"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Field Notes</FormLabel>
+              <FormControl>
+                <Textarea 
+                  {...field} 
+                  value={field.value || ''}
+                  placeholder="Additional notes about the sample collection..."
+                  rows={3}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="status"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Status</FormLabel>
+              <Select onValueChange={field.onChange} value={field.value || ''}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="collecting">Collecting</SelectItem>
+                  <SelectItem value="collected">Collected</SelectItem>
+                  <SelectItem value="shipped">Shipped</SelectItem>
+                  <SelectItem value="analyzing">Analyzing</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onSuccess}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isLoading}>
+            {isLoading ? "Saving..." : "Save Sample"}
+          </Button>
+        </div>
+      </form>
+    </Form>
   );
 }
