@@ -398,6 +398,253 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Template routes
+  app.get("/api/survey-templates", async (req, res) => {
+    try {
+      // Mock template data for now since we have template routes issues
+      const templates = [
+        {
+          id: "asbestos-standard",
+          name: "Standard Asbestos Survey",
+          description: "Comprehensive asbestos inspection with pre-configured checklist items for residential and commercial properties.",
+          surveyType: "Asbestos",
+          category: "asbestos",
+          version: "2.1",
+          estimatedDuration: 4,
+          requiredCertifications: ["Asbestos Inspector License", "AHERA Certification"],
+          safetyRequirements: ["N95 Respirator", "Tyvek Suit", "Safety Glasses", "Nitrile Gloves"],
+          equipmentRequired: ["Sample Containers", "Labels", "Digital Camera", "Measuring Tape"],
+          usageCount: 24,
+          lastUsed: "2024-01-10T10:30:00Z",
+          tags: ["residential", "commercial", "inspection"],
+          isPublic: true,
+          isActive: true,
+          createdBy: "system",
+          createdAt: "2023-12-01T00:00:00Z"
+        },
+        {
+          id: "lead-paint-basic",
+          name: "Basic Lead Paint Assessment",
+          description: "Essential lead paint testing checklist for pre-1978 buildings with EPA compliance requirements.",
+          surveyType: "Lead Paint",
+          category: "lead",
+          version: "1.5",
+          estimatedDuration: 3,
+          requiredCertifications: ["EPA RRP Certification", "Lead Inspector License"],
+          safetyRequirements: ["Disposable Coveralls", "N100 Respirator", "Eye Protection"],
+          equipmentRequired: ["XRF Analyzer", "Sample Bags", "Paint Scrapers", "Drop Cloths"],
+          usageCount: 18,
+          lastUsed: "2024-01-08T14:15:00Z",
+          tags: ["lead", "pre-1978", "EPA"],
+          isPublic: true,
+          isActive: true,
+          createdBy: "system",
+          createdAt: "2023-11-15T00:00:00Z"
+        },
+        {
+          id: "combo-asbestos-lead",
+          name: "Combined Asbestos & Lead Survey",
+          description: "Comprehensive hazmat survey covering both asbestos and lead paint with coordinated sampling procedures.",
+          surveyType: "Asbestos + Lead",
+          category: "environmental",
+          version: "1.8",
+          estimatedDuration: 6,
+          requiredCertifications: ["Asbestos Inspector License", "Lead Inspector License", "AHERA Certification"],
+          safetyRequirements: ["Full Face Respirator", "Tyvek Suit", "Nitrile Gloves", "Boot Covers"],
+          equipmentRequired: ["Sample Containers", "XRF Analyzer", "Digital Camera", "Chain of Custody Forms"],
+          usageCount: 12,
+          lastUsed: "2024-01-05T09:45:00Z",
+          tags: ["combination", "hazmat", "comprehensive"],
+          isPublic: true,
+          isActive: true,
+          createdBy: "system",
+          createdAt: "2023-10-20T00:00:00Z"
+        },
+        {
+          id: "environmental-general",
+          name: "General Environmental Assessment",
+          description: "Multi-purpose environmental survey template suitable for various types of site assessments.",
+          surveyType: "Environmental",
+          category: "environmental",
+          version: "1.2",
+          estimatedDuration: 5,
+          requiredCertifications: ["Environmental Professional Certification"],
+          safetyRequirements: ["Safety Vest", "Hard Hat", "Steel-Toe Boots"],
+          equipmentRequired: ["pH Meter", "Thermometer", "Sample Containers", "GPS Device"],
+          usageCount: 8,
+          lastUsed: "2024-01-03T11:20:00Z",
+          tags: ["environmental", "general", "assessment"],
+          isPublic: true,
+          isActive: true,
+          createdBy: "system",
+          createdAt: "2023-12-10T00:00:00Z"
+        }
+      ];
+      
+      const { category, search, surveyType } = req.query;
+      
+      let filtered = templates.filter(t => t.isActive);
+      
+      if (category && category !== 'all') {
+        filtered = filtered.filter(t => t.category === category);
+      }
+      
+      if (surveyType) {
+        filtered = filtered.filter(t => t.surveyType === surveyType);
+      }
+      
+      if (search) {
+        const query = search.toString().toLowerCase();
+        filtered = filtered.filter(t => 
+          t.name.toLowerCase().includes(query) ||
+          t.description?.toLowerCase().includes(query) ||
+          t.tags?.some(tag => tag.toLowerCase().includes(query))
+        );
+      }
+      
+      res.json(filtered);
+    } catch (error) {
+      console.error("Error fetching survey templates:", error);
+      res.status(500).json({ error: "Failed to fetch survey templates" });
+    }
+  });
+
+  app.post("/api/survey-templates", async (req, res) => {
+    try {
+      // Mock create template response
+      const newTemplate = {
+        id: `template-${Date.now()}`,
+        ...req.body,
+        usageCount: 0,
+        isActive: true,
+        createdAt: new Date().toISOString()
+      };
+      res.status(201).json(newTemplate);
+    } catch (error) {
+      console.error("Error creating survey template:", error);
+      res.status(500).json({ error: "Failed to create survey template" });
+    }
+  });
+
+  app.patch("/api/survey-templates/:id", async (req, res) => {
+    try {
+      // Mock update template response
+      const updatedTemplate = {
+        id: req.params.id,
+        ...req.body,
+        updatedAt: new Date().toISOString()
+      };
+      res.json(updatedTemplate);
+    } catch (error) {
+      console.error("Error updating survey template:", error);
+      res.status(500).json({ error: "Failed to update survey template" });
+    }
+  });
+
+  app.delete("/api/survey-templates/:id", async (req, res) => {
+    try {
+      // Mock delete template response
+      res.json({ message: "Template deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting survey template:", error);
+      res.status(500).json({ error: "Failed to delete survey template" });
+    }
+  });
+
+  app.get("/api/survey-checklists/:surveyId/:templateId?", async (req, res) => {
+    try {
+      // Mock checklist data
+      const checklists = [
+        {
+          id: "pre-survey-checklist",
+          name: "Pre-Survey Preparation",
+          category: "pre-survey",
+          isRequired: true,
+          order: 1,
+          items: [
+            {
+              id: "item-1",
+              text: "Verify site access permissions and keys",
+              itemType: "checkbox",
+              isRequired: true,
+              order: 1
+            },
+            {
+              id: "item-2", 
+              text: "Review building plans and previous reports",
+              itemType: "checkbox",
+              isRequired: true,
+              order: 2
+            },
+            {
+              id: "item-3",
+              text: "Calibrate equipment and check batteries",
+              itemType: "checkbox",
+              isRequired: true,
+              order: 3
+            }
+          ]
+        },
+        {
+          id: "safety-checklist",
+          name: "Safety Requirements",
+          category: "safety",
+          isRequired: true,
+          order: 2,
+          items: [
+            {
+              id: "safety-1",
+              text: "Personal protective equipment donned",
+              itemType: "checkbox",
+              isRequired: true,
+              order: 1
+            },
+            {
+              id: "safety-2",
+              text: "Emergency contact information confirmed",
+              itemType: "text_input",
+              isRequired: true,
+              order: 2
+            }
+          ]
+        }
+      ];
+      
+      res.json(checklists);
+    } catch (error) {
+      console.error("Error fetching survey checklists:", error);
+      res.status(500).json({ error: "Failed to fetch survey checklists" });
+    }
+  });
+
+  app.get("/api/checklist-responses/:surveyId", async (req, res) => {
+    try {
+      // Mock responses - empty for now
+      res.json([]);
+    } catch (error) {
+      console.error("Error fetching checklist responses:", error);
+      res.status(500).json({ error: "Failed to fetch checklist responses" });
+    }
+  });
+
+  app.post("/api/checklist-responses/:surveyId", async (req, res) => {
+    try {
+      // Mock save response
+      const { itemId, response, isCompleted, notes } = req.body;
+      res.json({
+        id: `response-${Date.now()}`,
+        itemId,
+        response,
+        isCompleted,
+        notes,
+        completedAt: isCompleted ? new Date().toISOString() : null
+      });
+    } catch (error) {
+      console.error("Error saving checklist response:", error);
+      res.status(500).json({ error: "Failed to save checklist response" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

@@ -34,7 +34,9 @@ import type { CreateSurveyFormData } from "@/lib/types";
 import { WeatherWidget } from "@/components/weather-widget";
 import { EquipmentTracker, type Equipment } from "@/components/equipment-tracker";
 import { OfflineIndicator } from "@/components/offline-indicator";
-import { X } from "lucide-react";
+import { TemplateSelector } from "@/components/template-selector";
+import { Badge } from "@/components/ui/badge";
+import { X, FileText, ClipboardList } from "lucide-react";
 
 const createSurveySchema = z.object({
   siteName: z.string().min(1, "Site name is required"),
@@ -59,6 +61,8 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
   const queryClient = useQueryClient();
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [weather, setWeather] = useState<any>(null);
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
 
   const form = useForm<CreateSurveyFormData>({
     resolver: zodResolver(createSurveySchema),
@@ -113,6 +117,24 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
     },
   });
 
+  const handleTemplateSelected = (template: any) => {
+    setSelectedTemplate(template);
+    // Pre-fill form with template defaults
+    form.setValue("surveyType", template.surveyType);
+    if (template.defaultSettings) {
+      const settings = JSON.parse(template.defaultSettings);
+      Object.entries(settings).forEach(([key, value]) => {
+        if (form.getValues()[key as keyof CreateSurveyFormData] !== undefined) {
+          form.setValue(key as keyof CreateSurveyFormData, value as any);
+        }
+      });
+    }
+    toast({
+      title: "Template Applied",
+      description: `Using template: ${template.name}`,
+    });
+  };
+
   const onSubmit = (data: CreateSurveyFormData) => {
     createSurveyMutation.mutate(data);
   };
@@ -133,6 +155,14 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
             </Button>
           </DialogTitle>
         </DialogHeader>
+
+        {/* Template Selector Component */}
+        <TemplateSelector
+          open={showTemplateSelector}
+          onOpenChange={setShowTemplateSelector}
+          onSelectTemplate={handleTemplateSelected}
+          surveyType={form.watch("surveyType")}
+        />
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -296,17 +326,56 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
                   control={form.control}
                   name="useTemplate"
                   render={({ field }) => (
-                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                          data-testid="checkbox-use-template"
-                        />
-                      </FormControl>
-                      <div className="space-y-1 leading-none">
+                    <FormItem className="space-y-3">
+                      <div className="flex items-center space-x-3">
+                        <FormControl>
+                          <Checkbox
+                            checked={field.value}
+                            onCheckedChange={(checked) => {
+                              field.onChange(checked);
+                              if (!checked) {
+                                setSelectedTemplate(null);
+                              }
+                            }}
+                            data-testid="checkbox-use-template"
+                          />
+                        </FormControl>
                         <FormLabel>Use pre-built checklist template</FormLabel>
                       </div>
+                      {field.value && (
+                        <div className="ml-6 space-y-2">
+                          {selectedTemplate ? (
+                            <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                              <div className="flex items-center gap-2">
+                                <ClipboardList className="h-4 w-4 text-blue-600" />
+                                <div>
+                                  <div className="font-medium text-sm">{selectedTemplate.name}</div>
+                                  <div className="text-xs text-gray-600">{selectedTemplate.category}</div>
+                                </div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setShowTemplateSelector(true)}
+                              >
+                                Change
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setShowTemplateSelector(true)}
+                              className="w-full"
+                              data-testid="button-select-template"
+                            >
+                              <FileText className="h-4 w-4 mr-2" />
+                              Select Template
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </FormItem>
                   )}
                 />

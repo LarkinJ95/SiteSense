@@ -12,6 +12,7 @@ import Reports from "@/pages/reports";
 import Settings from "@/pages/settings";
 import SurveyDetail from "@/pages/survey-detail";
 import FieldTools from "@/pages/field-tools";
+import Templates from "@/pages/templates";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -23,6 +24,7 @@ function Router() {
       <Route path="/reports" component={Reports} />
       <Route path="/settings" component={Settings} />
       <Route path="/field-tools" component={FieldTools} />
+      <Route path="/templates" component={Templates} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AddObservationModal } from "@/components/add-observation-modal";
 import { ObservationMap } from "@/components/observation-map";
+import { SurveyChecklist } from "@/components/survey-checklist";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import * as XLSX from 'xlsx';
@@ -24,7 +26,8 @@ import {
   AlertTriangle,
   FileDown,
   Download,
-  Loader2
+  Loader2,
+  CheckSquare
 } from "lucide-react";
 
 export default function SurveyDetail() {

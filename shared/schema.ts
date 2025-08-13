@@ -14,7 +14,7 @@ export const surveys = pgTable("surveys", {
   enableGPS: boolean("enable_gps").default(false),
   useTemplate: boolean("use_template").default(false),
   requirePhotos: boolean("require_photos").default(false),
-  status: text("status").notNull().default("draft"), // draft, in-progress, completed
+  status: text("status").notNull().default("draft"), // draft, in-progress, completed, reviewed, archived
   // Weather conditions during survey
   weatherConditions: text("weather_conditions"),
   temperature: decimal("temperature"), // in Celsius
@@ -23,6 +23,33 @@ export const surveys = pgTable("surveys", {
   // Equipment tracking
   equipmentUsed: text("equipment_used").array(),
   calibrationDates: text("calibration_dates").array(),
+  // Advanced survey features
+  priority: text("priority").default("medium"), // low, medium, high, urgent
+  clientName: text("client_name"),
+  projectNumber: text("project_number"),
+  estimatedDuration: integer("estimated_duration"), // in hours
+  actualDuration: integer("actual_duration"), // in hours
+  teamMembers: text("team_members").array(),
+  safetyRequirements: text("safety_requirements").array(),
+  accessRequirements: text("access_requirements"),
+  specialInstructions: text("special_instructions"),
+  // Workflow integration
+  workflowStage: text("workflow_stage").default("planning"), // planning, preparation, execution, review, completed
+  approvalStatus: text("approval_status").default("pending"), // pending, approved, rejected
+  reviewerNotes: text("reviewer_notes"),
+  assignedTo: text("assigned_to"),
+  dueDate: timestamp("due_date"),
+  completedDate: timestamp("completed_date"),
+  // Quality assurance
+  qaChecked: boolean("qa_checked").default(false),
+  qaCheckDate: timestamp("qa_check_date"),
+  qaCheckedBy: text("qa_checked_by"),
+  // Data management
+  dataClassification: text("data_classification").default("standard"), // public, internal, confidential, restricted
+  retentionPeriod: integer("retention_period").default(2555), // days (7 years default)
+  archiveDate: timestamp("archive_date"),
+  exportCount: integer("export_count").default(0),
+  lastExported: timestamp("last_exported"),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });
@@ -35,7 +62,7 @@ export const observations = pgTable("observations", {
   materialType: text("material_type").notNull(),
   condition: text("condition").notNull(),
   quantity: text("quantity"),
-  riskLevel: text("risk_level"), // low, medium, high
+  riskLevel: text("risk_level"), // low, medium, high, critical
   sampleCollected: boolean("sample_collected").default(false),
   sampleId: text("sample_id"),
   collectionMethod: text("collection_method"),
@@ -52,6 +79,26 @@ export const observations = pgTable("observations", {
   latitude: decimal("latitude"),
   longitude: decimal("longitude"),
   notes: text("notes"),
+  // Advanced observation features
+  observationType: text("observation_type").default("visual"), // visual, sample, measurement, photo
+  priority: text("priority").default("normal"), // low, normal, high, urgent
+  followUpRequired: boolean("follow_up_required").default(false),
+  followUpDate: timestamp("follow_up_date"),
+  followUpNotes: text("follow_up_notes"),
+  // Quality and validation
+  verified: boolean("verified").default(false),
+  verifiedBy: text("verified_by"),
+  verificationDate: timestamp("verification_date"),
+  // Workflow tracking
+  status: text("status").default("draft"), // draft, pending-review, approved, rejected
+  reviewedBy: text("reviewed_by"),
+  reviewDate: timestamp("review_date"),
+  reviewNotes: text("review_notes"),
+  // Risk assessment
+  immediateAction: text("immediate_action"),
+  recommendedAction: text("recommended_action"),
+  actionTaken: text("action_taken"),
+  actionDate: timestamp("action_date"),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });
