@@ -88,9 +88,9 @@ export function ObservationMap({ observations, className = "" }: ObservationMapP
         </CardHeader>
         <CardContent>
           <div className="text-center py-12">
-            <MapPin className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500 mb-2">No GPS-tagged observations available</p>
-            <p className="text-sm text-gray-400">
+            <MapPin className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+            <p className="text-gray-500 dark:text-gray-400 mb-2">No GPS-tagged observations available</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500">
               Add observations with GPS coordinates to see them on the map
             </p>
           </div>
@@ -107,7 +107,7 @@ export function ObservationMap({ observations, className = "" }: ObservationMapP
     <Card className={className}>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center">
+          <CardTitle className="flex items-center text-gray-900 dark:text-gray-100">
             <MapPin className="h-5 w-5 mr-2" />
             GPS Observation Locations ({gpsObservations.length} locations)
           </CardTitle>
@@ -161,15 +161,15 @@ export function ObservationMap({ observations, className = "" }: ObservationMapP
                 key={observation.id}
                 className={`p-4 border rounded-lg transition-all duration-500 ${
                   isCurrentlyHighlighted 
-                    ? 'border-blue-500 bg-blue-50 shadow-lg transform scale-105' 
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-400 shadow-lg transform scale-105' 
                     : isVisible 
-                      ? 'border-gray-200 bg-white' 
-                      : 'border-gray-100 bg-gray-50 opacity-50'
+                      ? 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800' 
+                      : 'border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 opacity-50'
                 }`}
                 data-testid={`observation-${observation.id}`}
               >
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-semibold text-sm flex items-center">
+                  <h4 className="font-semibold text-sm flex items-center text-gray-900 dark:text-gray-100">
                     <div 
                       className={`w-4 h-4 rounded-full mr-2 border-2 border-white shadow-sm ${
                         observation.riskLevel === 'high' ? 'bg-red-500' :
@@ -192,7 +192,7 @@ export function ObservationMap({ observations, className = "" }: ObservationMapP
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300">
                   <div>
                     <span className="font-medium">Material:</span> {observation.materialType}
                   </div>
@@ -205,22 +205,22 @@ export function ObservationMap({ observations, className = "" }: ObservationMapP
                     </div>
                   )}
                   {observation.sampleCollected && (
-                    <div className="text-blue-600">
+                    <div className="text-blue-600 dark:text-blue-400">
                       <span className="font-medium">Sample ID:</span> {observation.sampleId || 'Not specified'}
                     </div>
                   )}
                 </div>
                 
                 {observation.notes && (
-                  <div className="mt-2 pt-2 border-t text-xs">
-                    <span className="font-medium">Notes:</span>
-                    <p className="text-gray-600 mt-1">{observation.notes}</p>
+                  <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600 text-xs">
+                    <span className="font-medium text-gray-900 dark:text-gray-100">Notes:</span>
+                    <p className="text-gray-600 dark:text-gray-300 mt-1">{observation.notes}</p>
                   </div>
                 )}
                 
-                <div className="mt-2 pt-2 border-t text-xs text-gray-500 flex items-center justify-between">
+                <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600 text-xs text-gray-500 dark:text-gray-400 flex items-center justify-between">
                   <span>GPS: {parseFloat(observation.latitude!).toFixed(6)}, {parseFloat(observation.longitude!).toFixed(6)}</span>
-                  <span className="text-blue-600">#{index + 1}</span>
+                  <span className="text-blue-600 dark:text-blue-400">#{index + 1}</span>
                 </div>
               </div>
             );

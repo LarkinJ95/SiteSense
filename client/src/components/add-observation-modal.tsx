@@ -325,8 +325,8 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
             </div>
 
             {/* Material Information */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-lg font-medium text-gray-900 mb-4">Material Details</h4>
+            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Material Details</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -654,14 +654,14 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
             </div>
 
             {/* Photos and Documentation */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-lg font-medium text-gray-900 mb-4">Photos and Documentation</h4>
+            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Photos and Documentation</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <FormLabel>Upload Photos</FormLabel>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary transition-colors">
-                    <CloudUpload className="text-gray-400 text-3xl mb-2 mx-auto" />
-                    <p className="text-sm text-gray-600 mb-2">Drag and drop photos here, or click to select</p>
+                  <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-primary dark:hover:border-primary transition-colors bg-white dark:bg-gray-700">
+                    <CloudUpload className="text-gray-400 dark:text-gray-500 text-3xl mb-2 mx-auto" />
+                    <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">Drag and drop photos here, or click to select</p>
                     <input
                       type="file"
                       multiple
@@ -680,7 +680,7 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
                       Choose Files
                     </Button>
                     {selectedFiles.length > 0 && (
-                      <p className="text-sm text-gray-600 mt-2">
+                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
                         {selectedFiles.length} file(s) selected
                       </p>
                     )}
