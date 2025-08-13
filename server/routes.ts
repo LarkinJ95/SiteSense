@@ -118,7 +118,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const observation = await storage.createObservation(validatedData);
       res.status(201).json(observation);
     } catch (error) {
-      res.status(400).json({ message: "Invalid observation data", error: error.message });
+      res.status(400).json({ 
+        message: "Invalid observation data", 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 

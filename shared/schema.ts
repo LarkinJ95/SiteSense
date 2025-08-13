@@ -81,10 +81,21 @@ export const insertSurveySchema = z.object({
   status: z.string().optional().default("draft"),
 });
 
-export const insertObservationSchema = createInsertSchema(observations).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+export const insertObservationSchema = z.object({
+  surveyId: z.string().min(1),
+  area: z.string().min(1),
+  homogeneousArea: z.string().optional(),
+  materialType: z.string().min(1),
+  condition: z.string().min(1),
+  quantity: z.string().optional(),
+  riskLevel: z.string().optional(),
+  sampleCollected: z.boolean().optional().default(false),
+  sampleId: z.string().optional(),
+  collectionMethod: z.string().optional(),
+  sampleNotes: z.string().optional(),
+  latitude: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  longitude: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  notes: z.string().optional(),
 });
 
 export const insertObservationPhotoSchema = createInsertSchema(observationPhotos).omit({
