@@ -218,4 +218,56 @@ router.delete('/equipment/:id', async (req: Request, res: Response) => {
   }
 });
 
+// Daily Weather Log routes
+router.get('/jobs/:jobId/weather-logs', async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.params;
+    const logs = await storage.getDailyWeatherLogs(jobId);
+    res.json(logs);
+  } catch (error) {
+    console.error('Error getting weather logs:', error);
+    res.status(500).json({ error: 'Failed to get weather logs' });
+  }
+});
+
+router.post('/jobs/:jobId/weather-logs', async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.params;
+    const logData = { ...req.body, jobId };
+    const log = await storage.createDailyWeatherLog(logData);
+    res.status(201).json(log);
+  } catch (error) {
+    console.error('Error creating weather log:', error);
+    res.status(500).json({ error: 'Failed to create weather log' });
+  }
+});
+
+router.put('/weather-logs/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const log = await storage.updateDailyWeatherLog(id, req.body);
+    if (!log) {
+      return res.status(404).json({ error: 'Weather log not found' });
+    }
+    res.json(log);
+  } catch (error) {
+    console.error('Error updating weather log:', error);
+    res.status(500).json({ error: 'Failed to update weather log' });
+  }
+});
+
+router.delete('/weather-logs/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const deleted = await storage.deleteDailyWeatherLog(id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Weather log not found' });
+    }
+    res.status(204).send();
+  } catch (error) {
+    console.error('Error deleting weather log:', error);
+    res.status(500).json({ error: 'Failed to delete weather log' });
+  }
+});
+
 export default router;

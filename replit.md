@@ -5,9 +5,12 @@
 SiteSense is a comprehensive full-stack web application for managing site surveys and environmental assessments. The application allows users to create surveys, record observations, upload photos, and track the progress of site inspections. It's designed for professionals conducting environmental or structural assessments who need to systematically document findings and manage survey data.
 
 ## Recent Updates (January 2025)
+- **Daily Weather Logging System**: Added comprehensive daily weather log tracking for multi-day air monitoring operations with GPS-enabled location capture and automated weather data retrieval using WeatherAPI.com
+- **US Standard Weather Units**: Implemented complete US standard measurement system (°F, mph, inHg) for all weather data display and logging throughout the application
+- **Multi-Day Sampling Support**: Created dedicated weather log interface allowing field teams to record daily weather conditions during extended air sampling campaigns with date/time tracking
 - **Job-Based Air Monitoring System**: Completely restructured air monitoring to be job-centric with comprehensive job management including job name, job number, address, weather conditions, and client information
 - **Air Monitoring Jobs Database**: Added `airMonitoringJobs` table as the primary container for air sampling projects, with air samples now linked to specific jobs rather than just surveys
-- **Advanced Job Management Interface**: Created job-focused UI with job cards showing status, location, weather, dates, and project manager information
+- **Advanced Job Management Interface**: Created job-focused UI with job cards showing status, location, weather, dates, and project manager information with integrated weather logs tab
 - **GPS Location Integration**: Added one-click GPS coordinate capture for accurate job location recording with proper geolocation permissions handling
 - **Automated Weather Data Retrieval**: Integrated WeatherAPI.com for automatic weather condition autofill including temperature, humidity, pressure, wind speed/direction, and detailed weather descriptions
 - **Weather and Environmental Tracking**: Integrated comprehensive environmental condition logging including temperature, humidity, barometric pressure, wind speed/direction, and weather conditions at the job level

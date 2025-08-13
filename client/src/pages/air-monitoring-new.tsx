@@ -6,9 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Search, MapPin, Calendar, Users, FileText, Wind } from "lucide-react";
+import { Plus, Search, MapPin, Calendar, Users, FileText, Wind, CloudSun } from "lucide-react";
 import { CreateAirJobModal } from "@/components/create-air-job-modal";
 import { CreatePersonnelModal } from "@/components/create-personnel-modal";
+import { DailyWeatherLog } from "@/components/daily-weather-log";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { AirSample, PersonnelProfile, AirMonitoringJob } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -221,7 +222,7 @@ export default function AirMonitoringPage() {
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent onClick={() => setSelectedJob(job)}>
                 <div className="space-y-3">
                   {job.clientName && (
                     <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
@@ -292,9 +293,13 @@ export default function AirMonitoringPage() {
               </div>
               
               <Tabs defaultValue="overview" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="overview">Overview</TabsTrigger>
                   <TabsTrigger value="samples">Air Samples</TabsTrigger>
+                  <TabsTrigger value="weather">
+                    <CloudSun className="mr-2 h-4 w-4" />
+                    Weather Logs
+                  </TabsTrigger>
                   <TabsTrigger value="conditions">Conditions</TabsTrigger>
                 </TabsList>
                 
@@ -325,6 +330,10 @@ export default function AirMonitoringPage() {
                 
                 <TabsContent value="samples">
                   <p className="text-center py-8 text-gray-500">Air samples functionality will be added here</p>
+                </TabsContent>
+                
+                <TabsContent value="weather">
+                  <DailyWeatherLog jobId={selectedJob.id} />
                 </TabsContent>
                 
                 <TabsContent value="conditions" className="space-y-4">

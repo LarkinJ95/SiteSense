@@ -265,6 +265,32 @@ export const airMonitoringJobs = pgTable('air_monitoring_jobs', {
   updatedAt: timestamp('updated_at').default(sql`now()`),
 });
 
+// Daily weather logs for multi-day air monitoring
+export const dailyWeatherLogs = pgTable('daily_weather_logs', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  jobId: text('job_id').references(() => airMonitoringJobs.id, { onDelete: 'cascade' }).notNull(),
+  logDate: text('log_date').notNull(), // YYYY-MM-DD format
+  logTime: timestamp('log_time').notNull(),
+  
+  // Weather conditions in US standard units
+  weatherConditions: text('weather_conditions'),
+  temperature: decimal('temperature'), // °F
+  humidity: decimal('humidity'), // %
+  barometricPressure: decimal('barometric_pressure'), // inHg
+  windSpeed: decimal('wind_speed'), // mph
+  windDirection: text('wind_direction'),
+  precipitation: text('precipitation'),
+  visibility: text('visibility'),
+  
+  // Additional environmental factors
+  notes: text('notes'),
+  loggedBy: text('logged_by'),
+  coordinates: text('coordinates'), // GPS coordinates when logged
+  
+  createdAt: timestamp('created_at').default(sql`now()`),
+  updatedAt: timestamp('updated_at').default(sql`now()`),
+});
+
 // Air monitoring samples
 export const airSamples = pgTable('air_samples', {
   id: text('id').primaryKey().$defaultFn(() => nanoid()),
@@ -373,6 +399,26 @@ export const airSampleRelations = relations(airSamples, ({ one }) => ({
     fields: [airSamples.personnelId],
     references: [personnelProfiles.id],
   }),
+  job: one(airMonitoringJobs, {
+    fields: [airSamples.jobId],
+    references: [airMonitoringJobs.id],
+  }),
+}));
+
+export const airMonitoringJobRelations = relations(airMonitoringJobs, ({ many, one }) => ({
+  airSamples: many(airSamples),
+  dailyWeatherLogs: many(dailyWeatherLogs),
+  survey: one(surveys, {
+    fields: [airMonitoringJobs.surveyId],
+    references: [surveys.id],
+  }),
+}));
+
+export const dailyWeatherLogRelations = relations(dailyWeatherLogs, ({ one }) => ({
+  job: one(airMonitoringJobs, {
+    fields: [dailyWeatherLogs.jobId],
+    references: [airMonitoringJobs.id],
+  }),
 }));
 
 // Update survey relations
@@ -405,6 +451,12 @@ export const insertAirMonitoringEquipmentSchema = createInsertSchema(airMonitori
   createdAt: true,
 });
 
+export const insertDailyWeatherLogSchema = createInsertSchema(dailyWeatherLogs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export type InsertSurvey = z.infer<typeof insertSurveySchema>;
 export type Survey = typeof surveys.$inferSelect;
 export type InsertObservation = z.infer<typeof insertObservationSchema>;
@@ -419,3 +471,5 @@ export type AirSample = typeof airSamples.$inferSelect;
 export type InsertAirSample = z.infer<typeof insertAirSampleSchema>;
 export type AirMonitoringEquipment = typeof airMonitoringEquipment.$inferSelect;
 export type InsertAirMonitoringEquipment = z.infer<typeof insertAirMonitoringEquipmentSchema>;
+export type DailyWeatherLog = typeof dailyWeatherLogs.$inferSelect;
+export type InsertDailyWeatherLog = z.infer<typeof insertDailyWeatherLogSchema>;

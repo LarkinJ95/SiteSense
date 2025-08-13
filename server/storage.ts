@@ -6,6 +6,7 @@ import {
   airMonitoringJobs,
   airSamples,
   airMonitoringEquipment,
+  dailyWeatherLogs,
   type Survey, 
   type InsertSurvey,
   type Observation,
@@ -19,7 +20,9 @@ import {
   type AirSample,
   type InsertAirSample,
   type AirMonitoringEquipment,
-  type InsertAirMonitoringEquipment
+  type InsertAirMonitoringEquipment,
+  type DailyWeatherLog,
+  type InsertDailyWeatherLog
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, ilike, or, and } from "drizzle-orm";
@@ -334,6 +337,37 @@ export class DatabaseStorage implements IStorage {
   async deleteAirMonitoringEquipment(id: string): Promise<boolean> {
     const result = await db.delete(airMonitoringEquipment).where(eq(airMonitoringEquipment.id, id));
     return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Daily Weather Log methods
+  async getDailyWeatherLogs(jobId: string): Promise<DailyWeatherLog[]> {
+    return await db
+      .select()
+      .from(dailyWeatherLogs)
+      .where(eq(dailyWeatherLogs.jobId, jobId))
+      .orderBy(desc(dailyWeatherLogs.logDate));
+  }
+
+  async createDailyWeatherLog(insertLog: InsertDailyWeatherLog): Promise<DailyWeatherLog> {
+    const [log] = await db
+      .insert(dailyWeatherLogs)
+      .values(insertLog)
+      .returning();
+    return log;
+  }
+
+  async updateDailyWeatherLog(id: string, updateLog: Partial<InsertDailyWeatherLog>): Promise<DailyWeatherLog | undefined> {
+    const [log] = await db
+      .update(dailyWeatherLogs)
+      .set({ ...updateLog, updatedAt: new Date() })
+      .where(eq(dailyWeatherLogs.id, id))
+      .returning();
+    return log || undefined;
+  }
+
+  async deleteDailyWeatherLog(id: string): Promise<boolean> {
+    const result = await db.delete(dailyWeatherLogs).where(eq(dailyWeatherLogs.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 }
 
