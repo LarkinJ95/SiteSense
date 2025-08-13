@@ -1,0 +1,45 @@
+import { useState } from "react";
+import { Switch, Route } from "wouter";
+import { queryClient } from "./lib/queryClient";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { AppHeader } from "@/components/app-header";
+import { CreateSurveyModal } from "@/components/create-survey-modal";
+import Dashboard from "@/pages/dashboard";
+import SurveyDetail from "@/pages/survey-detail";
+import NotFound from "@/pages/not-found";
+
+function Router() {
+  return (
+    <Switch>
+      <Route path="/" component={Dashboard} />
+      <Route path="/surveys/:id" component={SurveyDetail} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function App() {
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <div className="min-h-screen bg-background">
+          <AppHeader onCreateSurvey={() => setShowCreateModal(true)} />
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <Router />
+          </main>
+          <CreateSurveyModal 
+            open={showCreateModal} 
+            onOpenChange={setShowCreateModal}
+          />
+        </div>
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;

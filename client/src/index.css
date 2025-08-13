@@ -1,0 +1,99 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0, 0%, 98%);
+  --foreground: hsl(222, 84%, 5%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(222, 84%, 5%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(222, 84%, 5%);
+  --primary: hsl(207, 74%, 40%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(210, 40%, 26%);
+  --secondary-foreground: hsl(0, 0%, 100%);
+  --muted: hsl(210, 40%, 98%);
+  --muted-foreground: hsl(215, 16%, 47%);
+  --accent: hsl(210, 40%, 98%);
+  --accent-foreground: hsl(222, 84%, 5%);
+  --destructive: hsl(0, 84%, 60%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --border: hsl(214, 32%, 91%);
+  --input: hsl(214, 32%, 91%);
+  --ring: hsl(207, 74%, 40%);
+  --success: hsl(122, 39%, 49%);
+  --warning: hsl(35, 91%, 48%);
+  --danger: hsl(0, 84%, 60%);
+  --surface: hsl(0, 0%, 100%);
+  --font-inter: 'Inter', sans-serif;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: hsl(222, 84%, 5%);
+  --foreground: hsl(210, 40%, 98%);
+  --card: hsl(222, 84%, 5%);
+  --card-foreground: hsl(210, 40%, 98%);
+  --popover: hsl(222, 84%, 5%);
+  --popover-foreground: hsl(210, 40%, 98%);
+  --primary: hsl(207, 74%, 40%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(217, 32%, 17%);
+  --secondary-foreground: hsl(210, 40%, 98%);
+  --muted: hsl(217, 32%, 17%);
+  --muted-foreground: hsl(215, 20%, 65%);
+  --accent: hsl(217, 32%, 17%);
+  --accent-foreground: hsl(210, 40%, 98%);
+  --destructive: hsl(0, 62%, 30%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --border: hsl(217, 32%, 17%);
+  --input: hsl(217, 32%, 17%);
+  --ring: hsl(207, 74%, 40%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: var(--font-inter);
+  }
+}
+
+@layer utilities {
+  .text-primary-custom {
+    color: hsl(207, 74%, 40%);
+  }
+  
+  .bg-primary-custom {
+    background-color: hsl(207, 74%, 40%);
+  }
+  
+  .bg-success-custom {
+    background-color: hsl(122, 39%, 49%);
+  }
+  
+  .bg-warning-custom {
+    background-color: hsl(35, 91%, 48%);
+  }
+  
+  .bg-danger-custom {
+    background-color: hsl(0, 84%, 60%);
+  }
+  
+  .text-success-custom {
+    color: hsl(122, 39%, 49%);
+  }
+  
+  .text-warning-custom {
+    color: hsl(35, 91%, 48%);
+  }
+  
+  .text-danger-custom {
+    color: hsl(0, 84%, 60%);
+  }
+}
