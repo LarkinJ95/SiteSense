@@ -1037,7 +1037,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Air Samples Sheet
       const sampleHeaders = [
-        'Sample ID', 'Sample Type', 'Analyte', 'Location', 'Collected By',
+        'Sample ID', 'Sample Type', 'Analyte', 'Location', 'Collected By', 'Monitor Worn By',
         'Start Time', 'End Time', 'Duration (min)', 'Flow Rate (L/min)',
         'Analysis Method', 'Status', 'Field Notes'
       ];
@@ -1050,6 +1050,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sample.analyte,
           sample.location || '',
           sample.collectedBy,
+          sample.monitorWornBy || 'N/A',
           new Date(sample.startTime).toLocaleString(),
           sample.endTime ? new Date(sample.endTime).toLocaleString() : '',
           sample.samplingDuration || '',

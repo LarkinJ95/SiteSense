@@ -332,6 +332,7 @@ export const airSamples = pgTable('air_samples', {
   
   // Chain of custody
   collectedBy: text('collected_by').notNull(),
+  monitorWornBy: text('monitor_worn_by'), // Personnel wearing the monitor (for personal samples)
   witnessedBy: text('witnessed_by'),
   chainOfCustody: text('chain_of_custody'),
   

@@ -527,7 +527,7 @@ export default function AirMonitoringPage() {
                                   {sample.status}
                                 </Badge>
                               </div>
-                              <div className="grid grid-cols-2 gap-4 text-sm">
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                                 <div>
                                   <p className="font-medium">Location</p>
                                   <p className="text-gray-600 dark:text-gray-400">{sample.location || 'Not specified'}</p>
@@ -536,6 +536,12 @@ export default function AirMonitoringPage() {
                                   <p className="font-medium">Collected By</p>
                                   <p className="text-gray-600 dark:text-gray-400">{sample.collectedBy}</p>
                                 </div>
+                                {sample.monitorWornBy && sample.monitorWornBy !== 'N/A' && (
+                                  <div>
+                                    <p className="font-medium">Monitor Worn By</p>
+                                    <p className="text-gray-600 dark:text-gray-400">{sample.monitorWornBy}</p>
+                                  </div>
+                                )}
                                 <div>
                                   <p className="font-medium">Duration</p>
                                   <p className="text-gray-600 dark:text-gray-400">{sample.samplingDuration || 0} minutes</p>
@@ -666,6 +672,7 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
       analyte: initialData?.analyte || 'asbestos',
       location: initialData?.location || '',
       collectedBy: initialData?.collectedBy || '',
+      monitorWornBy: initialData?.monitorWornBy || '',
       startTime: initialData?.startTime ? new Date(initialData.startTime).toISOString().slice(0, 16) : '',
       endTime: initialData?.endTime ? new Date(initialData.endTime).toISOString().slice(0, 16) : '',
       flowRate: initialData?.flowRate?.toString() || '',
@@ -758,30 +765,58 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="collectedBy"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Collected By</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select personnel" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {personnel.map((person) => (
-                    <SelectItem key={person.id} value={`${person.firstName} ${person.lastName}`}>
-                      {person.firstName} {person.lastName} - {person.jobTitle}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="collectedBy"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Sample Collected By</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select personnel collecting sample" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {personnel.map((person) => (
+                      <SelectItem key={person.id} value={`${person.firstName} ${person.lastName}`}>
+                        {person.firstName} {person.lastName} - {person.stateAccreditationNumber}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="monitorWornBy"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Monitor Worn By</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value || ''}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select person wearing monitor" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="N/A">Not applicable (area/background sample)</SelectItem>
+                    {personnel.map((person) => (
+                      <SelectItem key={person.id} value={`${person.firstName} ${person.lastName}`}>
+                        {person.firstName} {person.lastName} - {person.stateAccreditationNumber}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <FormField
