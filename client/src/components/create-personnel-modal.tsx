@@ -110,9 +110,9 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
                 name="employeeId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Employee ID</FormLabel>
+                    <FormLabel>State Accreditation Number</FormLabel>
                     <FormControl>
-                      <Input placeholder="EMP001" {...field} value={field.value || ""} data-testid="input-employee-id" />
+                      <Input placeholder="SA12345 or Last 4 of SSN" {...field} value={field.value || ""} data-testid="input-accreditation-number" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
