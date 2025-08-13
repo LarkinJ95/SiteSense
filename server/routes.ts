@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertSurveySchema, insertObservationSchema } from "@shared/schema";
+import { insertSurveySchema, insertObservationSchema, insertAirMonitoringJobSchema } from "@shared/schema";
 import type { Survey, Observation } from "@shared/schema";
 import multer from "multer";
 import path from "path";
@@ -944,7 +944,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/air-monitoring-jobs", async (req, res) => {
     try {
-      const job = await storage.createAirMonitoringJob(req.body);
+      const validatedData = insertAirMonitoringJobSchema.parse(req.body);
+      const job = await storage.createAirMonitoringJob(validatedData);
       res.status(201).json(job);
     } catch (error) {
       res.status(400).json({ message: "Invalid air monitoring job data", error: error instanceof Error ? error.message : 'Unknown error' });
