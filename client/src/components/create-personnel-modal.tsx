@@ -1,61 +1,43 @@
-import { useState, useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
+import { useMutation } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Badge } from "@/components/ui/badge";
-import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-
-const createPersonnelSchema = z.object({
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
-  employeeId: z.string().optional(),
-  jobTitle: z.string().optional(),
-  department: z.string().optional(),
-  company: z.string().optional(),
-  email: z.string().email("Invalid email").optional().or(z.literal("")),
-  phone: z.string().optional(),
-  certifications: z.array(z.string()).optional(),
-  medicalClearance: z.boolean().optional().default(false),
-  lastMedicalDate: z.string().optional(),
-  notes: z.string().optional(),
-  isActive: z.boolean().optional().default(true),
-});
-
-type CreatePersonnelFormData = z.infer<typeof createPersonnelSchema>;
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { insertPersonnelProfileSchema } from "@shared/schema";
 
 interface CreatePersonnelModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+const formSchema = insertPersonnelProfileSchema;
+type CreatePersonnelFormData = z.infer<typeof formSchema>;
+
 export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModalProps) {
   const { toast } = useToast();
-  const [certificationInput, setCertificationInput] = useState("");
 
   const form = useForm<CreatePersonnelFormData>({
-    resolver: zodResolver(createPersonnelSchema),
+    resolver: zodResolver(formSchema),
     defaultValues: {
       firstName: "",
       lastName: "",
-      employeeId: "",
-      jobTitle: "",
-      department: "",
-      company: "",
-      email: "",
-      phone: "",
+      employeeId: undefined,
+      jobTitle: undefined,
+      department: undefined,
+      company: undefined,
+      email: undefined,
+      phone: undefined,
       certifications: [],
       medicalClearance: false,
-      lastMedicalDate: "",
-      notes: "",
+      lastMedicalDate: undefined,
+      notes: undefined,
       isActive: true,
     },
   });
@@ -68,8 +50,8 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
         title: "Success",
         description: "Personnel profile created successfully",
       });
-      onOpenChange(false);
       form.reset();
+      onOpenChange(false);
     },
     onError: (error: any) => {
       toast({
@@ -84,68 +66,45 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
     createPersonnelMutation.mutate(data);
   };
 
-  const addCertification = () => {
-    if (certificationInput.trim()) {
-      const currentCertifications = form.getValues("certifications") || [];
-      const newCertifications = [...currentCertifications, certificationInput.trim()];
-      form.setValue("certifications", newCertifications);
-      setCertificationInput("");
-    }
-  };
-
-  const removeCertification = (index: number) => {
-    const currentCertifications = form.getValues("certifications") || [];
-    const newCertifications = currentCertifications.filter((_, i) => i !== index);
-    form.setValue("certifications", newCertifications);
-  };
-
-  const watchedCertifications = form.watch("certifications") || [];
-
-  useEffect(() => {
-    if (!open) {
-      form.reset();
-      setCertificationInput("");
-    }
-  }, [open, form]);
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="create-personnel-modal">
         <DialogHeader>
-          <DialogTitle>Create Personnel Profile</DialogTitle>
+          <DialogTitle>Add Personnel Profile</DialogTitle>
         </DialogHeader>
-
+        
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="firstName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>First Name</FormLabel>
+                    <FormLabel>First Name *</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter first name" {...field} data-testid="input-first-name" />
+                      <Input placeholder="John" {...field} data-testid="input-first-name" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="lastName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Last Name</FormLabel>
+                    <FormLabel>Last Name *</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter last name" {...field} data-testid="input-last-name" />
+                      <Input placeholder="Smith" {...field} data-testid="input-last-name" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+            </div>
 
+            <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="employeeId"
@@ -153,13 +112,12 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
                   <FormItem>
                     <FormLabel>Employee ID</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., EMP-001" {...field} data-testid="input-employee-id" />
+                      <Input placeholder="EMP001" {...field} value={field.value || ""} data-testid="input-employee-id" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="jobTitle"
@@ -167,13 +125,15 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
                   <FormItem>
                     <FormLabel>Job Title</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Environmental Technician" {...field} data-testid="input-job-title" />
+                      <Input placeholder="Environmental Technician" {...field} value={field.value || ""} data-testid="input-job-title" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+            </div>
 
+            <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="department"
@@ -181,13 +141,12 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
                   <FormItem>
                     <FormLabel>Department</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Environmental Services" {...field} data-testid="input-department" />
+                      <Input placeholder="Environmental Services" {...field} value={field.value || ""} data-testid="input-department" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="company"
@@ -195,13 +154,15 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
                   <FormItem>
                     <FormLabel>Company</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., ABC Environmental" {...field} data-testid="input-company" />
+                      <Input placeholder="ABC Environmental" {...field} value={field.value || ""} data-testid="input-company" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+            </div>
 
+            <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="email"
@@ -209,13 +170,12 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
                   <FormItem>
                     <FormLabel>Email</FormLabel>
                     <FormControl>
-                      <Input placeholder="person@company.com" type="email" {...field} data-testid="input-email" />
+                      <Input type="email" placeholder="john.smith@company.com" {...field} value={field.value || ""} data-testid="input-email" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="phone"
@@ -223,7 +183,7 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
                   <FormItem>
                     <FormLabel>Phone</FormLabel>
                     <FormControl>
-                      <Input placeholder="(555) 123-4567" {...field} data-testid="input-phone" />
+                      <Input placeholder="(555) 123-4567" {...field} value={field.value || ""} data-testid="input-phone" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -231,137 +191,60 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
               />
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="certification-input">Certifications</Label>
-                <div className="flex gap-2 mt-2">
-                  <Input
-                    id="certification-input"
-                    placeholder="e.g., OSHA 10-Hour, Asbestos Inspector"
-                    value={certificationInput}
-                    onChange={(e) => setCertificationInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCertification())}
-                    data-testid="input-certification"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={addCertification}
-                    data-testid="button-add-certification"
-                  >
-                    Add
-                  </Button>
-                </div>
-                {watchedCertifications.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    {watchedCertifications.map((cert, index) => (
-                      <Badge
-                        key={index}
-                        variant="secondary"
-                        className="cursor-pointer"
-                        onClick={() => removeCertification(index)}
-                        data-testid={`badge-certification-${index}`}
-                      >
-                        {cert} ×
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="medicalClearance"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                          data-testid="checkbox-medical-clearance"
-                        />
-                      </FormControl>
-                      <div className="space-y-1 leading-none">
-                        <FormLabel>
-                          Medical Clearance
-                        </FormLabel>
-                      </div>
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="lastMedicalDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Last Medical Exam Date</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} data-testid="input-medical-date" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
+            <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
-                name="notes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Notes</FormLabel>
-                    <FormControl>
-                      <Textarea 
-                        placeholder="Additional notes about this person..." 
-                        rows={4} 
-                        {...field} 
-                        data-testid="textarea-notes"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="isActive"
+                name="medicalClearance"
                 render={({ field }) => (
                   <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                     <FormControl>
                       <Checkbox
-                        checked={field.value}
+                        checked={field.value || false}
                         onCheckedChange={field.onChange}
-                        data-testid="checkbox-is-active"
+                        data-testid="checkbox-medical-clearance"
                       />
                     </FormControl>
                     <div className="space-y-1 leading-none">
-                      <FormLabel>
-                        Active Employee
-                      </FormLabel>
+                      <FormLabel>Medical Clearance</FormLabel>
                     </div>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="lastMedicalDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Last Medical Date</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} value={field.value || ""} data-testid="input-medical-date" />
+                    </FormControl>
+                    <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
 
-            <div className="flex justify-end space-x-2 pt-6 border-t">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                data-testid="button-cancel"
-              >
+            <FormField
+              control={form.control}
+              name="notes"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Notes</FormLabel>
+                  <FormControl>
+                    <Textarea placeholder="Additional notes about this person..." {...field} value={field.value || ""} data-testid="input-notes" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel">
                 Cancel
               </Button>
-              <Button 
-                type="submit" 
-                disabled={createPersonnelMutation.isPending}
-                data-testid="button-create-personnel"
-              >
-                {createPersonnelMutation.isPending ? "Creating..." : "Create Personnel Profile"}
+              <Button type="submit" disabled={createPersonnelMutation.isPending} data-testid="button-create-personnel">
+                {createPersonnelMutation.isPending ? "Creating..." : "Create Profile"}
               </Button>
             </div>
           </form>

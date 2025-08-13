@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Search, MapPin, Calendar, Users, FileText, Wind } from "lucide-react";
 import { CreateAirJobModal } from "@/components/create-air-job-modal";
+import { CreatePersonnelModal } from "@/components/create-personnel-modal";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { AirSample, PersonnelProfile, AirMonitoringJob } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 export default function AirMonitoringPage() {
   const { toast } = useToast();
   const [showCreateJobModal, setShowCreateJobModal] = useState(false);
+  const [showCreatePersonnelModal, setShowCreatePersonnelModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState<AirMonitoringJob | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -82,10 +84,16 @@ export default function AirMonitoringPage() {
             Manage air sampling jobs and track environmental monitoring activities
           </p>
         </div>
-        <Button onClick={() => setShowCreateJobModal(true)} data-testid="button-create-job">
-          <Plus className="mr-2 h-4 w-4" />
-          New Air Job
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setShowCreatePersonnelModal(true)} variant="outline" data-testid="button-add-personnel">
+            <Users className="mr-2 h-4 w-4" />
+            Add Personnel
+          </Button>
+          <Button onClick={() => setShowCreateJobModal(true)} data-testid="button-create-job">
+            <Plus className="mr-2 h-4 w-4" />
+            New Air Job
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -258,10 +266,14 @@ export default function AirMonitoringPage() {
         </div>
       )}
 
-      {/* Create Job Modal */}
+      {/* Modals */}
       <CreateAirJobModal 
         open={showCreateJobModal} 
         onOpenChange={setShowCreateJobModal}
+      />
+      <CreatePersonnelModal 
+        open={showCreatePersonnelModal} 
+        onOpenChange={setShowCreatePersonnelModal}
       />
 
       {/* Job Details Modal/Panel would go here */}

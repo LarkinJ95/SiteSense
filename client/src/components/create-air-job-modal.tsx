@@ -200,14 +200,14 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Associated Survey (Optional)</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                      <Select onValueChange={(value) => field.onChange(value === "none" ? null : value)} value={field.value || "none"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-survey">
                             <SelectValue placeholder="Select a survey" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="">No associated survey</SelectItem>
+                          <SelectItem value="none">No associated survey</SelectItem>
                           {surveys.map((survey) => (
                             <SelectItem key={survey.id} value={survey.id}>
                               {survey.siteName} - {survey.surveyType}
@@ -386,13 +386,14 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Wind Direction</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                      <Select onValueChange={(value) => field.onChange(value === "none" ? null : value)} value={field.value || "none"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-wind-direction">
                             <SelectValue placeholder="Select wind direction" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
+                          <SelectItem value="none">Not specified</SelectItem>
                           <SelectItem value="N">North</SelectItem>
                           <SelectItem value="NE">Northeast</SelectItem>
                           <SelectItem value="E">East</SelectItem>
