@@ -1277,6 +1277,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(201).json(newUser);
   });
 
+  // White-label brand settings
+  let brandSettings = {
+    appName: "SiteSense",
+    primaryColor: "#3b82f6",
+    secondaryColor: "#64748b",
+    accentColor: "#10b981",
+    backgroundColor: "#ffffff",
+    textColor: "#1f2937",
+    footerText: "© 2025 SiteSense. Professional site survey management.",
+    welcomeMessage: "Welcome to your environmental survey management platform",
+    contactEmail: "support@sitesense.com",
+    enableCustomBranding: true,
+    showPoweredBy: true,
+  };
+
+  app.get("/api/admin/brand-settings", (req, res) => {
+    res.json(brandSettings);
+  });
+
+  app.put("/api/admin/brand-settings", (req, res) => {
+    brandSettings = { ...brandSettings, ...req.body };
+    res.json(brandSettings);
+  });
+
+  // Data management endpoints
+  app.get("/api/admin/data-management", (req, res) => {
+    res.json({
+      totalSurveys: mockSurveys.length,
+      totalUsers: mockUsers.length,
+      totalAirSamples: mockAirSamples.length,
+      totalObservations: mockObservations.length,
+      databaseSize: "45.2 MB",
+      lastBackup: "2025-01-12T10:30:00Z",
+      autoBackupEnabled: true,
+      retentionPeriod: 365
+    });
+  });
+
+  app.post("/api/admin/backup", (req, res) => {
+    // Simulate backup process
+    setTimeout(() => {
+      res.json({ 
+        success: true, 
+        backupId: `backup-${Date.now()}`,
+        message: "Backup created successfully" 
+      });
+    }, 2000);
+  });
+
+  app.post("/api/admin/export-all", (req, res) => {
+    // Simulate export process
+    res.json({ 
+      success: true, 
+      exportId: `export-${Date.now()}`,
+      message: "Export initiated. Download link will be sent via email." 
+    });
+  });
+
+  app.post("/api/admin/purge-data", (req, res) => {
+    const { olderThan } = req.body;
+    // Simulate data purging based on age
+    res.json({ 
+      success: true, 
+      deletedRecords: Math.floor(Math.random() * 100),
+      message: `Data older than ${olderThan} days has been purged.` 
+    });
+  });
+
+  // Object storage endpoints for logo uploads
+  app.post("/api/objects/upload", async (req, res) => {
+    try {
+      const { ObjectStorageService } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      res.json({ uploadURL });
+    } catch (error) {
+      console.error("Error getting upload URL:", error);
+      res.status(500).json({ error: "Failed to get upload URL" });
+    }
+  });
+
   app.put("/api/admin/users/:id", (req, res) => {
     const userId = req.params.id;
     const updatedUser = { ...req.body, id: userId };

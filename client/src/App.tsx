@@ -20,6 +20,7 @@ import Login from "@/pages/login";
 import Register from "@/pages/register";
 import AdminDashboard from "@/pages/admin";
 import UserProfile from "@/pages/user-profile";
+import WhiteLabelDashboard from "@/pages/white-label";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -37,6 +38,7 @@ function Router() {
       <Route path="/field-tools" component={FieldTools} />
       <Route path="/templates" component={Templates} />
       <Route path="/air-monitoring" component={AirMonitoring} />
+      <Route path="/white-label" component={WhiteLabelDashboard} />
       <Route component={NotFound} />
     </Switch>
   );

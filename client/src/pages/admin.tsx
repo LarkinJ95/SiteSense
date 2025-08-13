@@ -28,7 +28,8 @@ import {
   Clock,
   BarChart3,
   Server,
-  HardDrive
+  HardDrive,
+  Palette
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -212,6 +213,13 @@ export default function AdminDashboard() {
           >
             <UserPlus className="h-4 w-4 mr-2" />
             Add New User
+          </Button>
+          <Button 
+            onClick={() => window.location.href = '/white-label'}
+            className="bg-purple-600 hover:bg-purple-700"
+          >
+            <Palette className="h-4 w-4 mr-2" />
+            White Label
           </Button>
           <Button 
             onClick={() => exportDataMutation.mutate()}
