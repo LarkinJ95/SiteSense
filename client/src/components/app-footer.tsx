@@ -5,6 +5,10 @@ export function AppFooter() {
   // Check if user is admin (same logic as header)
   const userRole = localStorage.getItem("userRole");
   const isAdmin = userRole === "admin";
+  
+  // For development: also check if we're in development mode and no user is set
+  const isDev = import.meta.env.DEV;
+  const showAdminLink = isAdmin || (isDev && !userRole);
 
   return (
     <footer className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 mt-auto">
@@ -35,7 +39,7 @@ export function AppFooter() {
               </Link>
               
               {/* Admin-only link */}
-              {isAdmin && (
+              {showAdminLink && (
                 <>
                   <span className="text-gray-300 dark:text-gray-600">|</span>
                   <Link href="/admin">
