@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +29,47 @@ import {
 
 export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const { toast } = useToast();
+
+  // Generate report mutation
+  const generateReportMutation = useMutation({
+    mutationFn: async (surveyId: string) => {
+      const response = await fetch(`/api/surveys/${surveyId}/report`);
+      if (!response.ok) {
+        throw new Error("Failed to generate report");
+      }
+      const htmlContent = await response.text();
+      return { htmlContent, surveyId };
+    },
+    onSuccess: ({ htmlContent, surveyId }) => {
+      // Find the survey name for the filename
+      const survey = surveys.find(s => s.id === surveyId);
+      const filename = `${survey?.siteName || 'survey'}_report.html`;
+      
+      // Create blob and trigger download
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Report Generated",
+        description: "The survey report has been downloaded successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to generate report",
+        variant: "destructive",
+      });
+    },
+  });
 
   const { data: stats, isLoading: statsLoading } = useQuery<SurveyStats>({
     queryKey: ["/api/stats"],
@@ -273,7 +316,13 @@ export default function Dashboard() {
                               <Eye className="h-4 w-4" />
                             </Button>
                           </Link>
-                          <Button variant="ghost" size="sm" data-testid={`button-report-${survey.id}`}>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => generateReportMutation.mutate(survey.id)}
+                            disabled={generateReportMutation.isPending}
+                            data-testid={`button-report-${survey.id}`}
+                          >
                             <FileDown className="h-4 w-4" />
                           </Button>
                         </div>
