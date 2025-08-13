@@ -178,12 +178,12 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
       const weatherData = await weatherResponse.json();
       const current = weatherData.current;
       
-      // Fill in weather data from WeatherAPI.com
+      // Fill in weather data from WeatherAPI.com using US standard units
       form.setValue("weatherConditions", current.condition.text);
-      form.setValue("temperature", current.temp_c?.toFixed(1));
+      form.setValue("temperature", current.temp_f?.toFixed(1)); // Fahrenheit
       form.setValue("humidity", current.humidity?.toString());
-      form.setValue("barometricPressure", (current.pressure_mb * 0.1)?.toFixed(1)); // Convert mb to kPa
-      form.setValue("windSpeed", (current.wind_kph * 0.277778)?.toFixed(1)); // Convert km/h to m/s
+      form.setValue("barometricPressure", current.pressure_in?.toFixed(2)); // Inches of mercury
+      form.setValue("windSpeed", current.wind_mph?.toFixed(1)); // Miles per hour
       
       if (current.wind_degree !== undefined) {
         const windDirection = getWindDirection(current.wind_degree);
@@ -192,7 +192,7 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
 
       toast({
         title: "Weather Retrieved",
-        description: `Current conditions: ${current.condition.text}, ${current.temp_c}°C`,
+        description: `Current conditions: ${current.condition.text}, ${current.temp_f}°F`,
       });
     } catch (error: any) {
       let errorMessage = "Unable to retrieve weather data. Please enter manually.";
@@ -503,9 +503,9 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
                     name="temperature"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Temperature (°C)</FormLabel>
+                        <FormLabel>Temperature (°F)</FormLabel>
                         <FormControl>
-                          <Input type="number" step="0.1" placeholder="22.5" {...field} data-testid="input-temperature" />
+                          <Input type="number" step="0.1" placeholder="72.5" {...field} data-testid="input-temperature" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -532,9 +532,9 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
                     name="barometricPressure"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Pressure (kPa)</FormLabel>
+                        <FormLabel>Pressure (inHg)</FormLabel>
                         <FormControl>
-                          <Input type="number" step="0.1" placeholder="101.3" {...field} data-testid="input-pressure" />
+                          <Input type="number" step="0.01" placeholder="29.92" {...field} data-testid="input-pressure" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -545,9 +545,9 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
                     name="windSpeed"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Wind Speed (m/s)</FormLabel>
+                        <FormLabel>Wind Speed (mph)</FormLabel>
                         <FormControl>
-                          <Input type="number" step="0.1" placeholder="3.2" {...field} data-testid="input-wind-speed" />
+                          <Input type="number" step="0.1" placeholder="7.2" {...field} data-testid="input-wind-speed" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
