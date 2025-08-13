@@ -15,12 +15,20 @@ import SurveyDetail from "@/pages/survey-detail";
 import FieldTools from "@/pages/field-tools";
 import Templates from "@/pages/templates";
 import AirMonitoring from "@/pages/air-monitoring-new";
+import Login from "@/pages/login";
+import Register from "@/pages/register";
+import AdminDashboard from "@/pages/admin";
+import UserProfile from "@/pages/user-profile";
 import NotFound from "@/pages/not-found";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/login" component={Login} />
+      <Route path="/register" component={Register} />
+      <Route path="/admin" component={AdminDashboard} />
+      <Route path="/profile" component={UserProfile} />
       <Route path="/surveys" component={Surveys} />
       <Route path="/surveys/:id" component={SurveyDetail} />
       <Route path="/reports" component={Reports} />
