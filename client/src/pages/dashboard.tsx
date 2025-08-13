@@ -524,57 +524,7 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-center w-12 h-12 bg-primary bg-opacity-10 rounded-lg mb-4">
-              <PlusCircle className="text-primary text-xl" />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Start New Survey</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">Create a new site survey with our guided workflow.</p>
-            <Button 
-              onClick={() => setShowCreateModal(true)}
-              className="w-full bg-primary hover:bg-blue-700 text-white"
-              data-testid="button-start-new-survey"
-            >
-              Get Started
-            </Button>
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-center w-12 h-12 bg-success bg-opacity-10 rounded-lg mb-4">
-              <FileText className="text-success text-xl" />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Generate Reports</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">Create comprehensive reports from your survey data.</p>
-            <Button 
-              className="w-full bg-success hover:bg-green-700 text-white"
-              data-testid="button-view-reports"
-            >
-              View Reports
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-center w-12 h-12 bg-warning bg-opacity-10 rounded-lg mb-4">
-              <Search className="text-warning text-xl" />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Search History</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">Find and review past surveys and observations.</p>
-            <Button 
-              className="w-full bg-warning hover:bg-orange-600 text-white"
-              data-testid="button-search-history"
-            >
-              Search
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
 
       <CreateSurveyModal 
         open={showCreateModal} 
