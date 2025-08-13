@@ -25,8 +25,17 @@ export default function FieldTools() {
         },
         (error) => {
           console.error("Error getting location:", error);
+          // Show user-friendly error message
+          alert("Unable to get your location. Please check location permissions in your browser settings.");
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000
         }
       );
+    } else {
+      alert("Geolocation is not supported by this browser.");
     }
   };
 

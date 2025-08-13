@@ -119,6 +119,7 @@ router.put('/air-samples/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const validatedData = insertAirSampleSchema.partial().parse(req.body);
+    console.log('Updating air sample with ID:', id, 'Data:', validatedData);
     const sample = await storage.updateAirSample(id, validatedData);
     if (!sample) {
       return res.status(404).json({ error: 'Air sample not found' });
@@ -129,17 +130,18 @@ router.put('/air-samples/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid input', details: error.errors });
     }
     console.error('Error updating air sample:', error);
-    res.status(500).json({ error: 'Failed to update air sample' });
+    res.status(500).json({ 
+      error: 'Failed to update air sample', 
+      details: error instanceof Error ? error.message : 'Unknown error',
+      sampleId: req.params.id
+    });
   }
 });
 
 router.delete('/air-samples/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const deleted = await storage.deleteAirSample(id);
-    if (!deleted) {
-      return res.status(404).json({ error: 'Air sample not found' });
-    }
+    await storage.deleteAirSample(id);
     res.status(204).send();
   } catch (error) {
     console.error('Error deleting air sample:', error);

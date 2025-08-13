@@ -19,6 +19,7 @@ import ReportBuilder from "@/pages/report-builder";
 import ClientPortal from "@/pages/client-portal";
 import Messaging from "@/pages/messaging";
 import AirMonitoring from "@/pages/air-monitoring-new";
+import AdvancedAirMonitoring from "@/pages/air-monitoring-advanced";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
 import AdminDashboard from "@/pages/admin";
@@ -44,6 +45,7 @@ function Router() {
       <Route path="/client-portal" component={ClientPortal} />
       <Route path="/messaging" component={Messaging} />
       <Route path="/air-monitoring" component={AirMonitoring} />
+      <Route path="/air-monitoring-advanced" component={AdvancedAirMonitoring} />
       <Route path="/white-label" component={WhiteLabelDashboard} />
       <Route component={NotFound} />
     </Switch>

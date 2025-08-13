@@ -998,6 +998,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Advanced Air Monitoring API Routes
+  app.get("/api/air-monitoring/equipment", async (req, res) => {
+    try {
+      const equipment = await storage.getAirMonitoringEquipment();
+      res.json(equipment);
+    } catch (error) {
+      console.error("Error fetching equipment:", error);
+      res.status(500).json({ error: "Failed to fetch equipment" });
+    }
+  });
+
+  app.post("/api/air-monitoring/equipment", async (req, res) => {
+    try {
+      const equipment = await storage.createAirMonitoringEquipment(req.body);
+      res.status(201).json(equipment);
+    } catch (error) {
+      console.error("Error creating equipment:", error);
+      res.status(500).json({ error: "Failed to create equipment" });
+    }
+  });
+
+  app.put("/api/air-monitoring/equipment/:id", async (req, res) => {
+    try {
+      const equipment = await storage.updateAirMonitoringEquipment(req.params.id, req.body);
+      res.json(equipment);
+    } catch (error) {
+      console.error("Error updating equipment:", error);
+      res.status(500).json({ error: "Failed to update equipment" });
+    }
+  });
+
+  app.get("/api/air-monitoring/quality-control", async (req, res) => {
+    try {
+      const checks = await storage.getQualityControlChecks();
+      res.json(checks);
+    } catch (error) {
+      console.error("Error fetching quality control checks:", error);
+      res.status(500).json({ error: "Failed to fetch quality control checks" });
+    }
+  });
+
+  app.post("/api/air-monitoring/quality-control", async (req, res) => {
+    try {
+      const check = await storage.createQualityControlCheck(req.body);
+      res.status(201).json(check);
+    } catch (error) {
+      console.error("Error creating quality control check:", error);
+      res.status(500).json({ error: "Failed to create quality control check" });
+    }
+  });
+
+  app.get("/api/air-monitoring/pel-alerts", async (req, res) => {
+    try {
+      const alerts = await storage.getPELAlerts();
+      res.json(alerts);
+    } catch (error) {
+      console.error("Error fetching PEL alerts:", error);
+      res.status(500).json({ error: "Failed to fetch PEL alerts" });
+    }
+  });
+
+  app.put("/api/air-monitoring/pel-alerts/:id/acknowledge", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { correctiveActions } = req.body;
+      const alert = await storage.acknowledgePELAlert(id, 'Current User', correctiveActions);
+      res.json(alert);
+    } catch (error) {
+      console.error("Error acknowledging PEL alert:", error);
+      res.status(500).json({ error: "Failed to acknowledge PEL alert" });
+    }
+  });
+
+  app.get("/api/air-samples/pel-analysis", async (req, res) => {
+    try {
+      const samples = await storage.getAirSamplesWithPELAnalysis();
+      res.json(samples);
+    } catch (error) {
+      console.error("Error fetching air samples with PEL analysis:", error);
+      res.status(500).json({ error: "Failed to fetch air samples with PEL analysis" });
+    }
+  });
+
   app.get("/api/air-monitoring-jobs/:id/report", async (req, res) => {
     try {
       const jobId = req.params.id;

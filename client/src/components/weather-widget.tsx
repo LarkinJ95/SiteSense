@@ -105,7 +105,7 @@ export function WeatherWidget({ onWeatherUpdate, latitude, longitude }: WeatherW
           
           <div className="flex items-center gap-2">
             <Thermometer className="h-4 w-4 text-red-400" />
-            <span className="text-sm font-medium">{weather.temperature}°C</span>
+            <span className="text-sm font-medium">{weather.temperature}°F</span>
           </div>
           
           <div className="flex items-center gap-2">
@@ -115,7 +115,7 @@ export function WeatherWidget({ onWeatherUpdate, latitude, longitude }: WeatherW
           
           <div className="flex items-center gap-2">
             <Wind className="h-4 w-4 text-gray-400" />
-            <span className="text-sm font-medium">{weather.windSpeed} km/h</span>
+            <span className="text-sm font-medium">{weather.windSpeed} mph</span>
           </div>
         </div>
         
