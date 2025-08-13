@@ -2,12 +2,21 @@ import {
   surveys, 
   observations, 
   observationPhotos,
+  personnelProfiles,
+  airSamples,
+  airMonitoringEquipment,
   type Survey, 
   type InsertSurvey,
   type Observation,
   type InsertObservation,
   type ObservationPhoto,
-  type InsertObservationPhoto
+  type InsertObservationPhoto,
+  type PersonnelProfile,
+  type InsertPersonnelProfile,
+  type AirSample,
+  type InsertAirSample,
+  type AirMonitoringEquipment,
+  type InsertAirMonitoringEquipment
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, ilike, or, and } from "drizzle-orm";
@@ -41,6 +50,27 @@ export interface IStorage {
     samplesCollected: number;
     activeSites: number;
   }>;
+
+  // Personnel methods
+  getPersonnel(): Promise<PersonnelProfile[]>;
+  getPersonnelProfile(id: string): Promise<PersonnelProfile | undefined>;
+  createPersonnelProfile(profile: InsertPersonnelProfile): Promise<PersonnelProfile>;
+  updatePersonnelProfile(id: string, profile: Partial<InsertPersonnelProfile>): Promise<PersonnelProfile | undefined>;
+  deletePersonnelProfile(id: string): Promise<boolean>;
+
+  // Air sample methods
+  getAirSamples(): Promise<AirSample[]>;
+  getAirSample(id: string): Promise<AirSample | undefined>;
+  createAirSample(sample: InsertAirSample): Promise<AirSample>;
+  updateAirSample(id: string, sample: Partial<InsertAirSample>): Promise<AirSample | undefined>;
+  deleteAirSample(id: string): Promise<boolean>;
+
+  // Air monitoring equipment methods
+  getAirMonitoringEquipment(): Promise<AirMonitoringEquipment[]>;
+  getAirMonitoringEquipmentItem(id: string): Promise<AirMonitoringEquipment | undefined>;
+  createAirMonitoringEquipment(equipment: InsertAirMonitoringEquipment): Promise<AirMonitoringEquipment>;
+  updateAirMonitoringEquipment(id: string, equipment: Partial<InsertAirMonitoringEquipment>): Promise<AirMonitoringEquipment | undefined>;
+  deleteAirMonitoringEquipment(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -173,6 +203,93 @@ export class DatabaseStorage implements IStorage {
       samplesCollected,
       activeSites,
     };
+  }
+
+  // Personnel methods
+  async getPersonnel(): Promise<PersonnelProfile[]> {
+    return await db.select().from(personnelProfiles).orderBy(desc(personnelProfiles.createdAt));
+  }
+
+  async getPersonnelProfile(id: string): Promise<PersonnelProfile | undefined> {
+    const [profile] = await db.select().from(personnelProfiles).where(eq(personnelProfiles.id, id));
+    return profile;
+  }
+
+  async createPersonnelProfile(profile: InsertPersonnelProfile): Promise<PersonnelProfile> {
+    const [newProfile] = await db.insert(personnelProfiles).values(profile).returning();
+    return newProfile;
+  }
+
+  async updatePersonnelProfile(id: string, profile: Partial<InsertPersonnelProfile>): Promise<PersonnelProfile | undefined> {
+    const [updatedProfile] = await db
+      .update(personnelProfiles)
+      .set({ ...profile, updatedAt: new Date() })
+      .where(eq(personnelProfiles.id, id))
+      .returning();
+    return updatedProfile;
+  }
+
+  async deletePersonnelProfile(id: string): Promise<boolean> {
+    const result = await db.delete(personnelProfiles).where(eq(personnelProfiles.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Air sample methods
+  async getAirSamples(): Promise<AirSample[]> {
+    return await db.select().from(airSamples).orderBy(desc(airSamples.createdAt));
+  }
+
+  async getAirSample(id: string): Promise<AirSample | undefined> {
+    const [sample] = await db.select().from(airSamples).where(eq(airSamples.id, id));
+    return sample;
+  }
+
+  async createAirSample(sample: InsertAirSample): Promise<AirSample> {
+    const [newSample] = await db.insert(airSamples).values(sample).returning();
+    return newSample;
+  }
+
+  async updateAirSample(id: string, sample: Partial<InsertAirSample>): Promise<AirSample | undefined> {
+    const [updatedSample] = await db
+      .update(airSamples)
+      .set({ ...sample, updatedAt: new Date() })
+      .where(eq(airSamples.id, id))
+      .returning();
+    return updatedSample;
+  }
+
+  async deleteAirSample(id: string): Promise<boolean> {
+    const result = await db.delete(airSamples).where(eq(airSamples.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Air monitoring equipment methods
+  async getAirMonitoringEquipment(): Promise<AirMonitoringEquipment[]> {
+    return await db.select().from(airMonitoringEquipment).orderBy(desc(airMonitoringEquipment.createdAt));
+  }
+
+  async getAirMonitoringEquipmentItem(id: string): Promise<AirMonitoringEquipment | undefined> {
+    const [equipment] = await db.select().from(airMonitoringEquipment).where(eq(airMonitoringEquipment.id, id));
+    return equipment;
+  }
+
+  async createAirMonitoringEquipment(equipment: InsertAirMonitoringEquipment): Promise<AirMonitoringEquipment> {
+    const [newEquipment] = await db.insert(airMonitoringEquipment).values(equipment).returning();
+    return newEquipment;
+  }
+
+  async updateAirMonitoringEquipment(id: string, equipment: Partial<InsertAirMonitoringEquipment>): Promise<AirMonitoringEquipment | undefined> {
+    const [updatedEquipment] = await db
+      .update(airMonitoringEquipment)
+      .set(equipment)
+      .where(eq(airMonitoringEquipment.id, id))
+      .returning();
+    return updatedEquipment;
+  }
+
+  async deleteAirMonitoringEquipment(id: string): Promise<boolean> {
+    const result = await db.delete(airMonitoringEquipment).where(eq(airMonitoringEquipment.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
   }
 }
 

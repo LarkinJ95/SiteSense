@@ -913,6 +913,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Personnel routes
+  app.get("/api/personnel", async (req, res) => {
+    try {
+      const personnel = await storage.getPersonnel();
+      res.json(personnel);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch personnel", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  app.post("/api/personnel", async (req, res) => {
+    try {
+      const personnel = await storage.createPersonnelProfile(req.body);
+      res.status(201).json(personnel);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid personnel data", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  // Air samples routes
+  app.get("/api/air-samples", async (req, res) => {
+    try {
+      const samples = await storage.getAirSamples();
+      res.json(samples);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch air samples", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  app.post("/api/air-samples", async (req, res) => {
+    try {
+      const sample = await storage.createAirSample(req.body);
+      res.status(201).json(sample);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid air sample data", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

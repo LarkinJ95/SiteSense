@@ -1,7 +1,8 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean, integer, decimal } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, integer, decimal, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { nanoid } from "nanoid";
 
 export const surveys = pgTable("surveys", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -115,9 +116,7 @@ export const observationPhotos = pgTable("observation_photos", {
   uploadedAt: timestamp("uploaded_at").default(sql`now()`),
 });
 
-export const surveyRelations = relations(surveys, ({ many }) => ({
-  observations: many(observations),
-}));
+
 
 export const observationRelations = relations(observations, ({ one, many }) => ({
   survey: one(surveys, {
@@ -183,9 +182,168 @@ export const insertObservationPhotoSchema = createInsertSchema(observationPhotos
   uploadedAt: true,
 });
 
+// Personnel profiles for personal air monitoring
+export const personnelProfiles = pgTable('personnel_profiles', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  firstName: text('first_name').notNull(),
+  lastName: text('last_name').notNull(),
+  employeeId: text('employee_id'),
+  jobTitle: text('job_title'),
+  department: text('department'),
+  company: text('company'),
+  email: text('email'),
+  phone: text('phone'),
+  certifications: text('certifications').array(),
+  medicalClearance: boolean('medical_clearance').default(false),
+  lastMedicalDate: text('last_medical_date'),
+  notes: text('notes'),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at').default(sql`now()`),
+  updatedAt: timestamp('updated_at').default(sql`now()`),
+});
+
+// Air monitoring samples
+export const airSamples = pgTable('air_samples', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  surveyId: varchar('survey_id').references(() => surveys.id),
+  personnelId: text('personnel_id').references(() => personnelProfiles.id),
+  sampleType: text('sample_type', { 
+    enum: ['personal', 'area', 'background', 'outdoor'] 
+  }).notNull(),
+  analyte: text('analyte', {
+    enum: ['asbestos', 'lead', 'cadmium', 'hexavalent_chromium', 'silica', 'heavy_metals', 'benzene', 'toluene', 'other']
+  }).notNull(),
+  customAnalyte: text('custom_analyte'), // For "other" analyte type
+  samplingMethod: text('sampling_method', {
+    enum: ['pcm', 'tem', 'plm', 'xrf', 'icp', 'gravimetric', 'active', 'passive']
+  }),
+  pumpId: text('pump_id'),
+  flowRate: decimal('flow_rate'), // L/min
+  samplingDuration: integer('sampling_duration'), // minutes
+  totalVolume: decimal('total_volume'), // L
+  
+  // Location and environmental data
+  location: text('location'),
+  area: text('area'),
+  building: text('building'),
+  floor: text('floor'),
+  room: text('room'),
+  latitude: decimal('latitude'),
+  longitude: decimal('longitude'),
+  temperature: decimal('temperature'), // °C
+  humidity: decimal('humidity'), // %
+  pressure: decimal('pressure'), // kPa
+  windSpeed: decimal('wind_speed'), // m/s
+  windDirection: text('wind_direction'),
+  
+  // Timing
+  startTime: timestamp('start_time').notNull(),
+  endTime: timestamp('end_time'),
+  
+  // Chain of custody
+  collectedBy: text('collected_by').notNull(),
+  witnessedBy: text('witnessed_by'),
+  chainOfCustody: text('chain_of_custody'),
+  
+  // Laboratory information
+  labId: text('lab_id'),
+  labSampleId: text('lab_sample_id'),
+  analysisMethod: text('analysis_method'),
+  reportingLimit: decimal('reporting_limit'),
+  detectionLimit: decimal('detection_limit'),
+  
+  // Results
+  result: decimal('result'),
+  resultUnit: text('result_unit'),
+  uncertainty: decimal('uncertainty'),
+  qualifiers: text('qualifiers').array(),
+  exceedsLimit: boolean('exceeds_limit').default(false),
+  regulatoryLimit: decimal('regulatory_limit'),
+  limitType: text('limit_type'), // PEL, TLV, REL, etc.
+  
+  // Quality control
+  blankCorrection: boolean('blank_correction').default(false),
+  qcFlags: text('qc_flags').array(),
+  
+  // Status tracking
+  status: text('status', {
+    enum: ['collecting', 'collected', 'shipped', 'analyzing', 'completed', 'cancelled']
+  }).default('collecting'),
+  
+  // Photos and documentation
+  samplePhotos: text('sample_photos').array(),
+  fieldNotes: text('field_notes'),
+  
+  createdAt: timestamp('created_at').default(sql`now()`),
+  updatedAt: timestamp('updated_at').default(sql`now()`),
+});
+
+// Air monitoring equipment
+export const airMonitoringEquipment = pgTable('air_monitoring_equipment', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  equipmentType: text('equipment_type', {
+    enum: ['pump', 'cassette', 'tube', 'badge', 'meter', 'other']
+  }).notNull(),
+  manufacturer: text('manufacturer'),
+  model: text('model'),
+  serialNumber: text('serial_number'),
+  calibrationDate: timestamp('calibration_date'),
+  calibrationDue: timestamp('calibration_due'),
+  flowRateRange: text('flow_rate_range'),
+  isActive: boolean('is_active').default(true),
+  notes: text('notes'),
+  createdAt: timestamp('created_at').default(sql`now()`),
+});
+
+// Define relations for air monitoring
+export const personnelRelations = relations(personnelProfiles, ({ many }) => ({
+  airSamples: many(airSamples),
+}));
+
+export const airSampleRelations = relations(airSamples, ({ one }) => ({
+  survey: one(surveys, {
+    fields: [airSamples.surveyId],
+    references: [surveys.id],
+  }),
+  personnel: one(personnelProfiles, {
+    fields: [airSamples.personnelId],
+    references: [personnelProfiles.id],
+  }),
+}));
+
+// Update survey relations
+export const surveyRelations = relations(surveys, ({ many }) => ({
+  observations: many(observations),
+  airSamples: many(airSamples),
+}));
+
+// Create Zod schemas
+export const insertPersonnelProfileSchema = createInsertSchema(personnelProfiles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAirSampleSchema = createInsertSchema(airSamples).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAirMonitoringEquipmentSchema = createInsertSchema(airMonitoringEquipment).omit({
+  id: true,
+  createdAt: true,
+});
+
 export type InsertSurvey = z.infer<typeof insertSurveySchema>;
 export type Survey = typeof surveys.$inferSelect;
 export type InsertObservation = z.infer<typeof insertObservationSchema>;
 export type Observation = typeof observations.$inferSelect;
 export type InsertObservationPhoto = z.infer<typeof insertObservationPhotoSchema>;
 export type ObservationPhoto = typeof observationPhotos.$inferSelect;
+export type PersonnelProfile = typeof personnelProfiles.$inferSelect;
+export type InsertPersonnelProfile = z.infer<typeof insertPersonnelProfileSchema>;
+export type AirSample = typeof airSamples.$inferSelect;
+export type InsertAirSample = z.infer<typeof insertAirSampleSchema>;
+export type AirMonitoringEquipment = typeof airMonitoringEquipment.$inferSelect;
+export type InsertAirMonitoringEquipment = z.infer<typeof insertAirMonitoringEquipmentSchema>;

@@ -20,6 +20,7 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
   const navItems = [
     { key: "dashboard", label: "Dashboard", href: "/" },
     { key: "surveys", label: "Surveys", href: "/surveys" },
+    { key: "air-monitoring", label: "Air Monitoring", href: "/air-monitoring" },
     { key: "reports", label: "Reports", href: "/reports" },
     { key: "field-tools", label: "Field Tools", href: "/field-tools" },
     { key: "templates", label: "Templates", href: "/templates" },
