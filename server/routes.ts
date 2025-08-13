@@ -29,6 +29,38 @@ function generateSurveyReport(survey: Survey, observations: Observation[]): stri
   const mediumRiskObservations = observations.filter(obs => obs.riskLevel === "medium");
   const samplesCollected = observations.filter(obs => obs.sampleCollected);
   
+  // Calculate quantities by hazardous areas (HA)
+  const hazardousAreas = observations.filter(obs => obs.riskLevel === "high" || obs.riskLevel === "medium");
+  const totalHAQuantity = hazardousAreas.reduce((total, obs) => {
+    const quantity = parseFloat(obs.quantity || "0");
+    return total + (isNaN(quantity) ? 0 : quantity);
+  }, 0);
+  
+  // Calculate quantities by sample
+  const totalSampleQuantity = samplesCollected.reduce((total, obs) => {
+    const quantity = parseFloat(obs.quantity || "0");
+    return total + (isNaN(quantity) ? 0 : quantity);
+  }, 0);
+  
+  // Group quantities by material type for detailed breakdown
+  const quantityByMaterial = observations.reduce((acc, obs) => {
+    const material = obs.materialType;
+    const quantity = parseFloat(obs.quantity || "0");
+    if (!isNaN(quantity) && quantity > 0) {
+      if (!acc[material]) {
+        acc[material] = { total: 0, hazardous: 0, sampled: 0 };
+      }
+      acc[material].total += quantity;
+      if (obs.riskLevel === "high" || obs.riskLevel === "medium") {
+        acc[material].hazardous += quantity;
+      }
+      if (obs.sampleCollected) {
+        acc[material].sampled += quantity;
+      }
+    }
+    return acc;
+  }, {} as Record<string, { total: number, hazardous: number, sampled: number }>);
+  
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -52,6 +84,8 @@ function generateSurveyReport(survey: Survey, observations: Observation[]): stri
         table { width: 100%; border-collapse: collapse; margin: 20px 0; }
         th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
         th { background: #f8f9fa; font-weight: bold; }
+        .quantity-section { background: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 5px solid #ffc107; }
+        .quantity-table { background: #fff; margin-top: 15px; }
         .footer { margin-top: 50px; padding-top: 20px; border-top: 2px solid #ddd; font-size: 0.9em; color: #666; }
         @media print { body { margin: 0; padding: 15px; } }
     </style>
@@ -95,6 +129,50 @@ function generateSurveyReport(survey: Survey, observations: Observation[]): stri
                 <div>Samples Collected</div>
             </div>
         </div>
+    </div>
+
+    <div class="quantity-section">
+        <h3>📊 Quantity Analysis</h3>
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number">${totalHAQuantity.toFixed(2)}</div>
+                <div>Total Quantity in Hazardous Areas (HA)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${totalSampleQuantity.toFixed(2)}</div>
+                <div>Total Quantity by Sample</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${hazardousAreas.length}</div>
+                <div>Hazardous Areas Count</div>
+            </div>
+        </div>
+        
+        ${Object.keys(quantityByMaterial).length > 0 ? `
+        <h4>Material Quantity Breakdown</h4>
+        <table class="quantity-table">
+            <thead>
+                <tr>
+                    <th>Material Type</th>
+                    <th>Total Quantity</th>
+                    <th>Hazardous Quantity</th>
+                    <th>Sampled Quantity</th>
+                    <th>% Hazardous</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${Object.entries(quantityByMaterial).map(([material, quantities]) => `
+                <tr>
+                    <td><strong>${material}</strong></td>
+                    <td>${quantities.total.toFixed(2)} units</td>
+                    <td>${quantities.hazardous.toFixed(2)} units</td>
+                    <td>${quantities.sampled.toFixed(2)} units</td>
+                    <td>${quantities.total > 0 ? ((quantities.hazardous / quantities.total) * 100).toFixed(1) : '0.0'}%</td>
+                </tr>
+                `).join('')}
+            </tbody>
+        </table>
+        ` : '<p><em>No quantity data available for detailed breakdown.</em></p>'}
     </div>
 
     ${highRiskObservations.length > 0 ? `
