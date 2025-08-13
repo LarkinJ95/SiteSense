@@ -7,6 +7,7 @@ export const surveys = pgTable("surveys", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   siteName: text("site_name").notNull(),
   address: text("address"),
+  jobNumber: text("job_number"),
   surveyType: text("survey_type").notNull(),
   surveyDate: timestamp("survey_date").notNull(),
   inspector: text("inspector").notNull(),

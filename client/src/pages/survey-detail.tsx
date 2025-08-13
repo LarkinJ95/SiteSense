@@ -244,6 +244,11 @@ export default function SurveyDetail() {
               <p className="text-gray-600 mt-1" data-testid="text-address">
                 {survey.address || "No address provided"}
               </p>
+              {survey.jobNumber && (
+                <p className="text-gray-600 font-medium mt-1" data-testid="text-job-number">
+                  Job #{survey.jobNumber}
+                </p>
+              )}
               <div className="flex items-center space-x-4 mt-3">
                 <Badge className="bg-primary text-white" data-testid="badge-survey-type">
                   {survey.surveyType}

@@ -76,7 +76,7 @@ export default function Surveys() {
       <div className="flex items-center space-x-2">
         <Search className="h-4 w-4 text-gray-400" />
         <Input
-          placeholder="Search surveys by site name, address, inspector, or type..."
+          placeholder="Search surveys by site name, address, job number, inspector, or type..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="max-w-md"
@@ -121,6 +121,12 @@ export default function Surveys() {
                     <div className="flex items-center text-sm text-gray-600">
                       <MapPin className="h-4 w-4 mr-2 flex-shrink-0" />
                       <span className="truncate">{survey.address}</span>
+                    </div>
+                  )}
+                  {survey.jobNumber && (
+                    <div className="flex items-center text-sm text-gray-600">
+                      <FileText className="h-4 w-4 mr-2 flex-shrink-0" />
+                      <span className="truncate">Job #{survey.jobNumber}</span>
                     </div>
                   )}
                   <div className="flex items-center text-sm text-gray-600">

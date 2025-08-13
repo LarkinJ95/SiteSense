@@ -82,6 +82,7 @@ export class DatabaseStorage implements IStorage {
         or(
           ilike(surveys.siteName, `%${query}%`),
           ilike(surveys.address, `%${query}%`),
+          ilike(surveys.jobNumber, `%${query}%`),
           ilike(surveys.inspector, `%${query}%`),
           ilike(surveys.surveyType, `%${query}%`)
         )

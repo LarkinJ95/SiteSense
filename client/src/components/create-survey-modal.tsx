@@ -41,6 +41,7 @@ import { X, FileText, ClipboardList } from "lucide-react";
 const createSurveySchema = z.object({
   siteName: z.string().min(1, "Site name is required"),
   address: z.string().optional(),
+  jobNumber: z.string().optional(),
   surveyType: z.string().min(1, "Survey type is required"),
   surveyDate: z.string().min(1, "Survey date is required"),
   inspector: z.string().min(1, "Inspector is required"),
@@ -69,6 +70,7 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
     defaultValues: {
       siteName: "",
       address: "",
+      jobNumber: "",
       surveyType: "",
       surveyDate: new Date().toISOString().split('T')[0],
       inspector: "",
@@ -221,13 +223,30 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
                   control={form.control}
                   name="address"
                   render={({ field }) => (
-                    <FormItem className="md:col-span-2">
+                    <FormItem>
                       <FormLabel>Address</FormLabel>
                       <FormControl>
                         <Input
                           placeholder="Enter site address"
                           {...field}
                           data-testid="input-address"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="jobNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Job Number</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Enter job/project number"
+                          {...field}
+                          data-testid="input-job-number"
                         />
                       </FormControl>
                       <FormMessage />

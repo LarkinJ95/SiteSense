@@ -22,6 +22,7 @@ export interface SurveyStats {
 export interface CreateSurveyFormData {
   siteName: string;
   address?: string;
+  jobNumber?: string;
   surveyType: string;
   surveyDate: string;
   inspector: string;
