@@ -18,6 +18,7 @@ export interface IStorage {
   getSurvey(id: string): Promise<Survey | undefined>;
   createSurvey(survey: InsertSurvey): Promise<Survey>;
   updateSurvey(id: string, survey: Partial<InsertSurvey>): Promise<Survey | undefined>;
+  updateSurveySitePhoto(id: string, sitePhotoUrl: string): Promise<Survey | undefined>;
   deleteSurvey(id: string): Promise<boolean>;
   searchSurveys(query: string): Promise<Survey[]>;
   
@@ -64,6 +65,15 @@ export class DatabaseStorage implements IStorage {
     const [survey] = await db
       .update(surveys)
       .set({ ...updateSurvey, updatedAt: new Date() })
+      .where(eq(surveys.id, id))
+      .returning();
+    return survey || undefined;
+  }
+
+  async updateSurveySitePhoto(id: string, sitePhotoUrl: string): Promise<Survey | undefined> {
+    const [survey] = await db
+      .update(surveys)
+      .set({ sitePhotoUrl, updatedAt: new Date() })
       .where(eq(surveys.id, id))
       .returning();
     return survey || undefined;

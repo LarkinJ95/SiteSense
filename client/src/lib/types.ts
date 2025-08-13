@@ -38,6 +38,8 @@ export interface CreateSurveyFormData {
   // Equipment tracking
   equipmentUsed?: string[];
   calibrationDates?: string[];
+  // Site photo
+  sitePhoto?: File;
 }
 
 export interface CreateObservationFormData {

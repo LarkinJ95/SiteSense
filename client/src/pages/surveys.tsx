@@ -116,6 +116,15 @@ export default function Surveys() {
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-400 capitalize">{survey.surveyType}</div>
                 </CardHeader>
+                {survey.sitePhotoUrl && (
+                  <div className="px-6 pb-4">
+                    <img 
+                      src={survey.sitePhotoUrl} 
+                      alt={`Site photo for ${survey.siteName}`} 
+                      className="w-full h-32 object-cover rounded-md"
+                    />
+                  </div>
+                )}
                 <CardContent className="space-y-2">
                   {survey.address && (
                     <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">

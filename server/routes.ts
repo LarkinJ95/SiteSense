@@ -6,6 +6,7 @@ import type { Survey, Observation } from "@shared/schema";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
+import { nanoid } from "nanoid";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -37,6 +38,9 @@ function generateSurveyReport(survey: Survey, observations: Observation[]): stri
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
         .header { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+        .site-photo { text-align: center; margin: 20px 0; }
+        .site-photo img { max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .site-photo-caption { margin-top: 10px; font-style: italic; color: #666; }
         .section { margin-bottom: 30px; }
         .observation { border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 5px; }
         .risk-high { border-left: 4px solid #dc3545; background: #fff5f5; }
@@ -63,6 +67,13 @@ function generateSurveyReport(survey: Survey, observations: Observation[]): stri
         <p><strong>Status:</strong> ${survey.status}</p>
         <p><strong>Report Generated:</strong> ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
     </div>
+
+    ${survey.sitePhotoUrl ? `
+    <div class="site-photo">
+        <img src="${survey.sitePhotoUrl}" alt="Site Photo - ${survey.siteName}" />
+        <div class="site-photo-caption">Site Overview Photo</div>
+    </div>
+    ` : ''}
 
     <div class="section">
         <h3>Executive Summary</h3>
@@ -240,6 +251,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ message: "Failed to delete survey", error: error.message });
+    }
+  });
+
+  // Site photo upload
+  app.post('/api/surveys/:surveyId/site-photo', upload.single('sitePhoto'), async (req, res, next) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file provided' });
+      }
+
+      const { surveyId } = req.params;
+      console.log(`[${new Date().toLocaleTimeString()}] [express] Uploading site photo for survey ${surveyId}`);
+      
+      // Update survey with site photo URL
+      const sitePhotoUrl = `/uploads/${req.file.filename}`;
+      await storage.updateSurveySitePhoto(surveyId, sitePhotoUrl);
+      
+      res.json({ 
+        success: true, 
+        sitePhotoUrl,
+        message: 'Site photo uploaded successfully' 
+      });
+    } catch (error) {
+      next(error);
     }
   });
 
@@ -642,6 +677,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error saving checklist response:", error);
       res.status(500).json({ error: "Failed to save checklist response" });
+    }
+  });
+
+  // Static file serving for uploads
+  app.use('/uploads', async (req, res, next) => {
+    const filename = req.path.substring(1); // Remove leading /
+    try {
+      const filePath = path.join('uploads', filename);
+      await fs.access(filePath);
+      res.sendFile(path.resolve(filePath));
+    } catch {
+      res.status(404).json({ message: "File not found" });
     }
   });
 

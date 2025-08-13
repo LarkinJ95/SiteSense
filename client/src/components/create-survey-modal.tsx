@@ -36,7 +36,7 @@ import { EquipmentTracker, type Equipment } from "@/components/equipment-tracker
 import { OfflineIndicator } from "@/components/offline-indicator";
 import { TemplateSelector } from "@/components/template-selector";
 import { Badge } from "@/components/ui/badge";
-import { X, FileText, ClipboardList } from "lucide-react";
+import { X, FileText, ClipboardList, Camera, Upload } from "lucide-react";
 
 const createSurveySchema = z.object({
   siteName: z.string().min(1, "Site name is required"),
@@ -64,6 +64,7 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
   const [weather, setWeather] = useState<any>(null);
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+  const [selectedSitePhoto, setSelectedSitePhoto] = useState<File | null>(null);
 
   const form = useForm<CreateSurveyFormData>({
     resolver: zodResolver(createSurveySchema),
@@ -94,11 +95,22 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
         equipmentUsed: equipment.map(e => `${e.name} (${e.serialNumber})`),
         calibrationDates: equipment.map(e => e.calibrationDate),
       };
+      
+      // Create survey first
       const response = await apiRequest("POST", "/api/surveys", {
         ...surveyData,
         surveyDate: new Date(data.surveyDate).toISOString(),
       });
-      return response.json();
+      const survey = await response.json();
+      
+      // If there's a site photo, upload it
+      if (selectedSitePhoto) {
+        const formData = new FormData();
+        formData.append('sitePhoto', selectedSitePhoto);
+        await apiRequest("POST", `/api/surveys/${survey.id}/site-photo`, formData);
+      }
+      
+      return survey;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/surveys"] });
@@ -109,6 +121,7 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
       });
       onOpenChange(false);
       form.reset();
+      setSelectedSitePhoto(null);
     },
     onError: (error: any) => {
       toast({
@@ -316,6 +329,64 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
                     </FormItem>
                   )}
                 />
+                
+                {/* Site Photo Upload */}
+                <div className="md:col-span-2">
+                  <FormLabel>Site Photo</FormLabel>
+                  <div className="mt-2">
+                    <div className="flex items-center justify-center w-full">
+                      <label
+                        htmlFor="site-photo-upload"
+                        className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 dark:border-gray-600 border-dashed rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600"
+                      >
+                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                          {selectedSitePhoto ? (
+                            <>
+                              <Camera className="w-8 h-8 mb-2 text-green-500" />
+                              <p className="text-sm text-gray-500 dark:text-gray-400">
+                                <span className="font-semibold">{selectedSitePhoto.name}</span>
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                Click to change photo
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-8 h-8 mb-2 text-gray-400" />
+                              <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
+                                <span className="font-semibold">Click to upload</span> site photo
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                PNG, JPG, JPEG (MAX. 10MB)
+                              </p>
+                            </>
+                          )}
+                        </div>
+                        <input
+                          id="site-photo-upload"
+                          type="file"
+                          accept="image/png,image/jpeg,image/jpg"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              if (file.size > 10 * 1024 * 1024) { // 10MB limit
+                                toast({
+                                  title: "File too large",
+                                  description: "Please select an image smaller than 10MB",
+                                  variant: "destructive",
+                                });
+                                return;
+                              }
+                              setSelectedSitePhoto(file);
+                            }
+                          }}
+                          data-testid="input-site-photo"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 

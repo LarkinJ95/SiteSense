@@ -51,6 +51,7 @@ export const surveys = pgTable("surveys", {
   archiveDate: timestamp("archive_date"),
   exportCount: integer("export_count").default(0),
   lastExported: timestamp("last_exported"),
+  sitePhotoUrl: text("site_photo_url"),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });

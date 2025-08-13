@@ -262,6 +262,16 @@ export default function SurveyDetail() {
                   </span>
                 </span>
               </div>
+              {survey.sitePhotoUrl && (
+                <div className="mt-4">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Site Photo</h4>
+                  <img 
+                    src={survey.sitePhotoUrl} 
+                    alt={`Site photo for ${survey.siteName}`} 
+                    className="w-full max-w-md h-48 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
+                  />
+                </div>
+              )}
             </div>
             <div className="mt-4 md:mt-0 flex flex-wrap gap-2">
               <Button
