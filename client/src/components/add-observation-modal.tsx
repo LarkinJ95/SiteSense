@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import type { Observation } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -63,21 +64,7 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
 
   const form = useForm<CreateObservationFormData>({
     resolver: zodResolver(createObservationSchema),
-    defaultValues: editingObservation ? {
-      area: editingObservation.area,
-      homogeneousArea: editingObservation.homogeneousArea || "",
-      materialType: editingObservation.materialType,
-      condition: editingObservation.condition,
-      quantity: editingObservation.quantity || "",
-      riskLevel: editingObservation.riskLevel || "",
-      sampleCollected: editingObservation.sampleCollected,
-      sampleId: editingObservation.sampleId || "",
-      collectionMethod: editingObservation.collectionMethod || "",
-      sampleNotes: editingObservation.sampleNotes || "",
-      latitude: editingObservation.latitude || "",
-      longitude: editingObservation.longitude || "",
-      notes: editingObservation.notes || "",
-    } : {
+    defaultValues: {
       area: "",
       homogeneousArea: "",
       materialType: "",
@@ -93,6 +80,43 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
       notes: "",
     },
   });
+
+  // Reset form when editing observation changes
+  useEffect(() => {
+    if (editingObservation) {
+      form.reset({
+        area: editingObservation.area,
+        homogeneousArea: editingObservation.homogeneousArea || "",
+        materialType: editingObservation.materialType,
+        condition: editingObservation.condition,
+        quantity: editingObservation.quantity || "",
+        riskLevel: editingObservation.riskLevel || "",
+        sampleCollected: editingObservation.sampleCollected,
+        sampleId: editingObservation.sampleId || "",
+        collectionMethod: editingObservation.collectionMethod || "",
+        sampleNotes: editingObservation.sampleNotes || "",
+        latitude: editingObservation.latitude || "",
+        longitude: editingObservation.longitude || "",
+        notes: editingObservation.notes || "",
+      });
+    } else {
+      form.reset({
+        area: "",
+        homogeneousArea: "",
+        materialType: "",
+        condition: "",
+        quantity: "",
+        riskLevel: "",
+        sampleCollected: false,
+        sampleId: "",
+        collectionMethod: "",
+        sampleNotes: "",
+        latitude: "",
+        longitude: "",
+        notes: "",
+      });
+    }
+  }, [editingObservation, form]);
 
   const createObservationMutation = useMutation({
     mutationFn: async (data: CreateObservationFormData) => {
