@@ -6,16 +6,49 @@ import {
   DropdownMenu, 
   DropdownMenuContent, 
   DropdownMenuItem, 
+  DropdownMenuSeparator,
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { ClipboardList, Plus, User } from "lucide-react";
+import { ClipboardList, Plus, User, Settings, LogOut, UserCircle, Shield } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface AppHeaderProps {
   onCreateSurvey: () => void;
 }
 
 export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+  const { toast } = useToast();
+
+  const handleLogout = () => {
+    // Clear authentication tokens
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("userRole");
+    
+    toast({
+      title: "Logged out",
+      description: "You have been logged out successfully.",
+    });
+    
+    // Redirect to login page
+    setLocation("/login");
+  };
+
+  const handleProfileClick = () => {
+    setLocation("/profile");
+  };
+
+  const handleSettingsClick = () => {
+    setLocation("/settings");
+  };
+
+  const handleAdminClick = () => {
+    setLocation("/admin");
+  };
+
+  // Check if user is admin (in real app, get from auth context)
+  const userRole = localStorage.getItem("userRole");
+  const isAdmin = userRole === "admin";
 
   const navItems = [
     { key: "dashboard", label: "Dashboard", href: "/" },
@@ -79,10 +112,26 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
                   <span className="hidden md:block text-sm font-medium">John Inspector</span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem data-testid="menu-profile">Profile</DropdownMenuItem>
-                <DropdownMenuItem data-testid="menu-settings">Settings</DropdownMenuItem>
-                <DropdownMenuItem data-testid="menu-logout">Logout</DropdownMenuItem>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={handleProfileClick} data-testid="menu-profile">
+                  <UserCircle className="mr-2 h-4 w-4" />
+                  Profile
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSettingsClick} data-testid="menu-settings">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </DropdownMenuItem>
+                {isAdmin && (
+                  <DropdownMenuItem onClick={handleAdminClick} data-testid="menu-admin">
+                    <Shield className="mr-2 h-4 w-4" />
+                    Admin Dashboard
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout} data-testid="menu-logout" className="text-red-600 focus:text-red-600">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Logout
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
