@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AddObservationModal } from "@/components/add-observation-modal";
+import { ObservationMap } from "@/components/observation-map";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { Survey, Observation, ObservationPhoto } from "@shared/schema";
@@ -56,6 +57,37 @@ export default function SurveyDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete observation",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const generateReportMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("GET", `/api/surveys/${id}/report`);
+      return response;
+    },
+    onSuccess: (data) => {
+      // Create a blob URL and trigger download
+      const blob = new Blob([data], { type: 'text/html' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${survey?.siteName || 'survey'}_report.html`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Report Generated",
+        description: "The survey report has been downloaded successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to generate report",
         variant: "destructive",
       });
     },
@@ -148,9 +180,14 @@ export default function SurveyDetail() {
               </div>
             </div>
             <div className="mt-4 md:mt-0 flex space-x-3">
-              <Button variant="outline" data-testid="button-generate-report">
+              <Button 
+                variant="outline" 
+                onClick={() => generateReportMutation.mutate()}
+                disabled={generateReportMutation.isPending}
+                data-testid="button-generate-report"
+              >
                 <FileText className="mr-2 h-4 w-4" />
-                Generate Report
+                {generateReportMutation.isPending ? "Generating..." : "Generate Report"}
               </Button>
               <Button 
                 onClick={() => setShowAddModal(true)}
@@ -344,6 +381,9 @@ export default function SurveyDetail() {
           )}
         </CardContent>
       </Card>
+
+      {/* GPS Map Visualization */}
+      <ObservationMap observations={observations} />
 
       <AddObservationModal 
         open={showAddModal} 
