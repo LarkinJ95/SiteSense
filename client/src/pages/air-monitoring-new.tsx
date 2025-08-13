@@ -28,6 +28,19 @@ const airSampleFormSchema = insertAirSampleSchema.extend({
 
 type AirSampleFormData = z.infer<typeof airSampleFormSchema>;
 
+// Analyte to analysis method mapping
+const analyteMethodMap: Record<string, string> = {
+  'asbestos': 'PCM (NIOSH 7400)',
+  'lead': 'ICP-AES (NIOSH 7300)',
+  'cadmium': 'ICP-AES (NIOSH 7300)',
+  'hexavalent_chromium': 'IC (NIOSH 7605)',
+  'silica': 'XRD (NIOSH 7500)',
+  'heavy_metals': 'ICP-AES (NIOSH 7300)',
+  'benzene': 'GC-MS (NIOSH 1501)',
+  'toluene': 'GC-FID (NIOSH 1500)',
+  'other': ''
+};
+
 export default function AirMonitoringPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -693,6 +706,14 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
     onSubmit(submitData);
   };
 
+  // Auto-fill analysis method when analyte changes
+  const handleAnalyteChange = (value: string) => {
+    form.setValue('analyte', value);
+    if (analyteMethodMap[value]) {
+      form.setValue('analysisMethod', analyteMethodMap[value]);
+    }
+  };
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
@@ -727,7 +748,7 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Analyte</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
+                <Select onValueChange={handleAnalyteChange} value={field.value}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue />
@@ -896,9 +917,15 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
             <FormItem>
               <FormLabel>Analysis Method</FormLabel>
               <FormControl>
-                <Input {...field} value={field.value || ''} placeholder="e.g., PCM (NIOSH 7400)" />
+                <Input 
+                  {...field} 
+                  value={field.value || ''} 
+                  placeholder="e.g., PCM (NIOSH 7400)"
+                  className="bg-gray-50 dark:bg-gray-900"
+                />
               </FormControl>
               <FormMessage />
+              <p className="text-xs text-gray-500">Auto-filled based on analyte selection</p>
             </FormItem>
           )}
         />
