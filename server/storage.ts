@@ -253,8 +253,9 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(airMonitoringJobs).orderBy(desc(airMonitoringJobs.createdAt));
   }
 
-  async getAirMonitoringJob(id: string): Promise<AirMonitoringJob | undefined> {
+  async getAirMonitoringJobById(id: string): Promise<AirMonitoringJob> {
     const [job] = await db.select().from(airMonitoringJobs).where(eq(airMonitoringJobs.id, id));
+    if (!job) throw new Error('Air monitoring job not found');
     return job;
   }
 
@@ -296,18 +297,17 @@ export class DatabaseStorage implements IStorage {
     return newSample;
   }
 
-  async updateAirSample(id: string, sample: Partial<InsertAirSample>): Promise<AirSample | undefined> {
-    const [updatedSample] = await db
-      .update(airSamples)
+  async updateAirSample(id: string, sample: Partial<InsertAirSample>): Promise<AirSample> {
+    const [updatedSample] = await db.update(airSamples)
       .set({ ...sample, updatedAt: new Date() })
       .where(eq(airSamples.id, id))
       .returning();
+    if (!updatedSample) throw new Error('Air sample not found');
     return updatedSample;
   }
 
-  async deleteAirSample(id: string): Promise<boolean> {
-    const result = await db.delete(airSamples).where(eq(airSamples.id, id));
-    return result.rowCount !== null && result.rowCount > 0;
+  async deleteAirSample(id: string): Promise<void> {
+    await db.delete(airSamples).where(eq(airSamples.id, id));
   }
 
   // Air monitoring equipment methods

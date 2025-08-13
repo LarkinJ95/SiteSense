@@ -980,6 +980,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put("/api/air-samples/:id", async (req, res) => {
+    try {
+      const sample = await storage.updateAirSample(req.params.id, req.body);
+      res.json(sample);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid air sample data", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  app.delete("/api/air-samples/:id", async (req, res) => {
+    try {
+      await storage.deleteAirSample(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete air sample", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  app.get("/api/air-monitoring-jobs/:id/report", async (req, res) => {
+    try {
+      const jobId = req.params.id;
+      const job = await storage.getAirMonitoringJobById(jobId);
+      const samples = await storage.getAirMonitoringJobSamples(jobId);
+      const weatherLogs = await storage.getDailyWeatherLogs(jobId);
+      
+      // Generate Excel report
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.utils.book_new();
+      
+      // Job Overview Sheet
+      const jobData = [
+        ['Job Information', ''],
+        ['Job Name', job.jobName],
+        ['Job Number', job.jobNumber],
+        ['Site Name', job.siteName],
+        ['Address', job.address],
+        ['City, State', `${job.city || ''}, ${job.state || ''}`],
+        ['Client', job.clientName || ''],
+        ['Project Manager', job.projectManager || ''],
+        ['Status', job.status],
+        ['Start Date', new Date(job.startDate).toLocaleDateString()],
+        ['End Date', job.endDate ? new Date(job.endDate).toLocaleDateString() : ''],
+        ['Work Description', job.workDescription || ''],
+        ['', ''],
+        ['Weather Summary', ''],
+        ['Temperature', job.temperature ? `${job.temperature}°F` : ''],
+        ['Humidity', job.humidity ? `${job.humidity}%` : ''],
+        ['Pressure', job.barometricPressure ? `${job.barometricPressure} inHg` : ''],
+        ['Wind', job.windSpeed ? `${job.windSpeed} mph ${job.windDirection || ''}` : ''],
+        ['Conditions', job.weatherConditions || '']
+      ];
+      
+      const jobSheet = XLSX.utils.aoa_to_sheet(jobData);
+      XLSX.utils.book_append_sheet(workbook, jobSheet, 'Job Overview');
+      
+      // Air Samples Sheet
+      const sampleHeaders = [
+        'Sample ID', 'Sample Type', 'Analyte', 'Location', 'Collected By',
+        'Start Time', 'End Time', 'Duration (min)', 'Flow Rate (L/min)',
+        'Analysis Method', 'Status', 'Field Notes'
+      ];
+      
+      const sampleData = [
+        sampleHeaders,
+        ...samples.map(sample => [
+          sample.id,
+          sample.sampleType,
+          sample.analyte,
+          sample.location || '',
+          sample.collectedBy,
+          new Date(sample.startTime).toLocaleString(),
+          sample.endTime ? new Date(sample.endTime).toLocaleString() : '',
+          sample.samplingDuration || '',
+          sample.flowRate || '',
+          sample.analysisMethod || '',
+          sample.status,
+          sample.fieldNotes || ''
+        ])
+      ];
+      
+      const sampleSheet = XLSX.utils.aoa_to_sheet(sampleData);
+      XLSX.utils.book_append_sheet(workbook, sampleSheet, 'Air Samples');
+      
+      // Weather Logs Sheet
+      if (weatherLogs.length > 0) {
+        const weatherHeaders = [
+          'Date', 'Time', 'Temperature (°F)', 'Humidity (%)', 'Pressure (inHg)',
+          'Wind Speed (mph)', 'Wind Direction', 'Conditions', 'Notes'
+        ];
+        
+        const weatherData = [
+          weatherHeaders,
+          ...weatherLogs.map(log => [
+            new Date(log.date).toLocaleDateString(),
+            log.time,
+            log.temperature || '',
+            log.humidity || '',
+            log.barometricPressure || '',
+            log.windSpeed || '',
+            log.windDirection || '',
+            log.weatherConditions || '',
+            log.notes || ''
+          ])
+        ];
+        
+        const weatherSheet = XLSX.utils.aoa_to_sheet(weatherData);
+        XLSX.utils.book_append_sheet(workbook, weatherSheet, 'Weather Logs');
+      }
+      
+      // Generate buffer and send
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      
+      res.setHeader('Content-Disposition', `attachment; filename="${job.jobNumber}_Air_Monitoring_Report.xlsx"`);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.send(buffer);
+      
+    } catch (error) {
+      res.status(500).json({ message: "Failed to generate report", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

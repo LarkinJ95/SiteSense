@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, MapPin, Calendar, Users, FileText, Wind, CloudSun, Clock, Beaker, Trash2, Edit } from "lucide-react";
+import { Plus, Search, MapPin, Calendar, Users, FileText, Wind, CloudSun, Clock, Beaker, Trash2, Edit, Download, Settings } from "lucide-react";
 import { CreateAirJobModal } from "@/components/create-air-job-modal";
 import { CreatePersonnelModal } from "@/components/create-personnel-modal";
 import { DailyWeatherLog } from "@/components/daily-weather-log";
@@ -33,11 +33,12 @@ export default function AirMonitoringPage() {
   const queryClient = useQueryClient();
   const [showCreateJobModal, setShowCreateJobModal] = useState(false);
   const [showCreatePersonnelModal, setShowCreatePersonnelModal] = useState(false);
+  const [editingSample, setEditingSample] = useState<AirSample | null>(null);
+  const [editingJob, setEditingJob] = useState<AirMonitoringJob | null>(null);
   const [selectedJob, setSelectedJob] = useState<AirMonitoringJob | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [showCreateSampleModal, setShowCreateSampleModal] = useState(false);
-  const [editingSample, setEditingSample] = useState<AirSample | null>(null);
 
   // Fetch air monitoring jobs
   const { data: airJobs = [], isLoading: jobsLoading } = useQuery<AirMonitoringJob[]>({
@@ -85,6 +86,29 @@ export default function AirMonitoringPage() {
     }
   });
 
+  const updateSampleMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: InsertAirSample }) => {
+      const response = await fetch(`/api/air-samples/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error('Failed to update sample');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/air-samples'] });
+      setEditingSample(null);
+      toast({ description: "Air sample updated successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        variant: "destructive", 
+        description: error.message || "Failed to update air sample" 
+      });
+    }
+  });
+
   const deleteSampleMutation = useMutation({
     mutationFn: async (sampleId: string) => {
       const response = await fetch(`/api/air-samples/${sampleId}`, {
@@ -101,6 +125,35 @@ export default function AirMonitoringPage() {
       toast({ 
         variant: "destructive", 
         description: error.message || "Failed to delete air sample" 
+      });
+    }
+  });
+
+  const generateReportMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      const response = await fetch(`/api/air-monitoring-jobs/${jobId}/report`, {
+        method: 'GET',
+      });
+      if (!response.ok) throw new Error('Failed to generate report');
+      return response.blob();
+    },
+    onSuccess: (blob, jobId) => {
+      const job = airJobs.find(j => j.id === jobId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `${job?.jobNumber || jobId}_Air_Monitoring_Report.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast({ description: "Report downloaded successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        variant: "destructive", 
+        description: error.message || "Failed to generate report" 
       });
     }
   });
@@ -360,9 +413,30 @@ export default function AirMonitoringPage() {
                   <h2 className="text-2xl font-bold">{selectedJob.jobName}</h2>
                   <p className="text-gray-600 dark:text-gray-400">Job #{selectedJob.jobNumber}</p>
                 </div>
-                <Button variant="outline" onClick={() => setSelectedJob(null)}>
-                  Close
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => generateReportMutation.mutate(selectedJob.id)}
+                    disabled={generateReportMutation.isPending}
+                    data-testid="button-generate-report"
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    {generateReportMutation.isPending ? 'Generating...' : 'Generate Report'}
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setEditingJob(selectedJob)}
+                    data-testid="button-edit-job"
+                  >
+                    <Settings className="mr-2 h-4 w-4" />
+                    Edit Job
+                  </Button>
+                  <Button variant="outline" onClick={() => setSelectedJob(null)}>
+                    Close
+                  </Button>
+                </div>
               </div>
               
               <Tabs defaultValue="overview" className="w-full">
@@ -549,6 +623,25 @@ export default function AirMonitoringPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Sample Modal */}
+      {editingSample && (
+        <Dialog open={!!editingSample} onOpenChange={() => setEditingSample(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit Air Sample</DialogTitle>
+            </DialogHeader>
+            <AirSampleForm 
+              jobId={editingSample.jobId}
+              personnel={personnel}
+              onSuccess={() => setEditingSample(null)}
+              onSubmit={(data) => updateSampleMutation.mutate({ id: editingSample.id, data })}
+              isLoading={updateSampleMutation.isPending}
+              initialData={editingSample}
+            />
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
