@@ -66,6 +66,7 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
 
   const form = useForm<CreateObservationFormData>({
     resolver: zodResolver(createObservationSchema),
@@ -193,31 +194,65 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
   });
 
   const getCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          form.setValue("latitude", position.coords.latitude.toString());
-          form.setValue("longitude", position.coords.longitude.toString());
-          toast({
-            title: "Location Retrieved",
-            description: "GPS coordinates have been added to the observation.",
-          });
-        },
-        (error) => {
-          toast({
-            title: "Location Error",
-            description: "Unable to retrieve your current location.",
-            variant: "destructive",
-          });
-        }
-      );
-    } else {
+    if (!navigator.geolocation) {
       toast({
         title: "GPS Not Available",
         description: "Geolocation is not supported by this browser.",
         variant: "destructive",
       });
+      return;
     }
+
+    setIsGettingLocation(true);
+    toast({
+      title: "Getting Location",
+      description: "Requesting your current location...",
+    });
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude.toFixed(6);
+        const lng = position.coords.longitude.toFixed(6);
+        
+        form.setValue("latitude", lat);
+        form.setValue("longitude", lng);
+        
+        toast({
+          title: "Location Retrieved",
+          description: `GPS coordinates: ${lat}, ${lng}`,
+        });
+        setIsGettingLocation(false);
+      },
+      (error) => {
+        let errorMessage = "Unable to retrieve your current location.";
+        
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = "Location access denied. Please enable location permissions for this site.";
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = "Location information is unavailable. Please try again.";
+            break;
+          case error.TIMEOUT:
+            errorMessage = "Location request timed out. Please try again.";
+            break;
+        }
+        
+        toast({
+          title: "Location Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        
+        console.error("Geolocation error:", error);
+        setIsGettingLocation(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000 // 5 minutes
+      }
+    );
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -249,8 +284,8 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             {/* Area Information */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-lg font-medium text-gray-900 mb-4">Area Information</h4>
+            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Area Information</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -395,8 +430,8 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
             </div>
 
             {/* Sample Collection */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-lg font-medium text-gray-900 mb-4">Sample Collection</h4>
+            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Sample Collection</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <FormField
@@ -482,12 +517,12 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
             </div>
 
             {/* Lab Results */}
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h4 className="text-lg font-medium text-gray-900 mb-4">Lab Results</h4>
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Lab Results</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Asbestos Results */}
-                <div className="border border-gray-300 rounded-lg p-4 bg-white space-y-3">
-                  <h5 className="font-medium text-gray-700 border-b border-gray-200 pb-2">Asbestos Analysis</h5>
+                <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4 bg-white dark:bg-gray-800 space-y-3">
+                  <h5 className="font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600 pb-2">Asbestos Analysis</h5>
                   <FormField
                     control={form.control}
                     name="asbestosType"
@@ -541,8 +576,8 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
                 </div>
 
                 {/* Lead Results */}
-                <div className="border border-gray-300 rounded-lg p-4 bg-white space-y-3">
-                  <h5 className="font-medium text-gray-700 border-b border-gray-200 pb-2">Lead Analysis</h5>
+                <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4 bg-white dark:bg-gray-800 space-y-3">
+                  <h5 className="font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600 pb-2">Lead Analysis</h5>
                   <FormField
                     control={form.control}
                     name="leadResultMgKg"
@@ -572,15 +607,15 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
                     )}
                   />
                   {form.watch("leadResultMgKg") && (
-                    <div className="text-sm text-gray-600">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
                       <strong>% by weight:</strong> {((parseFloat(form.watch("leadResultMgKg") || "0")) / 10000).toFixed(6)}%
                     </div>
                   )}
                 </div>
 
                 {/* Cadmium Results */}
-                <div className="border border-gray-300 rounded-lg p-4 bg-white space-y-3">
-                  <h5 className="font-medium text-gray-700 border-b border-gray-200 pb-2">Cadmium Analysis</h5>
+                <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4 bg-white dark:bg-gray-800 space-y-3">
+                  <h5 className="font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600 pb-2">Cadmium Analysis</h5>
                   <FormField
                     control={form.control}
                     name="cadmiumResultMgKg"
@@ -610,7 +645,7 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
                     )}
                   />
                   {form.watch("cadmiumResultMgKg") && (
-                    <div className="text-sm text-gray-600">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
                       <strong>% by weight:</strong> {((parseFloat(form.watch("cadmiumResultMgKg") || "0")) / 10000).toFixed(6)}%
                     </div>
                   )}
@@ -690,11 +725,12 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
                       type="button"
                       variant="outline"
                       onClick={getCurrentLocation}
+                      disabled={isGettingLocation}
                       className="w-full"
                       data-testid="button-get-location"
                     >
                       <MapPin className="mr-2 h-4 w-4" />
-                      Get Current Location
+                      {isGettingLocation ? "Getting Location..." : "Get Current Location"}
                     </Button>
                   </div>
                 </div>
@@ -702,8 +738,8 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
             </div>
 
             {/* Notes */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-lg font-medium text-gray-900 mb-4">Observation Notes</h4>
+            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Observation Notes</h4>
               <FormField
                 control={form.control}
                 name="notes"
