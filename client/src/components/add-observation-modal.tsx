@@ -486,8 +486,8 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
               <h4 className="text-lg font-medium text-gray-900 mb-4">Lab Results</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Asbestos Results */}
-                <div className="space-y-3">
-                  <h5 className="font-medium text-gray-700">Asbestos Analysis</h5>
+                <div className="border border-gray-300 rounded-lg p-4 bg-white space-y-3">
+                  <h5 className="font-medium text-gray-700 border-b border-gray-200 pb-2">Asbestos Analysis</h5>
                   <FormField
                     control={form.control}
                     name="asbestosType"
@@ -541,8 +541,8 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
                 </div>
 
                 {/* Lead Results */}
-                <div className="space-y-3">
-                  <h5 className="font-medium text-gray-700">Lead Analysis</h5>
+                <div className="border border-gray-300 rounded-lg p-4 bg-white space-y-3">
+                  <h5 className="font-medium text-gray-700 border-b border-gray-200 pb-2">Lead Analysis</h5>
                   <FormField
                     control={form.control}
                     name="leadResultMgKg"
@@ -579,8 +579,8 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
                 </div>
 
                 {/* Cadmium Results */}
-                <div className="space-y-3">
-                  <h5 className="font-medium text-gray-700">Cadmium Analysis</h5>
+                <div className="border border-gray-300 rounded-lg p-4 bg-white space-y-3">
+                  <h5 className="font-medium text-gray-700 border-b border-gray-200 pb-2">Cadmium Analysis</h5>
                   <FormField
                     control={form.control}
                     name="cadmiumResultMgKg"
