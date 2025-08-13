@@ -2,9 +2,13 @@
 
 ## Overview
 
-SiteSurvey Pro is a comprehensive full-stack web application for managing site surveys and environmental assessments. The application allows users to create surveys, record observations, upload photos, and track the progress of site inspections. It's designed for professionals conducting environmental or structural assessments who need to systematically document findings and manage survey data.
+SiteSense is a comprehensive full-stack web application for managing site surveys and environmental assessments. The application allows users to create surveys, record observations, upload photos, and track the progress of site inspections. It's designed for professionals conducting environmental or structural assessments who need to systematically document findings and manage survey data.
 
-## Recent Updates (December 2024)
+## Recent Updates (January 2025)
+- Changed application name from "SiteSurvey Pro" to "SiteSense" 
+- Updated branding throughout application interface and documentation
+
+## Previous Updates (December 2024)
 - Enhanced survey types to support combination surveys (Asbestos + Lead + Cadmium)
 - Expanded material type options for better hazmat survey coverage
 - Fixed TypeScript errors and improved error handling

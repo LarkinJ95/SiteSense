@@ -34,7 +34,7 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
             <div className="flex items-center space-x-2">
               <ClipboardList className="text-primary text-2xl" data-testid="app-logo" />
               <h1 className="text-xl font-semibold text-gray-900" data-testid="app-title">
-                SiteSurvey Pro
+                SiteSense
               </h1>
             </div>
             <nav className="hidden md:flex space-x-8">
