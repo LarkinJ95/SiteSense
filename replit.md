@@ -8,7 +8,10 @@ SiteSense is a comprehensive full-stack web application for managing site survey
 - **Job-Based Air Monitoring System**: Completely restructured air monitoring to be job-centric with comprehensive job management including job name, job number, address, weather conditions, and client information
 - **Air Monitoring Jobs Database**: Added `airMonitoringJobs` table as the primary container for air sampling projects, with air samples now linked to specific jobs rather than just surveys
 - **Advanced Job Management Interface**: Created job-focused UI with job cards showing status, location, weather, dates, and project manager information
+- **GPS Location Integration**: Added one-click GPS coordinate capture for accurate job location recording with proper geolocation permissions handling
+- **Automated Weather Data Retrieval**: Integrated Open-Meteo free weather API for automatic weather condition autofill including temperature, humidity, pressure, wind speed/direction, and weather descriptions
 - **Weather and Environmental Tracking**: Integrated comprehensive environmental condition logging including temperature, humidity, barometric pressure, wind speed/direction, and weather conditions at the job level
+- **Personnel Management System**: Created comprehensive personnel profile creation with medical clearance tracking, certifications, and contact information
 - **Client and Project Management**: Added client name, project manager, and detailed job information tracking for professional project management
 - **Advanced Search & Filtering System**: Implemented comprehensive filtering by status, survey type, date range, and sorting options with persistent URL state
 - **Bulk Operations**: Added multi-select functionality for surveys with bulk download and delete operations
