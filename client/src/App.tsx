@@ -7,6 +7,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppHeader } from "@/components/app-header";
 import { CreateSurveyModal } from "@/components/create-survey-modal";
 import Dashboard from "@/pages/dashboard";
+import Surveys from "@/pages/surveys";
+import Reports from "@/pages/reports";
+import Settings from "@/pages/settings";
 import SurveyDetail from "@/pages/survey-detail";
 import NotFound from "@/pages/not-found";
 
@@ -14,7 +17,10 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/surveys" component={Surveys} />
       <Route path="/surveys/:id" component={SurveyDetail} />
+      <Route path="/reports" component={Reports} />
+      <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
   );
