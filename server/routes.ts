@@ -402,6 +402,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk operations for surveys
+  app.post("/api/surveys/bulk", async (req, res) => {
+    try {
+      const { action, surveyIds } = req.body;
+      
+      if (!action || !Array.isArray(surveyIds) || surveyIds.length === 0) {
+        return res.status(400).json({ error: "Invalid action or survey IDs" });
+      }
+
+      let result = {};
+      
+      if (action === "delete") {
+        // Delete multiple surveys
+        for (const surveyId of surveyIds) {
+          await storage.deleteSurvey(surveyId);
+        }
+        result = { message: `${surveyIds.length} surveys deleted successfully` };
+        
+      } else if (action === "download") {
+        // Generate reports for multiple surveys
+        const reports = [];
+        for (const surveyId of surveyIds) {
+          const survey = await storage.getSurvey(surveyId);
+          const observations = await storage.getObservations(surveyId);
+          
+          if (survey && observations) {
+            const reportHtml = generateSurveyReport(survey, observations);
+            reports.push({
+              surveyId,
+              siteName: survey.siteName,
+              html: reportHtml
+            });
+          }
+        }
+        result = { reports, message: `${reports.length} reports generated successfully` };
+        
+      } else {
+        return res.status(400).json({ error: "Unsupported bulk action" });
+      }
+
+      res.json(result);
+      
+    } catch (error) {
+      console.error("Error performing bulk operation:", error);
+      res.status(500).json({ error: "Failed to perform bulk operation" });
+    }
+  });
+
   app.put("/api/surveys/:id", async (req, res) => {
     try {
       const validatedData = insertSurveySchema.partial().parse(req.body);

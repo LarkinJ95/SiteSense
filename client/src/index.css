@@ -100,4 +100,40 @@
   .text-danger-custom {
     color: hsl(0, 84%, 60%);
   }
+  
+  /* Mobile-first responsive utilities */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Improved touch interactions */
+  .touch-card {
+    @apply transition-all duration-200 active:scale-[0.98] hover:shadow-md;
+  }
+  
+  /* Mobile-optimized spacing */
+  .mobile-spacing {
+    @apply px-4 py-3 sm:px-6 sm:py-4;
+  }
+  
+  /* Responsive text sizing */
+  .responsive-text {
+    @apply text-sm sm:text-base;
+  }
+  
+  /* Mobile-friendly buttons */
+  .mobile-button {
+    @apply h-12 px-4 text-base font-medium touch-target;
+  }
+  
+  /* Better scrolling on mobile */
+  .mobile-scroll {
+    @apply overflow-x-auto;
+  }
+  
+  /* Touch-optimized cards */
+  .touch-optimized {
+    @apply active:bg-gray-50 dark:active:bg-gray-800 transition-colors;
+  }
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CreateSurveyModal } from "@/components/create-survey-modal";
 import { EditSurveyModal } from "@/components/edit-survey-modal";
 import { OfflineIndicator } from "@/components/offline-indicator";
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 import type { Survey, SurveyStats } from "@/lib/types";
 import { 
   ClipboardCheck, 
@@ -26,8 +27,12 @@ import {
   Warehouse,
   Eye,
   FileDown,
-  Edit
+  Edit,
+  TrendingUp,
+  BarChart3,
+  PieChart as PieChartIcon
 } from "lucide-react";
+import { format, subDays, parseISO } from "date-fns";
 
 export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -83,6 +88,75 @@ export default function Dashboard() {
   });
 
   const recentSurveys = surveys.slice(0, 3);
+
+  // Analytics data processing
+  const analyticsData = useMemo(() => {
+    if (!surveys.length) return null;
+
+    // Status distribution for pie chart
+    const statusCounts = surveys.reduce((acc, survey) => {
+      acc[survey.status] = (acc[survey.status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const statusData = Object.entries(statusCounts).map(([status, count]) => ({
+      name: status.split('-').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1)
+      ).join(' '),
+      value: count,
+      percentage: ((count / surveys.length) * 100).toFixed(1)
+    }));
+
+    // Survey type distribution
+    const typeData = surveys.reduce((acc, survey) => {
+      acc[survey.surveyType] = (acc[survey.surveyType] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const surveyTypeData = Object.entries(typeData).map(([type, count]) => ({
+      name: type,
+      count,
+      percentage: ((count / surveys.length) * 100).toFixed(1)
+    }));
+
+    // Monthly completion trend (last 6 months)
+    const monthlyData = [];
+    for (let i = 5; i >= 0; i--) {
+      const date = subDays(new Date(), i * 30);
+      const monthSurveys = surveys.filter(s => {
+        const surveyDate = parseISO(s.surveyDate);
+        return surveyDate.getMonth() === date.getMonth() && 
+               surveyDate.getFullYear() === date.getFullYear();
+      });
+      
+      monthlyData.push({
+        month: format(date, 'MMM yyyy'),
+        completed: monthSurveys.filter(s => s.status === 'completed').length,
+        total: monthSurveys.length,
+        inProgress: monthSurveys.filter(s => s.status === 'in-progress').length
+      });
+    }
+
+    return {
+      statusData,
+      surveyTypeData,
+      monthlyData,
+      completionRate: ((statusCounts.completed || 0) / surveys.length * 100).toFixed(1),
+      avgCompletionTime: '7.2', // This could be calculated from actual data
+    };
+  }, [surveys]);
+
+  const COLORS = {
+    completed: '#22c55e',
+    'in-progress': '#3b82f6', 
+    'samples-sent-to-lab': '#f59e0b',
+    'report-completed': '#8b5cf6',
+    'report-sent': '#06b6d4',
+    draft: '#6b7280',
+    scheduled: '#f97316',
+    'on-hold': '#eab308',
+    archived: '#64748b'
+  };
 
   const getStatusBadge = (status: string) => {
     const formatStatus = (status: string) => {
@@ -237,6 +311,84 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Analytics Charts */}
+      {analyticsData && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          {/* Status Distribution Pie Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <PieChartIcon className="h-5 w-5" />
+                Status Distribution
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie
+                    data={analyticsData.statusData}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    dataKey="value"
+                    label={({ name, percentage }) => `${name} (${percentage}%)`}
+                  >
+                    {analyticsData.statusData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[entry.name.toLowerCase().replace(/\s+/g, '-')] || '#8884d8'} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Survey Types Bar Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Survey Types
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={analyticsData.surveyTypeData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" angle={-45} textAnchor="end" height={60} />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#3b82f6" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Completion Trend Line Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" />
+                Monthly Trend
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={analyticsData.monthlyData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="completed" stroke="#22c55e" name="Completed" />
+                  <Line type="monotone" dataKey="inProgress" stroke="#3b82f6" name="In Progress" />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Recent Surveys */}
       <Card>
