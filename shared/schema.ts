@@ -68,10 +68,17 @@ export const observationPhotoRelations = relations(observationPhotos, ({ one }) 
   }),
 }));
 
-export const insertSurveySchema = createInsertSchema(surveys).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+export const insertSurveySchema = z.object({
+  siteName: z.string().min(1),
+  address: z.string().optional(),
+  surveyType: z.string().min(1),
+  surveyDate: z.string().or(z.date()).transform((val) => new Date(val)),
+  inspector: z.string().min(1),
+  notes: z.string().optional(),
+  enableGPS: z.boolean().optional().default(false),
+  useTemplate: z.boolean().optional().default(false),
+  requirePhotos: z.boolean().optional().default(false),
+  status: z.string().optional().default("draft"),
 });
 
 export const insertObservationSchema = createInsertSchema(observations).omit({

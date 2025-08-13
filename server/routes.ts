@@ -58,7 +58,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const survey = await storage.createSurvey(validatedData);
       res.status(201).json(survey);
     } catch (error) {
-      res.status(400).json({ message: "Invalid survey data", error: error.message });
+      res.status(400).json({ 
+        message: "Invalid survey data", 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
