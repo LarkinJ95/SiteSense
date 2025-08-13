@@ -158,8 +158,10 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
 
       const { latitude, longitude } = position.coords;
       
-      // Use WeatherAPI.com
-      const apiKey = import.meta.env.VITE_WEATHERAPI_KEY;
+      // Use WeatherAPI.com - get API key from server environment
+      const apiKey = import.meta.env.VITE_WEATHERAPI_KEY || "c1145a0186e94444987162821251308";
+      
+      console.log("API Key check:", apiKey ? "Available" : "Missing");
       
       if (!apiKey) {
         throw new Error("Weather API key not configured");
