@@ -50,9 +50,14 @@ const surveyTypes = [
 
 const statusOptions = [
   { value: "draft", label: "Draft" },
+  { value: "scheduled", label: "Scheduled" },
   { value: "in-progress", label: "In Progress" },
+  { value: "samples-sent-to-lab", label: "Samples Sent to Lab" },
+  { value: "report-completed", label: "Report Completed" },
+  { value: "report-sent", label: "Report Sent" },
   { value: "completed", label: "Completed" },
-  { value: "on-hold", label: "On Hold" }
+  { value: "on-hold", label: "On Hold" },
+  { value: "archived", label: "Archived" }
 ];
 
 export function EditSurveyModal({ survey, open, onOpenChange }: EditSurveyModalProps) {

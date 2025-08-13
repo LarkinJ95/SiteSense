@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, MapPin, Calendar, User, Edit } from "lucide-react";
+import { Search, Plus, MapPin, Calendar, User, Edit, FileText } from "lucide-react";
 import { CreateSurveyModal } from "@/components/create-survey-modal";
 import { EditSurveyModal } from "@/components/edit-survey-modal";
 import type { Survey } from "@shared/schema";
@@ -27,15 +27,27 @@ export default function Surveys() {
   );
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case "completed":
-        return "bg-green-100 text-green-800";
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+      case "report-sent":
+        return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200";
+      case "report-completed":
+        return "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200";
+      case "samples-sent-to-lab":
+        return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
       case "in-progress":
-        return "bg-yellow-100 text-yellow-800";
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+      case "scheduled":
+        return "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200";
       case "draft":
-        return "bg-gray-100 text-gray-800";
+        return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200";
+      case "on-hold":
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
+      case "archived":
+        return "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200";
     }
   };
 
@@ -113,7 +125,9 @@ export default function Surveys() {
                   <div className="flex justify-between items-start">
                     <CardTitle className="text-lg truncate pr-2">{survey.siteName}</CardTitle>
                     <Badge className={getStatusColor(survey.status)} data-testid={`status-${survey.status}`}>
-                      {survey.status}
+                      {survey.status.split('-').map(word => 
+                        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                      ).join(' ')}
                     </Badge>
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-400 capitalize">{survey.surveyType}</div>

@@ -15,7 +15,7 @@ export const surveys = pgTable("surveys", {
   enableGPS: boolean("enable_gps").default(false),
   useTemplate: boolean("use_template").default(false),
   requirePhotos: boolean("require_photos").default(false),
-  status: text("status").notNull().default("draft"), // draft, in-progress, completed, reviewed, archived
+  status: text("status").notNull().default("draft"), // draft, scheduled, in-progress, samples-sent-to-lab, report-completed, report-sent, completed, on-hold, archived
   // Weather conditions during survey
   weatherConditions: text("weather_conditions"),
   temperature: decimal("temperature"), // in Celsius
