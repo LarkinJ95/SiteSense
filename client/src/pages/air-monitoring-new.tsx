@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Search, MapPin, Calendar, Users, FileText, Wind, CloudSun, Clock, Beaker, Trash2, Edit, Download, Settings } from "lucide-react";
 import { CreateAirJobModal } from "@/components/create-air-job-modal";
@@ -24,6 +25,12 @@ import { z } from "zod";
 const airSampleFormSchema = insertAirSampleSchema.extend({
   startTime: z.string(),
   endTime: z.string().optional(),
+  // Extend for form handling
+  result: z.string().optional(),
+  resultUnit: z.string().optional(),
+  uncertainty: z.string().optional(),
+  regulatoryLimit: z.string().optional(),
+  labReportDate: z.string().optional(),
 });
 
 type AirSampleFormData = z.infer<typeof airSampleFormSchema>;
@@ -693,6 +700,20 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
       analysisMethod: initialData?.analysisMethod || '',
       fieldNotes: initialData?.fieldNotes || '',
       status: initialData?.status || 'collecting',
+      
+      // Lab Results defaults
+      result: initialData?.result?.toString() || '',
+      resultUnit: initialData?.resultUnit || '',
+      uncertainty: initialData?.uncertainty?.toString() || '',
+      exceedsLimit: initialData?.exceedsLimit || false,
+      regulatoryLimit: initialData?.regulatoryLimit?.toString() || '',
+      limitType: initialData?.limitType || '',
+      
+      // Results posting defaults
+      labReportDate: initialData?.labReportDate ? new Date(initialData.labReportDate).toISOString().slice(0, 10) : '',
+      reportedBy: initialData?.reportedBy || '',
+      reviewedBy: initialData?.reviewedBy || '',
+      reportNotes: initialData?.reportNotes || '',
     },
   });
 
@@ -702,6 +723,10 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
       startTime: new Date(data.startTime),
       endTime: data.endTime ? new Date(data.endTime) : undefined,
       flowRate: data.flowRate ? parseFloat(data.flowRate as string) : undefined,
+      result: data.result ? parseFloat(data.result) : undefined,
+      uncertainty: data.uncertainty ? parseFloat(data.uncertainty) : undefined,
+      regulatoryLimit: data.regulatoryLimit ? parseFloat(data.regulatoryLimit) : undefined,
+      labReportDate: data.labReportDate ? new Date(data.labReportDate) : undefined,
     };
     onSubmit(submitData);
   };
@@ -975,7 +1000,218 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
           )}
         />
 
-        <div className="flex justify-end gap-2">
+        {/* Lab Results Section */}
+        <div className="pt-6 border-t">
+          <h4 className="text-lg font-medium mb-4 text-gray-900 dark:text-gray-100">Lab Results</h4>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <FormField
+              control={form.control}
+              name="result"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Result</FormLabel>
+                  <FormControl>
+                    <Input 
+                      {...field} 
+                      value={field.value || ''}
+                      type="number"
+                      step="0.001"
+                      placeholder="0.015"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="resultUnit"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Unit</FormLabel>
+                  <FormControl>
+                    <Input 
+                      {...field} 
+                      value={field.value || ''}
+                      placeholder="f/cc, mg/m³, ppm"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="uncertainty"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Uncertainty (±)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      {...field} 
+                      value={field.value || ''}
+                      type="number"
+                      step="0.001"
+                      placeholder="0.002"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="regulatoryLimit"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Regulatory Limit</FormLabel>
+                  <FormControl>
+                    <Input 
+                      {...field} 
+                      value={field.value || ''}
+                      type="number"
+                      step="0.001"
+                      placeholder="0.1"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="limitType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Limit Type</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value || ''}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select limit type" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="PEL">PEL (Permissible Exposure Limit)</SelectItem>
+                      <SelectItem value="TLV">TLV (Threshold Limit Value)</SelectItem>
+                      <SelectItem value="REL">REL (Recommended Exposure Limit)</SelectItem>
+                      <SelectItem value="STEL">STEL (Short Term Exposure Limit)</SelectItem>
+                      <SelectItem value="TWA">TWA (Time Weighted Average)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="exceedsLimit"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                  <div className="space-y-0.5">
+                    <FormLabel>Exceeds Regulatory Limit</FormLabel>
+                    <div className="text-sm text-gray-500">
+                      Mark if result exceeds regulatory limits
+                    </div>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </div>
+
+          {/* Results Posting Section */}
+          <div className="mt-6 pt-6 border-t">
+            <h5 className="text-md font-medium mb-4 text-gray-900 dark:text-gray-100">Results Posting</h5>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="labReportDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Lab Report Date</FormLabel>
+                    <FormControl>
+                      <Input 
+                        {...field} 
+                        value={field.value || ''}
+                        type="date"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="reportedBy"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Reported By</FormLabel>
+                    <FormControl>
+                      <Input 
+                        {...field} 
+                        value={field.value || ''}
+                        placeholder="Lab technician or analyst name"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="reviewedBy"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Reviewed By</FormLabel>
+                    <FormControl>
+                      <Input 
+                        {...field} 
+                        value={field.value || ''}
+                        placeholder="Quality control reviewer"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <FormField
+              control={form.control}
+              name="reportNotes"
+              render={({ field }) => (
+                <FormItem className="mt-4">
+                  <FormLabel>Report Notes</FormLabel>
+                  <FormControl>
+                    <Textarea 
+                      {...field} 
+                      value={field.value || ''}
+                      placeholder="Additional notes about the lab results or analysis..."
+                      rows={3}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-6">
           <Button type="button" variant="outline" onClick={onSuccess}>
             Cancel
           </Button>

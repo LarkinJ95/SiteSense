@@ -311,8 +311,9 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async deleteAirSample(id: string): Promise<void> {
-    await db.delete(airSamples).where(eq(airSamples.id, id));
+  async deleteAirSample(id: string): Promise<boolean> {
+    const result = await db.delete(airSamples).where(eq(airSamples.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
   }
 
   // Air monitoring equipment methods
@@ -755,11 +756,12 @@ export class DatabaseStorage implements IStorage {
     }
   ];
 
-  async getAirMonitoringEquipment(): Promise<any[]> {
+  // Equipment management for advanced air monitoring (memory-based for now)
+  async getAirMonitoringEquipmentList(): Promise<any[]> {
     return this.airMonitoringEquipment;
   }
 
-  async createAirMonitoringEquipment(equipmentData: any): Promise<any> {
+  async createAirMonitoringEquipmentItem(equipmentData: any): Promise<any> {
     const equipment = { 
       id: nanoid(), 
       ...equipmentData, 
@@ -769,7 +771,7 @@ export class DatabaseStorage implements IStorage {
     return equipment;
   }
 
-  async updateAirMonitoringEquipment(id: string, updates: any): Promise<any> {
+  async updateAirMonitoringEquipmentItem(id: string, updates: any): Promise<any> {
     const index = this.airMonitoringEquipment.findIndex(e => e.id === id);
     if (index === -1) throw new Error('Equipment not found');
     this.airMonitoringEquipment[index] = { 

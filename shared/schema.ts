@@ -196,6 +196,7 @@ export const personnelProfiles = pgTable('personnel_profiles', {
   certifications: text('certifications').array(),
   medicalClearance: boolean('medical_clearance').default(false),
   lastMedicalDate: text('last_medical_date'),
+  stateAccreditationNumber: text('state_accreditation_number'),
   notes: text('notes'),
   isActive: boolean('is_active').default(true),
   createdAt: timestamp('created_at').default(sql`now()`),
@@ -352,6 +353,12 @@ export const airSamples = pgTable('air_samples', {
   regulatoryLimit: decimal('regulatory_limit'),
   limitType: text('limit_type'), // PEL, TLV, REL, etc.
   
+  // Results posting
+  labReportDate: timestamp('lab_report_date'),
+  reportedBy: text('reported_by'),
+  reviewedBy: text('reviewed_by'),
+  reportNotes: text('report_notes'),
+  
   // Quality control
   blankCorrection: boolean('blank_correction').default(false),
   qcFlags: text('qc_flags').array(),
@@ -433,6 +440,8 @@ export const insertPersonnelProfileSchema = createInsertSchema(personnelProfiles
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  stateAccreditationNumber: z.string().optional(),
 });
 
 export const insertAirMonitoringJobSchema = createInsertSchema(airMonitoringJobs).omit({
@@ -445,6 +454,21 @@ export const insertAirSampleSchema = createInsertSchema(airSamples).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  // Lab Results section
+  result: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  resultUnit: z.string().optional(),
+  uncertainty: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  qualifiers: z.array(z.string()).optional(),
+  exceedsLimit: z.boolean().optional(),
+  regulatoryLimit: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  limitType: z.string().optional(),
+  
+  // Analysis results posting
+  labReportDate: z.string().or(z.date()).optional().transform((val) => val ? new Date(val) : undefined),
+  reportedBy: z.string().optional(),
+  reviewedBy: z.string().optional(),
+  reportNotes: z.string().optional(),
 });
 
 export const insertAirMonitoringEquipmentSchema = createInsertSchema(airMonitoringEquipment).omit({
