@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AddObservationModal } from "@/components/add-observation-modal";
+import { EditSurveyModal } from "@/components/edit-survey-modal";
 import { ObservationMap } from "@/components/observation-map";
 import { SurveyChecklist } from "@/components/survey-checklist";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -35,6 +36,7 @@ export default function SurveyDetail() {
   const [, setLocation] = useLocation();
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingObservation, setEditingObservation] = useState<Observation | null>(null);
+  const [editSurvey, setEditSurvey] = useState<Survey | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -295,6 +297,15 @@ export default function SurveyDetail() {
               <Button 
                 variant="outline" 
                 size="sm"
+                onClick={() => setEditSurvey(survey)}
+                data-testid="button-edit-survey"
+              >
+                <Edit className="mr-2 h-4 w-4" />
+                Edit Survey
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
                 onClick={() => generateReportMutation.mutate()}
                 disabled={generateReportMutation.isPending}
                 data-testid="button-generate-report"
@@ -511,6 +522,12 @@ export default function SurveyDetail() {
         }}
         surveyId={survey.id}
         editingObservation={editingObservation}
+      />
+      
+      <EditSurveyModal 
+        survey={editSurvey}
+        open={!!editSurvey} 
+        onOpenChange={(open) => !open && setEditSurvey(null)}
       />
     </div>
   );
