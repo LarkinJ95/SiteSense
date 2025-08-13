@@ -11,10 +11,13 @@ import { ThemeProvider } from "@/contexts/theme-context";
 import Dashboard from "@/pages/dashboard";
 import Surveys from "@/pages/surveys";
 import Reports from "@/pages/reports";
-import Settings from "@/pages/settings";
+import SystemSettings from "@/pages/settings";
 import SurveyDetail from "@/pages/survey-detail";
 import FieldTools from "@/pages/field-tools";
 import Templates from "@/pages/templates";
+import ReportBuilder from "@/pages/report-builder";
+import ClientPortal from "@/pages/client-portal";
+import Messaging from "@/pages/messaging";
 import AirMonitoring from "@/pages/air-monitoring-new";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
@@ -34,9 +37,12 @@ function Router() {
       <Route path="/surveys" component={Surveys} />
       <Route path="/surveys/:id" component={SurveyDetail} />
       <Route path="/reports" component={Reports} />
-      <Route path="/settings" component={Settings} />
+      <Route path="/settings" component={SystemSettings} />
       <Route path="/field-tools" component={FieldTools} />
       <Route path="/templates" component={Templates} />
+      <Route path="/report-builder" component={ReportBuilder} />
+      <Route path="/client-portal" component={ClientPortal} />
+      <Route path="/messaging" component={Messaging} />
       <Route path="/air-monitoring" component={AirMonitoring} />
       <Route path="/white-label" component={WhiteLabelDashboard} />
       <Route component={NotFound} />

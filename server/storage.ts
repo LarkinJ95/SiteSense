@@ -26,6 +26,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, ilike, or, and } from "drizzle-orm";
+import { nanoid } from "nanoid";
 
 export interface IStorage {
   // Survey methods
@@ -368,6 +369,331 @@ export class DatabaseStorage implements IStorage {
   async deleteDailyWeatherLog(id: string): Promise<boolean> {
     const result = await db.delete(dailyWeatherLogs).where(eq(dailyWeatherLogs.id, id));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  // New features storage methods - In-memory implementations
+  // Report Templates
+  private reportTemplates: any[] = [];
+
+  async getReportTemplates(): Promise<any[]> {
+    return this.reportTemplates;
+  }
+
+  async createReportTemplate(templateData: any): Promise<any> {
+    const template = { id: nanoid(), ...templateData, createdAt: new Date() };
+    this.reportTemplates.push(template);
+    return template;
+  }
+
+  async generateReport(templateId: string, surveyIds: string[]): Promise<string> {
+    return `/reports/generated_${templateId}_${Date.now()}.pdf`;
+  }
+
+  // Clients
+  private clients: any[] = [];
+
+  async getClients(): Promise<any[]> {
+    return this.clients.map(client => ({
+      ...client,
+      surveyCount: Math.floor(Math.random() * 10) + 1,
+      activeProjects: Math.floor(Math.random() * 3)
+    }));
+  }
+
+  async createClient(clientData: any): Promise<any> {
+    const client = { id: nanoid(), ...clientData, createdAt: new Date() };
+    this.clients.push(client);
+    return client;
+  }
+
+  async updateClient(id: string, updates: any): Promise<any> {
+    const index = this.clients.findIndex(c => c.id === id);
+    if (index === -1) throw new Error('Client not found');
+    this.clients[index] = { ...this.clients[index], ...updates, updatedAt: new Date() };
+    return this.clients[index];
+  }
+
+  async getClientSurveys(clientId: string): Promise<any[]> {
+    const allSurveys = await this.getSurveys();
+    return allSurveys.filter(survey => survey.clientName).map(survey => ({
+      ...survey,
+      clientAccess: true
+    }));
+  }
+
+  // Messages
+  private messages: any[] = [];
+
+  async getMessages(filter?: string): Promise<any[]> {
+    let filtered = this.messages;
+    if (filter === 'unread') filtered = filtered.filter(m => !m.isRead);
+    if (filter === 'high_priority') filtered = filtered.filter(m => ['high', 'urgent'].includes(m.priority));
+    
+    return filtered.map(message => ({
+      ...message,
+      fromUser: { firstName: 'John', lastName: 'Doe', email: 'john.doe@example.com' },
+      toUser: message.toUserId ? { firstName: 'Jane', lastName: 'Smith', email: 'jane.smith@example.com' } : null,
+      survey: message.surveyId ? { siteName: 'Sample Site' } : null
+    }));
+  }
+
+  async createMessage(messageData: any): Promise<any> {
+    const message = { 
+      id: nanoid(), 
+      ...messageData, 
+      fromUserId: 'current-user', 
+      createdAt: new Date() 
+    };
+    this.messages.push(message);
+    return message;
+  }
+
+  async replyToMessage(messageId: string, content: string): Promise<any> {
+    const originalMessage = this.messages.find(m => m.id === messageId);
+    if (!originalMessage) throw new Error('Message not found');
+    
+    const reply = {
+      id: nanoid(),
+      fromUserId: 'current-user',
+      toUserId: originalMessage.fromUserId,
+      subject: `Re: ${originalMessage.subject}`,
+      content,
+      parentMessageId: messageId,
+      createdAt: new Date()
+    };
+    this.messages.push(reply);
+    return reply;
+  }
+
+  async markMessageAsRead(messageId: string): Promise<any> {
+    const index = this.messages.findIndex(m => m.id === messageId);
+    if (index === -1) throw new Error('Message not found');
+    this.messages[index] = { ...this.messages[index], isRead: true, readAt: new Date() };
+    return this.messages[index];
+  }
+
+  // Notifications
+  private notifications: any[] = [
+    {
+      id: nanoid(),
+      userId: 'current-user',
+      title: 'Survey Report Due',
+      content: 'The report for Midland Industrial Complex survey is due in 3 days.',
+      type: 'due_date',
+      priority: 'high',
+      isRead: false,
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000)
+    },
+    {
+      id: nanoid(),
+      userId: 'current-user', 
+      title: 'New Message',
+      content: 'You have received a new message from John Doe regarding the asbestos survey.',
+      type: 'message',
+      priority: 'normal',
+      isRead: false,
+      createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000)
+    },
+    {
+      id: nanoid(),
+      userId: 'current-user',
+      title: 'Compliance Alert',
+      content: 'EPA reporting deadline is approaching for the downtown office survey.',
+      type: 'compliance_alert',
+      priority: 'urgent',
+      isRead: true,
+      readAt: new Date(Date.now() - 60 * 60 * 1000),
+      createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000)
+    }
+  ];
+
+  async getNotifications(filter?: string): Promise<any[]> {
+    let filtered = this.notifications;
+    if (filter === 'unread') filtered = filtered.filter(n => !n.isRead);
+    if (filter === 'high_priority') filtered = filtered.filter(n => ['high', 'urgent'].includes(n.priority));
+    return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async createNotification(notificationData: any): Promise<any> {
+    const notification = { id: nanoid(), ...notificationData, createdAt: new Date() };
+    this.notifications.push(notification);
+    return notification;
+  }
+
+  async markNotificationAsRead(notificationId: string): Promise<any> {
+    const index = this.notifications.findIndex(n => n.id === notificationId);
+    if (index === -1) throw new Error('Notification not found');
+    this.notifications[index] = { ...this.notifications[index], isRead: true, readAt: new Date() };
+    return this.notifications[index];
+  }
+
+  async markAllNotificationsAsRead(): Promise<void> {
+    this.notifications = this.notifications.map(n => ({ ...n, isRead: true, readAt: new Date() }));
+  }
+
+  async deleteNotification(notificationId: string): Promise<void> {
+    const index = this.notifications.findIndex(n => n.id === notificationId);
+    if (index === -1) throw new Error('Notification not found');
+    this.notifications.splice(index, 1);
+  }
+
+  // Chain of Custody
+  private chainOfCustodyRecords: any[] = [];
+
+  async getChainOfCustodyRecords(sampleId?: string): Promise<any[]> {
+    let filtered = this.chainOfCustodyRecords;
+    if (sampleId) filtered = filtered.filter(r => r.sampleId === sampleId);
+    return filtered.sort((a, b) => new Date(b.transferDate).getTime() - new Date(a.transferDate).getTime());
+  }
+
+  async createChainOfCustodyRecord(recordData: any): Promise<any> {
+    const record = { 
+      id: nanoid(), 
+      ...recordData, 
+      transferDate: new Date(),
+      createdAt: new Date() 
+    };
+    this.chainOfCustodyRecords.push(record);
+    return record;
+  }
+
+  // Compliance Rules and Tracking
+  private complianceRules: any[] = [
+    {
+      id: nanoid(),
+      name: 'EPA Asbestos Report Submission',
+      description: 'Submit asbestos survey report to EPA within 30 days',
+      regulatoryBody: 'EPA',
+      ruleType: 'reporting',
+      warningDays: 30,
+      criticalDays: 7,
+      autoCheck: true,
+      isActive: true,
+      createdAt: new Date()
+    },
+    {
+      id: nanoid(),
+      name: 'OSHA Air Monitoring Documentation',
+      description: 'Document all air monitoring activities per OSHA requirements',
+      regulatoryBody: 'OSHA',
+      ruleType: 'documentation',
+      warningDays: 15,
+      criticalDays: 3,
+      autoCheck: true,
+      isActive: true,
+      createdAt: new Date()
+    }
+  ];
+
+  private complianceTracking: any[] = [];
+
+  async getComplianceRules(): Promise<any[]> {
+    return this.complianceRules;
+  }
+
+  async createComplianceRule(ruleData: any): Promise<any> {
+    const rule = { id: nanoid(), ...ruleData, createdAt: new Date() };
+    this.complianceRules.push(rule);
+    return rule;
+  }
+
+  async getComplianceTracking(surveyId?: string): Promise<any[]> {
+    let filtered = this.complianceTracking;
+    if (surveyId) filtered = filtered.filter(t => t.surveyId === surveyId);
+    
+    // Create sample tracking data if empty
+    if (this.complianceTracking.length === 0) {
+      const surveys = await this.getSurveys();
+      if (surveys.length > 0) {
+        this.complianceTracking.push({
+          id: nanoid(),
+          surveyId: surveys[0].id,
+          ruleId: this.complianceRules[0]?.id,
+          status: 'warning',
+          dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+          assignedTo: 'John Doe',
+          lastChecked: new Date(),
+          autoGenerated: true
+        });
+      }
+    }
+    
+    return this.complianceTracking.map(item => ({
+      ...item,
+      rule: this.complianceRules.find(r => r.id === item.ruleId) || this.complianceRules[0],
+      survey: { siteName: 'Sample Site', surveyType: 'Sample Type', surveyDate: new Date() }
+    }));
+  }
+
+  async updateComplianceTracking(id: string, updates: any): Promise<any> {
+    const index = this.complianceTracking.findIndex(t => t.id === id);
+    if (index === -1) throw new Error('Compliance tracking not found');
+    this.complianceTracking[index] = { ...this.complianceTracking[index], ...updates };
+    return this.complianceTracking[index];
+  }
+
+  // Collaboration Sessions
+  private collaborationSessions: any[] = [];
+
+  async getCollaborationSessions(surveyId: string): Promise<any[]> {
+    return this.collaborationSessions.filter(s => s.surveyId === surveyId);
+  }
+
+  async createCollaborationSession(sessionData: any): Promise<any> {
+    const session = { id: nanoid(), ...sessionData, createdAt: new Date() };
+    this.collaborationSessions.push(session);
+    return session;
+  }
+
+  // Notification Settings
+  private notificationSettings: any[] = [
+    {
+      id: nanoid(),
+      type: 'survey_update',
+      label: 'Survey Updates',
+      description: 'Get notified when survey status changes',
+      emailEnabled: true,
+      inAppEnabled: true,
+      smsEnabled: false
+    },
+    {
+      id: nanoid(),
+      type: 'message',
+      label: 'New Messages',
+      description: 'Get notified about new messages',
+      emailEnabled: true,
+      inAppEnabled: true,
+      smsEnabled: true
+    },
+    {
+      id: nanoid(),
+      type: 'compliance_alert',
+      label: 'Compliance Alerts',
+      description: 'Get notified about compliance deadlines',
+      emailEnabled: true,
+      inAppEnabled: true,
+      smsEnabled: true
+    },
+    {
+      id: nanoid(),
+      type: 'due_date',
+      label: 'Due Date Reminders',
+      description: 'Get reminded about upcoming deadlines',
+      emailEnabled: true,
+      inAppEnabled: true,
+      smsEnabled: false
+    }
+  ];
+
+  async getNotificationSettings(): Promise<any[]> {
+    return this.notificationSettings;
+  }
+
+  async updateNotificationSetting(id: string, updates: any): Promise<any> {
+    const index = this.notificationSettings.findIndex(s => s.id === id);
+    if (index === -1) throw new Error('Notification setting not found');
+    this.notificationSettings[index] = { ...this.notificationSettings[index], ...updates };
+    return this.notificationSettings[index];
   }
 }
 

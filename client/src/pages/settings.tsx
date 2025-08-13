@@ -1,416 +1,543 @@
 import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { 
-  Save, 
-  User, 
   Bell, 
-  Database, 
+  Settings, 
   Shield, 
-  Download,
-  Upload,
-  Trash2,
+  FileText, 
+  Users,
   AlertTriangle,
-  Palette,
-  Sun,
-  Moon,
-  Monitor
+  CheckCircle,
+  Clock,
+  Plus,
+  Edit,
+  Trash2,
+  Save
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useTheme } from "@/contexts/theme-context";
+import { apiRequest } from "@/lib/queryClient";
 
-export default function Settings() {
+interface NotificationSetting {
+  id: string;
+  type: string;
+  label: string;
+  description: string;
+  emailEnabled: boolean;
+  inAppEnabled: boolean;
+  smsEnabled: boolean;
+}
+
+interface ComplianceRule {
+  id: string;
+  name: string;
+  description?: string;
+  regulatoryBody: string;
+  ruleType: string;
+  warningDays: number;
+  criticalDays: number;
+  autoCheck: boolean;
+  isActive: boolean;
+}
+
+export default function SystemSettings() {
+  const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
+  const [selectedRule, setSelectedRule] = useState<ComplianceRule | null>(null);
   const { toast } = useToast();
-  const { theme, setTheme } = useTheme();
-  const [settings, setSettings] = useState({
-    // User Preferences
-    defaultInspector: "John Smith",
-    defaultSurveyType: "asbestos",
-    enableGPSByDefault: true,
-    requirePhotosDefault: false,
-    autoSaveInterval: 5,
-    
-    // Notifications
-    emailNotifications: true,
-    pushNotifications: false,
-    surveyReminders: true,
-    reportReadyAlerts: true,
-    
-    // Data & Privacy
-    retentionPeriod: 365,
-    anonymizeData: false,
-    shareAnalytics: true,
+  const queryClient = useQueryClient();
+
+  const [newRule, setNewRule] = useState({
+    name: "",
+    description: "",
+    regulatoryBody: "EPA",
+    ruleType: "time_limit",
+    warningDays: 30,
+    criticalDays: 7,
+    autoCheck: true,
+    isActive: true,
   });
 
-  const handleSave = () => {
-    // In a real app, this would save to the backend
-    toast({
-      title: "Settings saved",
-      description: "Your preferences have been updated successfully.",
+  // Fetch notification settings
+  const { data: notificationSettings, isLoading: loadingNotifications } = useQuery({
+    queryKey: ["/api/settings/notifications"],
+    queryFn: () => apiRequest("GET", "/api/settings/notifications"),
+  });
+
+  // Fetch compliance rules
+  const { data: complianceRules, isLoading: loadingCompliance } = useQuery({
+    queryKey: ["/api/compliance-rules"],
+    queryFn: () => apiRequest("GET", "/api/compliance-rules"),
+  });
+
+  // Update notification settings
+  const updateNotificationMutation = useMutation({
+    mutationFn: async ({ settingId, updates }: { settingId: string; updates: Partial<NotificationSetting> }) => {
+      return await apiRequest("PUT", `/api/settings/notifications/${settingId}`, updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/notifications"] });
+      toast({
+        title: "Settings Updated",
+        description: "Notification preferences have been saved.",
+      });
+    },
+  });
+
+  // Create compliance rule
+  const createRuleMutation = useMutation({
+    mutationFn: async (ruleData: typeof newRule) => {
+      return await apiRequest("POST", "/api/compliance-rules", ruleData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance-rules"] });
+      toast({
+        title: "Rule Created",
+        description: "Compliance rule has been created successfully.",
+      });
+      setIsComplianceModalOpen(false);
+      resetForm();
+    },
+  });
+
+  const resetForm = () => {
+    setNewRule({
+      name: "",
+      description: "",
+      regulatoryBody: "EPA",
+      ruleType: "time_limit",
+      warningDays: 30,
+      criticalDays: 7,
+      autoCheck: true,
+      isActive: true,
     });
   };
 
-  const handleExportData = () => {
-    toast({
-      title: "Export started",
-      description: "Your data export is being prepared. You'll receive an email when ready.",
-    });
-  };
-
-  const handleImportData = () => {
-    toast({
-      title: "Import feature",
-      description: "Data import functionality will be available in a future update.",
-    });
+  const getRegulatoryBodyColor = (body: string) => {
+    switch (body) {
+      case 'EPA': return 'bg-blue-100 text-blue-800';
+      case 'OSHA': return 'bg-orange-100 text-orange-800';
+      case 'local_authority': return 'bg-green-100 text-green-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
   };
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100" data-testid="settings-title">Settings</h1>
-        <Button onClick={handleSave} data-testid="button-save-settings">
-          <Save className="h-4 w-4 mr-2" />
-          Save Changes
-        </Button>
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold">System Settings</h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-2">
+          Configure notifications, compliance rules, and system preferences
+        </p>
       </div>
 
-      {/* Appearance */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Palette className="h-5 w-5 mr-2" />
-            Appearance
-          </CardTitle>
-          <CardDescription>
-            Customize the visual theme of the application
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="theme">Theme preference</Label>
-            <Select value={theme} onValueChange={setTheme}>
-              <SelectTrigger className="w-48" data-testid="select-theme">
-                <SelectValue placeholder="Select theme" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="light">
-                  <div className="flex items-center">
-                    <Sun className="h-4 w-4 mr-2" />
-                    Light
-                  </div>
-                </SelectItem>
-                <SelectItem value="dark">
-                  <div className="flex items-center">
-                    <Moon className="h-4 w-4 mr-2" />
-                    Dark
-                  </div>
-                </SelectItem>
-                <SelectItem value="system">
-                  <div className="flex items-center">
-                    <Monitor className="h-4 w-4 mr-2" />
-                    System
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <div className="text-sm text-muted-foreground">
-              Choose your preferred color scheme or use system settings
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="notifications" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="notifications">Notifications</TabsTrigger>
+          <TabsTrigger value="compliance">Compliance</TabsTrigger>
+          <TabsTrigger value="security">Security</TabsTrigger>
+          <TabsTrigger value="system">System</TabsTrigger>
+        </TabsList>
 
-      {/* User Preferences */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <User className="h-5 w-5 mr-2" />
-            User Preferences
-          </CardTitle>
-          <CardDescription>
-            Default settings for new surveys and inspections
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="defaultInspector">Default Inspector Name</Label>
-              <Input
-                id="defaultInspector"
-                value={settings.defaultInspector}
-                onChange={(e) => setSettings(prev => ({ ...prev, defaultInspector: e.target.value }))}
-                data-testid="input-default-inspector"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="defaultSurveyType">Default Survey Type</Label>
-              <select
-                id="defaultSurveyType"
-                value={settings.defaultSurveyType}
-                onChange={(e) => setSettings(prev => ({ ...prev, defaultSurveyType: e.target.value }))}
-                className="w-full h-10 px-3 py-2 text-sm border border-input bg-background rounded-md"
-                data-testid="select-default-survey-type"
-              >
-                <option value="asbestos">Asbestos Survey</option>
-                <option value="lead">Lead Survey</option>
-                <option value="cadmium">Cadmium Survey</option>
-                <option value="asbestos-lead">Asbestos + Lead</option>
-                <option value="asbestos-cadmium">Asbestos + Cadmium</option>
-                <option value="lead-cadmium">Lead + Cadmium</option>
-                <option value="asbestos-lead-cadmium">All Three (Asbestos + Lead + Cadmium)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Enable GPS by default</Label>
-                <div className="text-sm text-muted-foreground">
-                  Automatically collect location data for new observations
+        <TabsContent value="notifications" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Bell className="h-5 w-5 mr-2" />
+                Notification Preferences
+              </CardTitle>
+              <CardDescription>
+                Configure how and when you receive notifications
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingNotifications ? (
+                <div className="flex justify-center py-8">Loading notification settings...</div>
+              ) : (
+                <div className="space-y-6">
+                  {notificationSettings?.map((setting: NotificationSetting) => (
+                    <div key={setting.id} className="border rounded-lg p-4">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <h4 className="font-medium">{setting.label}</h4>
+                          <p className="text-sm text-gray-600">{setting.description}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor={`${setting.id}-email`} className="text-sm">Email</Label>
+                          <Switch
+                            id={`${setting.id}-email`}
+                            checked={setting.emailEnabled}
+                            onCheckedChange={(checked) => {
+                              updateNotificationMutation.mutate({
+                                settingId: setting.id,
+                                updates: { emailEnabled: checked }
+                              });
+                            }}
+                          />
+                        </div>
+                        
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor={`${setting.id}-app`} className="text-sm">In-App</Label>
+                          <Switch
+                            id={`${setting.id}-app`}
+                            checked={setting.inAppEnabled}
+                            onCheckedChange={(checked) => {
+                              updateNotificationMutation.mutate({
+                                settingId: setting.id,
+                                updates: { inAppEnabled: checked }
+                              });
+                            }}
+                          />
+                        </div>
+                        
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor={`${setting.id}-sms`} className="text-sm">SMS</Label>
+                          <Switch
+                            id={`${setting.id}-sms`}
+                            checked={setting.smsEnabled}
+                            onCheckedChange={(checked) => {
+                              updateNotificationMutation.mutate({
+                                settingId: setting.id,
+                                updates: { smsEnabled: checked }
+                              });
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-              <Switch
-                checked={settings.enableGPSByDefault}
-                onCheckedChange={(checked) => setSettings(prev => ({ ...prev, enableGPSByDefault: checked }))}
-                data-testid="switch-enable-gps"
-              />
-            </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Require photos by default</Label>
-                <div className="text-sm text-muted-foreground">
-                  Make photo documentation mandatory for new surveys
-                </div>
-              </div>
-              <Switch
-                checked={settings.requirePhotosDefault}
-                onCheckedChange={(checked) => setSettings(prev => ({ ...prev, requirePhotosDefault: checked }))}
-                data-testid="switch-require-photos"
-              />
+        <TabsContent value="compliance" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-semibold">Compliance Rules</h3>
+              <p className="text-sm text-gray-600">Manage regulatory compliance requirements</p>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="autoSaveInterval">Auto-save interval (minutes)</Label>
-              <Input
-                id="autoSaveInterval"
-                type="number"
-                min="1"
-                max="30"
-                value={settings.autoSaveInterval}
-                onChange={(e) => setSettings(prev => ({ ...prev, autoSaveInterval: parseInt(e.target.value) || 5 }))}
-                className="w-32"
-                data-testid="input-autosave-interval"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Notifications */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Bell className="h-5 w-5 mr-2" />
-            Notifications
-          </CardTitle>
-          <CardDescription>
-            Manage how you receive updates and alerts
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Email notifications</Label>
-              <div className="text-sm text-muted-foreground">
-                Receive important updates via email
-              </div>
-            </div>
-            <Switch
-              checked={settings.emailNotifications}
-              onCheckedChange={(checked) => setSettings(prev => ({ ...prev, emailNotifications: checked }))}
-              data-testid="switch-email-notifications"
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Push notifications</Label>
-              <div className="text-sm text-muted-foreground">
-                Browser notifications for real-time updates
-              </div>
-            </div>
-            <Switch
-              checked={settings.pushNotifications}
-              onCheckedChange={(checked) => setSettings(prev => ({ ...prev, pushNotifications: checked }))}
-              data-testid="switch-push-notifications"
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Survey reminders</Label>
-              <div className="text-sm text-muted-foreground">
-                Reminders for incomplete surveys and follow-ups
-              </div>
-            </div>
-            <Switch
-              checked={settings.surveyReminders}
-              onCheckedChange={(checked) => setSettings(prev => ({ ...prev, surveyReminders: checked }))}
-              data-testid="switch-survey-reminders"
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Report ready alerts</Label>
-              <div className="text-sm text-muted-foreground">
-                Notifications when reports are ready for review
-              </div>
-            </div>
-            <Switch
-              checked={settings.reportReadyAlerts}
-              onCheckedChange={(checked) => setSettings(prev => ({ ...prev, reportReadyAlerts: checked }))}
-              data-testid="switch-report-alerts"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Data Management */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Database className="h-5 w-5 mr-2" />
-            Data Management
-          </CardTitle>
-          <CardDescription>
-            Import, export, and manage your survey data
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Button variant="outline" onClick={handleExportData} data-testid="button-export-data">
-              <Download className="h-4 w-4 mr-2" />
-              Export All Data
-            </Button>
-            <Button variant="outline" onClick={handleImportData} data-testid="button-import-data">
-              <Upload className="h-4 w-4 mr-2" />
-              Import Data
+            <Button 
+              onClick={() => setIsComplianceModalOpen(true)}
+              data-testid="button-add-compliance-rule"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Rule
             </Button>
           </div>
 
-          <Separator />
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Rule Name</TableHead>
+                    <TableHead>Regulatory Body</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Warning Days</TableHead>
+                    <TableHead>Critical Days</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {complianceRules?.map((rule: ComplianceRule) => (
+                    <TableRow key={rule.id}>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium">{rule.name}</p>
+                          {rule.description && (
+                            <p className="text-sm text-gray-600">{rule.description}</p>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getRegulatoryBodyColor(rule.regulatoryBody)}>
+                          {rule.regulatoryBody}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{rule.ruleType.replace('_', ' ')}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-4 w-4 text-yellow-500" />
+                          {rule.warningDays} days
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <AlertTriangle className="h-4 w-4 text-red-500" />
+                          {rule.criticalDays} days
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Badge className={rule.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
+                            {rule.isActive ? 'Active' : 'Inactive'}
+                          </Badge>
+                          {rule.autoCheck && (
+                            <Badge variant="outline" className="text-xs">
+                              Auto-check
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline">
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button size="sm" variant="outline">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="retentionPeriod">Data retention period (days)</Label>
-              <Input
-                id="retentionPeriod"
-                type="number"
-                min="30"
-                max="3650"
-                value={settings.retentionPeriod}
-                onChange={(e) => setSettings(prev => ({ ...prev, retentionPeriod: parseInt(e.target.value) || 365 }))}
-                className="w-32"
-                data-testid="input-retention-period"
-              />
-              <div className="text-sm text-muted-foreground">
-                How long to keep completed surveys before archival
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Anonymize archived data</Label>
-                <div className="text-sm text-muted-foreground">
-                  Remove personal identifiers from old surveys
+        <TabsContent value="security" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Shield className="h-5 w-5 mr-2" />
+                Security Settings
+              </CardTitle>
+              <CardDescription>
+                Configure security policies and access controls
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-base font-medium">Two-Factor Authentication</Label>
+                  <p className="text-sm text-gray-600">Require 2FA for all user accounts</p>
                 </div>
+                <Switch />
               </div>
-              <Switch
-                checked={settings.anonymizeData}
-                onCheckedChange={(checked) => setSettings(prev => ({ ...prev, anonymizeData: checked }))}
-                data-testid="switch-anonymize-data"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Privacy & Security */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Shield className="h-5 w-5 mr-2" />
-            Privacy & Security
-          </CardTitle>
-          <CardDescription>
-            Control how your data is used and shared
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Share anonymous analytics</Label>
-              <div className="text-sm text-muted-foreground">
-                Help improve the app by sharing usage statistics
-              </div>
-            </div>
-            <Switch
-              checked={settings.shareAnalytics}
-              onCheckedChange={(checked) => setSettings(prev => ({ ...prev, shareAnalytics: checked }))}
-              data-testid="switch-share-analytics"
-            />
-          </div>
-
-          <Separator />
-
-          <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-            <div className="flex items-start space-x-3">
-              <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
-              <div className="space-y-2">
-                <div className="font-medium text-red-900">Danger Zone</div>
-                <div className="text-sm text-red-700">
-                  These actions cannot be undone. Please proceed with caution.
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-base font-medium">Password Complexity</Label>
+                  <p className="text-sm text-gray-600">Enforce strong password requirements</p>
                 </div>
-                <Button variant="destructive" size="sm" data-testid="button-delete-account">
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete All Data
+                <Switch defaultChecked />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-base font-medium">Session Timeout</Label>
+                  <p className="text-sm text-gray-600">Auto-logout after inactivity</p>
+                </div>
+                <Switch defaultChecked />
+              </div>
+
+              <div>
+                <Label htmlFor="session-timeout">Session Timeout (minutes)</Label>
+                <Input 
+                  id="session-timeout"
+                  type="number"
+                  defaultValue="30"
+                  className="w-32"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="system" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Settings className="h-5 w-5 mr-2" />
+                System Configuration
+              </CardTitle>
+              <CardDescription>
+                General system settings and preferences
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div>
+                <Label htmlFor="company-name">Company Name</Label>
+                <Input 
+                  id="company-name"
+                  defaultValue="SiteSense"
+                  placeholder="Your company name"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="default-timezone">Default Timezone</Label>
+                <Input 
+                  id="default-timezone"
+                  defaultValue="America/New_York"
+                  placeholder="UTC timezone"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="data-retention">Data Retention Period (days)</Label>
+                <Input 
+                  id="data-retention"
+                  type="number"
+                  defaultValue="2555"
+                  placeholder="2555"
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-base font-medium">Auto-backup</Label>
+                  <p className="text-sm text-gray-600">Automatically backup data daily</p>
+                </div>
+                <Switch defaultChecked />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-base font-medium">Anonymous Analytics</Label>
+                  <p className="text-sm text-gray-600">Help improve SiteSense with usage analytics</p>
+                </div>
+                <Switch />
+              </div>
+
+              <div className="pt-4">
+                <Button>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save System Settings
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Add Compliance Rule Modal */}
+      <Dialog open={isComplianceModalOpen} onOpenChange={setIsComplianceModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Compliance Rule</DialogTitle>
+            <DialogDescription>
+              Create a new regulatory compliance rule for automatic monitoring
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="rule-name">Rule Name</Label>
+              <Input 
+                id="rule-name"
+                value={newRule.name}
+                onChange={(e) => setNewRule({ ...newRule, name: e.target.value })}
+                placeholder="EPA Report Deadline"
+                data-testid="input-rule-name"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="rule-description">Description</Label>
+              <Input 
+                id="rule-description"
+                value={newRule.description}
+                onChange={(e) => setNewRule({ ...newRule, description: e.target.value })}
+                placeholder="Submit EPA report within 30 days"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="regulatory-body">Regulatory Body</Label>
+                <select 
+                  id="regulatory-body"
+                  value={newRule.regulatoryBody}
+                  onChange={(e) => setNewRule({ ...newRule, regulatoryBody: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                >
+                  <option value="EPA">EPA</option>
+                  <option value="OSHA">OSHA</option>
+                  <option value="local_authority">Local Authority</option>
+                </select>
+              </div>
+              
+              <div>
+                <Label htmlFor="rule-type">Rule Type</Label>
+                <select 
+                  id="rule-type"
+                  value={newRule.ruleType}
+                  onChange={(e) => setNewRule({ ...newRule, ruleType: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                >
+                  <option value="time_limit">Time Limit</option>
+                  <option value="documentation">Documentation</option>
+                  <option value="testing">Testing</option>
+                  <option value="reporting">Reporting</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="warning-days">Warning Days</Label>
+                <Input 
+                  id="warning-days"
+                  type="number"
+                  value={newRule.warningDays}
+                  onChange={(e) => setNewRule({ ...newRule, warningDays: parseInt(e.target.value) })}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="critical-days">Critical Days</Label>
+                <Input 
+                  id="critical-days"
+                  type="number"
+                  value={newRule.criticalDays}
+                  onChange={(e) => setNewRule({ ...newRule, criticalDays: parseInt(e.target.value) })}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-base font-medium">Auto-check</Label>
+                <p className="text-sm text-gray-600">Automatically monitor compliance</p>
+              </div>
+              <Switch 
+                checked={newRule.autoCheck}
+                onCheckedChange={(checked) => setNewRule({ ...newRule, autoCheck: checked })}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => setIsComplianceModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => createRuleMutation.mutate(newRule)}
+                disabled={createRuleMutation.isPending || !newRule.name}
+                data-testid="button-save-rule"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                {createRuleMutation.isPending ? "Creating..." : "Create Rule"}
+              </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* System Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle>System Information</CardTitle>
-          <CardDescription>Application version and status</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex justify-between items-center">
-            <span className="text-sm font-medium">Version</span>
-            <Badge variant="outline">v1.0.0</Badge>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm font-medium">Last Updated</span>
-            <span className="text-sm text-muted-foreground">December 2024</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm font-medium">Database Status</span>
-            <Badge className="bg-green-100 text-green-800">Connected</Badge>
-          </div>
-        </CardContent>
-      </Card>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

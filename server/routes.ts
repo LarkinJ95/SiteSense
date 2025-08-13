@@ -1413,6 +1413,264 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ success: true, message: "Export initiated successfully" });
   });
 
+  // Custom Report Builder Routes
+  app.get("/api/report-templates", async (req, res) => {
+    try {
+      const templates = await storage.getReportTemplates();
+      res.json(templates);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch report templates" });
+    }
+  });
+
+  app.post("/api/report-templates", async (req, res) => {
+    try {
+      const template = await storage.createReportTemplate(req.body);
+      res.json(template);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to create report template" });
+    }
+  });
+
+  app.post("/api/report-templates/:id/generate", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { surveyIds } = req.body;
+      const reportUrl = await storage.generateReport(id, surveyIds);
+      res.json({ downloadUrl: reportUrl });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to generate report" });
+    }
+  });
+
+  // Client Portal Routes
+  app.get("/api/clients", async (req, res) => {
+    try {
+      const clients = await storage.getClients();
+      res.json(clients);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch clients" });
+    }
+  });
+
+  app.post("/api/clients", async (req, res) => {
+    try {
+      const client = await storage.createClient(req.body);
+      res.json(client);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to create client" });
+    }
+  });
+
+  app.put("/api/clients/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const client = await storage.updateClient(id, req.body);
+      res.json(client);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to update client" });
+    }
+  });
+
+  app.get("/api/clients/:id/surveys", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const surveys = await storage.getClientSurveys(id);
+      res.json(surveys);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch client surveys" });
+    }
+  });
+
+  // Internal Messaging Routes
+  app.get("/api/messages", async (req, res) => {
+    try {
+      const { filter } = req.query;
+      const messages = await storage.getMessages(filter as string);
+      res.json(messages);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch messages" });
+    }
+  });
+
+  app.post("/api/messages", async (req, res) => {
+    try {
+      const message = await storage.createMessage(req.body);
+      res.json(message);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to send message" });
+    }
+  });
+
+  app.post("/api/messages/:id/reply", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { content } = req.body;
+      const reply = await storage.replyToMessage(id, content);
+      res.json(reply);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to send reply" });
+    }
+  });
+
+  app.put("/api/messages/:id/read", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const message = await storage.markMessageAsRead(id);
+      res.json(message);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to mark message as read" });
+    }
+  });
+
+  // Notification System Routes
+  app.get("/api/notifications", async (req, res) => {
+    try {
+      const { filter } = req.query;
+      const notifications = await storage.getNotifications(filter as string);
+      res.json(notifications);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch notifications" });
+    }
+  });
+
+  app.post("/api/notifications", async (req, res) => {
+    try {
+      const notification = await storage.createNotification(req.body);
+      res.json(notification);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to create notification" });
+    }
+  });
+
+  app.put("/api/notifications/:id/read", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const notification = await storage.markNotificationAsRead(id);
+      res.json(notification);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to mark notification as read" });
+    }
+  });
+
+  app.put("/api/notifications/mark-all-read", async (req, res) => {
+    try {
+      await storage.markAllNotificationsAsRead();
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to mark all notifications as read" });
+    }
+  });
+
+  app.delete("/api/notifications/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteNotification(id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(400).json({ message: "Failed to delete notification" });
+    }
+  });
+
+  // Chain of Custody Routes
+  app.get("/api/chain-of-custody", async (req, res) => {
+    try {
+      const { sampleId } = req.query;
+      const records = await storage.getChainOfCustodyRecords(sampleId as string);
+      res.json(records);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch chain of custody records" });
+    }
+  });
+
+  app.post("/api/chain-of-custody", async (req, res) => {
+    try {
+      const record = await storage.createChainOfCustodyRecord(req.body);
+      res.json(record);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to create chain of custody record" });
+    }
+  });
+
+  // Compliance Tracking Routes
+  app.get("/api/compliance-rules", async (req, res) => {
+    try {
+      const rules = await storage.getComplianceRules();
+      res.json(rules);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch compliance rules" });
+    }
+  });
+
+  app.post("/api/compliance-rules", async (req, res) => {
+    try {
+      const rule = await storage.createComplianceRule(req.body);
+      res.json(rule);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to create compliance rule" });
+    }
+  });
+
+  app.get("/api/compliance-tracking", async (req, res) => {
+    try {
+      const { surveyId } = req.query;
+      const tracking = await storage.getComplianceTracking(surveyId as string);
+      res.json(tracking);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch compliance tracking" });
+    }
+  });
+
+  app.put("/api/compliance-tracking/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const tracking = await storage.updateComplianceTracking(id, req.body);
+      res.json(tracking);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to update compliance tracking" });
+    }
+  });
+
+  // Collaboration Routes
+  app.get("/api/collaboration/sessions/:surveyId", async (req, res) => {
+    try {
+      const { surveyId } = req.params;
+      const sessions = await storage.getCollaborationSessions(surveyId);
+      res.json(sessions);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch collaboration sessions" });
+    }
+  });
+
+  app.post("/api/collaboration/sessions", async (req, res) => {
+    try {
+      const session = await storage.createCollaborationSession(req.body);
+      res.json(session);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to create collaboration session" });
+    }
+  });
+
+  // Settings Routes
+  app.get("/api/settings/notifications", async (req, res) => {
+    try {
+      const settings = await storage.getNotificationSettings();
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch notification settings" });
+    }
+  });
+
+  app.put("/api/settings/notifications/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const setting = await storage.updateNotificationSetting(id, req.body);
+      res.json(setting);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to update notification setting" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

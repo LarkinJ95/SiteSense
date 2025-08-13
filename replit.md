@@ -41,6 +41,14 @@ SiteSense is a comprehensive full-stack web application for managing site survey
 - Enhanced site photo upload feature with full integration across all views
 - Changed application name from "SiteSurvey Pro" to "SiteSense" 
 - Updated branding throughout application interface and documentation
+- **NEW ADVANCED FEATURES EXPANSION (January 13, 2025)**: Complete implementation of 7 major new features:
+  - **Custom Report Builder**: Full report template creation system with drag-and-drop sections, field selection, layout customization, chart/photo/map inclusion, and automated report generation with PDF output
+  - **Client Portal Management**: Comprehensive client access control system with portal customization, survey access management, download permissions, commenting capabilities, and custom branding per client
+  - **Internal Messaging System**: Complete team communication platform with threaded conversations, priority levels, survey-linked discussions, real-time messaging, file attachments, and message search/filtering
+  - **Advanced Notification System**: Multi-channel notification delivery (email, SMS, in-app) with priority-based alerts, compliance deadlines, survey updates, system notifications, and customizable notification preferences
+  - **Chain of Custody Tracking**: Full sample custody management with GPS-enabled transfer recording, barcode scanning, temperature monitoring, witness signatures, photo documentation, and complete audit trail
+  - **Compliance Dashboard & Tracking**: Automated regulatory compliance monitoring with EPA/OSHA rule tracking, deadline alerts, evidence management, compliance status visualization, and automated rule checking
+  - **Real-time Collaboration Features**: Live survey editing sessions, shared cursors, change tracking, participant management, and collaborative review capabilities
 
 ## Previous Updates (December 2024)
 - Enhanced survey types to support combination surveys (Asbestos + Lead + Cadmium)

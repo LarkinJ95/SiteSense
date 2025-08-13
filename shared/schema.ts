@@ -474,3 +474,228 @@ export type AirMonitoringEquipment = typeof airMonitoringEquipment.$inferSelect;
 export type InsertAirMonitoringEquipment = z.infer<typeof insertAirMonitoringEquipmentSchema>;
 export type DailyWeatherLog = typeof dailyWeatherLogs.$inferSelect;
 export type InsertDailyWeatherLog = z.infer<typeof insertDailyWeatherLogSchema>;
+
+// Custom Report Builder
+export const reportTemplates = pgTable("report_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  templateType: text("template_type").notNull(), // survey, air_monitoring, compliance, custom
+  sections: text("sections").array(), // array of section names
+  fields: text("fields").array(), // array of field names to include
+  filters: text("filters"), // JSON string of filter criteria
+  layout: text("layout").default("standard"), // standard, detailed, summary
+  includeCharts: boolean("include_charts").default(false),
+  includePhotos: boolean("include_photos").default(true),
+  includeMaps: boolean("include_maps").default(false),
+  headerText: text("header_text"),
+  footerText: text("footer_text"),
+  logoUrl: text("logo_url"),
+  createdBy: text("created_by").notNull(),
+  isPublic: boolean("is_public").default(false),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+// Client Portal
+export const clients = pgTable("clients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  contactEmail: text("contact_email").notNull(),
+  contactPhone: text("contact_phone"),
+  address: text("address"),
+  portalAccess: boolean("portal_access").default(false),
+  accessLevel: text("access_level").default("basic"), // basic, premium, enterprise
+  allowDownloads: boolean("allow_downloads").default(true),
+  allowComments: boolean("allow_comments").default(true),
+  customBranding: boolean("custom_branding").default(false),
+  logoUrl: text("logo_url"),
+  primaryColor: text("primary_color").default("#3b82f6"),
+  lastLogin: timestamp("last_login"),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+// Internal Messaging
+export const messages = pgTable("messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fromUserId: text("from_user_id").notNull(),
+  toUserId: text("to_user_id"),
+  surveyId: varchar("survey_id").references(() => surveys.id, { onDelete: 'cascade' }),
+  subject: text("subject").notNull(),
+  content: text("content").notNull(),
+  messageType: text("message_type").default("direct"), // direct, survey_comment, system_alert
+  priority: text("priority").default("normal"), // low, normal, high, urgent
+  isRead: boolean("is_read").default(false),
+  readAt: timestamp("read_at"),
+  attachmentUrl: text("attachment_url"),
+  parentMessageId: varchar("parent_message_id"), // Will be set up with relations
+  createdAt: timestamp("created_at").default(sql`now()`),
+});
+
+// Notification System
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  type: text("type").notNull(), // survey_update, message, system, compliance_alert, due_date
+  relatedId: text("related_id"), // survey_id, message_id, etc.
+  isRead: boolean("is_read").default(false),
+  readAt: timestamp("read_at"),
+  actionUrl: text("action_url"),
+  priority: text("priority").default("normal"), // low, normal, high, urgent
+  deliveryMethod: text("delivery_method").array(), // email, sms, in_app
+  sentAt: timestamp("sent_at"),
+  createdAt: timestamp("created_at").default(sql`now()`),
+});
+
+// Chain of Custody
+export const chainOfCustody = pgTable("chain_of_custody", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sampleId: text("sample_id").notNull(),
+  surveyId: varchar("survey_id").notNull().references(() => surveys.id, { onDelete: 'cascade' }),
+  currentCustodian: text("current_custodian").notNull(),
+  previousCustodian: text("previous_custodian"),
+  transferDate: timestamp("transfer_date").notNull(),
+  transferReason: text("transfer_reason").notNull(),
+  condition: text("condition").notNull(), // good, damaged, sealed, opened
+  location: text("location").notNull(),
+  temperature: decimal("temperature"),
+  sealIntact: boolean("seal_intact").default(true),
+  witnessName: text("witness_name"),
+  witnessSignature: text("witness_signature"),
+  digitalSignature: text("digital_signature"),
+  photos: text("photos").array(),
+  notes: text("notes"),
+  barcodeScanned: boolean("barcode_scanned").default(false),
+  gpsCoordinates: text("gps_coordinates"),
+  createdAt: timestamp("created_at").default(sql`now()`),
+});
+
+// Compliance Tracking
+export const complianceRules = pgTable("compliance_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  regulatoryBody: text("regulatory_body").notNull(), // EPA, OSHA, local_authority
+  ruleType: text("rule_type").notNull(), // time_limit, documentation, testing, reporting
+  applicableSurveyTypes: text("applicable_survey_types").array(),
+  threshold: text("threshold"), // JSON string for complex thresholds
+  warningDays: integer("warning_days").default(30),
+  criticalDays: integer("critical_days").default(7),
+  autoCheck: boolean("auto_check").default(true),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+export const complianceTracking = pgTable("compliance_tracking", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  surveyId: varchar("survey_id").notNull().references(() => surveys.id, { onDelete: 'cascade' }),
+  ruleId: varchar("rule_id").notNull().references(() => complianceRules.id, { onDelete: 'cascade' }),
+  status: text("status").notNull(), // compliant, warning, critical, non_compliant
+  dueDate: timestamp("due_date"),
+  completedDate: timestamp("completed_date"),
+  evidence: text("evidence"), // file URLs or references
+  notes: text("notes"),
+  assignedTo: text("assigned_to"),
+  checkedBy: text("checked_by"),
+  lastChecked: timestamp("last_checked").default(sql`now()`),
+  autoGenerated: boolean("auto_generated").default(false),
+});
+
+// Real-time Collaboration
+export const collaborationSessions = pgTable("collaboration_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  surveyId: varchar("survey_id").notNull().references(() => surveys.id, { onDelete: 'cascade' }),
+  hostUserId: text("host_user_id").notNull(),
+  participants: text("participants").array(), // array of user IDs
+  sessionType: text("session_type").default("survey_edit"), // survey_edit, review, discussion
+  isActive: boolean("is_active").default(true),
+  lastActivity: timestamp("last_activity").default(sql`now()`),
+  sharedCursor: text("shared_cursor"), // JSON for cursor positions
+  permissions: text("permissions"), // JSON for user permissions
+  createdAt: timestamp("created_at").default(sql`now()`),
+});
+
+export const collaborationChanges = pgTable("collaboration_changes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => collaborationSessions.id, { onDelete: 'cascade' }),
+  userId: text("user_id").notNull(),
+  changeType: text("change_type").notNull(), // field_update, observation_add, photo_upload, etc.
+  fieldName: text("field_name"),
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  timestamp: timestamp("timestamp").default(sql`now()`),
+});
+
+// Create Zod schemas for new tables
+export const reportBuilderSchema = createInsertSchema(reportTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const clientSchema = createInsertSchema(clients).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const messageSchema = createInsertSchema(messages).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const notificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const custodySchema = createInsertSchema(chainOfCustody).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const complianceRuleSchema = createInsertSchema(complianceRules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const complianceTrackingSchema = createInsertSchema(complianceTracking).omit({
+  id: true,
+  lastChecked: true,
+});
+
+export const collaborationSchema = createInsertSchema(collaborationSessions).omit({
+  id: true,
+  createdAt: true,
+  lastActivity: true,
+});
+
+export const collaborationChangeSchema = createInsertSchema(collaborationChanges).omit({
+  id: true,
+  timestamp: true,
+});
+
+// Export types for new features
+export type InsertReportTemplate = z.infer<typeof reportBuilderSchema>;
+export type ReportTemplate = typeof reportTemplates.$inferSelect;
+export type InsertClient = z.infer<typeof clientSchema>;
+export type Client = typeof clients.$inferSelect;
+export type InsertMessage = z.infer<typeof messageSchema>;
+export type Message = typeof messages.$inferSelect;
+export type InsertNotification = z.infer<typeof notificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertCustody = z.infer<typeof custodySchema>;
+export type ChainOfCustody = typeof chainOfCustody.$inferSelect;
+export type InsertComplianceRule = z.infer<typeof complianceRuleSchema>;
+export type ComplianceRule = typeof complianceRules.$inferSelect;
+export type InsertComplianceTracking = z.infer<typeof complianceTrackingSchema>;
+export type ComplianceTracking = typeof complianceTracking.$inferSelect;
+export type InsertCollaborationSession = z.infer<typeof collaborationSchema>;
+export type CollaborationSession = typeof collaborationSessions.$inferSelect;
+export type InsertCollaborationChange = z.infer<typeof collaborationChangeSchema>;
+export type CollaborationChange = typeof collaborationChanges.$inferSelect;
