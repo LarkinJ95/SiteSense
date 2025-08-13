@@ -10,6 +10,7 @@ import { AddObservationModal } from "@/components/add-observation-modal";
 import { ObservationMap } from "@/components/observation-map";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import * as XLSX from 'xlsx';
 import type { Survey, Observation, ObservationPhoto } from "@shared/schema";
 import { 
   FileText, 
@@ -21,13 +22,16 @@ import {
   Edit, 
   Trash2,
   AlertTriangle,
-  FileDown
+  FileDown,
+  Download,
+  Loader2
 } from "lucide-react";
 
 export default function SurveyDetail() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingObservation, setEditingObservation] = useState<Observation | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -65,11 +69,12 @@ export default function SurveyDetail() {
   const generateReportMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("GET", `/api/surveys/${id}/report`);
-      return response;
+      const htmlContent = await response.text(); // Convert response to text
+      return htmlContent;
     },
-    onSuccess: (data) => {
+    onSuccess: (htmlContent) => {
       // Create a blob URL and trigger download
-      const blob = new Blob([data], { type: 'text/html' });
+      const blob = new Blob([htmlContent], { type: 'text/html' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -116,6 +121,77 @@ export default function SurveyDetail() {
     if (confirm("Are you sure you want to delete this observation?")) {
       deleteObservationMutation.mutate(observationId);
     }
+  };
+
+  const exportToExcel = () => {
+    const worksheetData = [
+      ['Area/Location', 'Material Type', 'Condition', 'Quantity', 'Risk Level', 'Sample Collected', 'Sample ID', 'GPS Latitude', 'GPS Longitude', 'Notes'],
+      ...observations.map(obs => [
+        obs.area,
+        obs.materialType,
+        obs.condition,
+        obs.quantity || '',
+        obs.riskLevel || '',
+        obs.sampleCollected ? 'Yes' : 'No',
+        obs.sampleId || '',
+        obs.latitude || '',
+        obs.longitude || '',
+        obs.notes || ''
+      ])
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Observations');
+
+    // Auto-size columns
+    const columnWidths = worksheetData[0].map((_, colIndex) => {
+      const maxLength = Math.max(
+        ...worksheetData.map(row => (row[colIndex] ? row[colIndex].toString().length : 0))
+      );
+      return { wch: Math.min(maxLength + 2, 50) };
+    });
+    worksheet['!cols'] = columnWidths;
+
+    XLSX.writeFile(workbook, `${survey?.siteName || 'survey'}_observations.xlsx`);
+    
+    toast({
+      title: "Excel Export Complete",
+      description: "Observations have been exported to Excel successfully.",
+    });
+  };
+
+  const exportToCSV = () => {
+    const csvData = [
+      ['Area/Location', 'Material Type', 'Condition', 'Quantity', 'Risk Level', 'Sample Collected', 'Sample ID', 'GPS Latitude', 'GPS Longitude', 'Notes'],
+      ...observations.map(obs => [
+        obs.area,
+        obs.materialType,
+        obs.condition,
+        obs.quantity || '',
+        obs.riskLevel || '',
+        obs.sampleCollected ? 'Yes' : 'No',
+        obs.sampleId || '',
+        obs.latitude || '',
+        obs.longitude || '',
+        obs.notes || ''
+      ])
+    ];
+
+    const csvContent = csvData.map(row => 
+      row.map(field => `"${field.toString().replace(/"/g, '""')}"`).join(',')
+    ).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${survey?.siteName || 'survey'}_observations.csv`;
+    link.click();
+    
+    toast({
+      title: "CSV Export Complete",
+      description: "Observations have been exported to CSV successfully.",
+    });
   };
 
   if (!id) {
@@ -179,9 +255,28 @@ export default function SurveyDetail() {
                 </span>
               </div>
             </div>
-            <div className="mt-4 md:mt-0 flex space-x-3">
+            <div className="mt-4 md:mt-0 flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportToExcel}
+                data-testid="button-export-excel"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export Excel
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportToCSV}
+                data-testid="button-export-csv"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
               <Button 
                 variant="outline" 
+                size="sm"
                 onClick={() => generateReportMutation.mutate()}
                 disabled={generateReportMutation.isPending}
                 data-testid="button-generate-report"
@@ -362,7 +457,12 @@ export default function SurveyDetail() {
                       )}
                     </div>
                     <div className="flex items-center space-x-2 ml-4">
-                      <Button variant="ghost" size="sm" data-testid={`button-edit-${observation.id}`}>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => setEditingObservation(observation)}
+                        data-testid={`button-edit-${observation.id}`}
+                      >
                         <Edit className="h-4 w-4" />
                       </Button>
                       <Button 
@@ -386,9 +486,13 @@ export default function SurveyDetail() {
       <ObservationMap observations={observations} />
 
       <AddObservationModal 
-        open={showAddModal} 
-        onOpenChange={setShowAddModal}
+        open={showAddModal || !!editingObservation} 
+        onOpenChange={(open) => {
+          setShowAddModal(open);
+          if (!open) setEditingObservation(null);
+        }}
         surveyId={survey.id}
+        editingObservation={editingObservation}
       />
     </div>
   );

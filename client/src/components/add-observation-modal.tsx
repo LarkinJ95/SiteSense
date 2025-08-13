@@ -53,16 +53,31 @@ interface AddObservationModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   surveyId: string;
+  editingObservation?: Observation | null;
 }
 
-export function AddObservationModal({ open, onOpenChange, surveyId }: AddObservationModalProps) {
+export function AddObservationModal({ open, onOpenChange, surveyId, editingObservation }: AddObservationModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   const form = useForm<CreateObservationFormData>({
     resolver: zodResolver(createObservationSchema),
-    defaultValues: {
+    defaultValues: editingObservation ? {
+      area: editingObservation.area,
+      homogeneousArea: editingObservation.homogeneousArea || "",
+      materialType: editingObservation.materialType,
+      condition: editingObservation.condition,
+      quantity: editingObservation.quantity || "",
+      riskLevel: editingObservation.riskLevel || "",
+      sampleCollected: editingObservation.sampleCollected,
+      sampleId: editingObservation.sampleId || "",
+      collectionMethod: editingObservation.collectionMethod || "",
+      sampleNotes: editingObservation.sampleNotes || "",
+      latitude: editingObservation.latitude || "",
+      longitude: editingObservation.longitude || "",
+      notes: editingObservation.notes || "",
+    } : {
       area: "",
       homogeneousArea: "",
       materialType: "",
@@ -88,8 +103,16 @@ export function AddObservationModal({ open, onOpenChange, surveyId }: AddObserva
         longitude: data.longitude ? parseFloat(data.longitude) : undefined,
       };
 
-      const response = await apiRequest("POST", "/api/observations", observationData);
-      const observation = await response.json();
+      let observation;
+      if (editingObservation) {
+        // Update existing observation
+        const response = await apiRequest("PUT", `/api/observations/${editingObservation.id}`, observationData);
+        observation = await response.json();
+      } else {
+        // Create new observation
+        const response = await apiRequest("POST", "/api/observations", observationData);
+        observation = await response.json();
+      }
 
       // Upload photos if any
       if (selectedFiles.length > 0) {
@@ -107,8 +130,10 @@ export function AddObservationModal({ open, onOpenChange, surveyId }: AddObserva
       queryClient.invalidateQueries({ queryKey: ["/api/surveys", surveyId, "observations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
       toast({
-        title: "Observation Added",
-        description: "New observation has been created successfully.",
+        title: editingObservation ? "Observation Updated" : "Observation Added",
+        description: editingObservation 
+          ? "Observation has been updated successfully." 
+          : "New observation has been created successfully.",
       });
       onOpenChange(false);
       form.reset();
@@ -117,7 +142,7 @@ export function AddObservationModal({ open, onOpenChange, surveyId }: AddObserva
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to create observation",
+        description: error.message || (editingObservation ? "Failed to update observation" : "Failed to create observation"),
         variant: "destructive",
       });
     },
@@ -165,7 +190,7 @@ export function AddObservationModal({ open, onOpenChange, surveyId }: AddObserva
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" data-testid="modal-add-observation">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
-            Add New Observation
+            {editingObservation ? "Edit Observation" : "Add New Observation"}
             <Button
               variant="ghost"
               size="sm"
