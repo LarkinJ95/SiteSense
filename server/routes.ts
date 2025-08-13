@@ -1102,6 +1102,174 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Mock user profile data (in real app, this would come from database)
+  const mockUserProfile = {
+    id: "user-1",
+    firstName: "John",
+    lastName: "Inspector",
+    email: "john.inspector@company.com",
+    phone: "+1-555-0123",
+    organization: "Environmental Solutions Inc.",
+    jobTitle: "Senior Environmental Consultant",
+    department: "Field Operations",
+    address: "123 Main St, Springfield, IL 62701",
+    role: "admin",
+    status: "active",
+    avatar: "",
+    createdAt: "2024-01-15T10:00:00Z",
+    lastLogin: new Date().toISOString(),
+    preferences: {
+      emailNotifications: true,
+      smsNotifications: false,
+      weeklyReports: true,
+      darkMode: false,
+    }
+  };
+
+  // Mock system stats for admin dashboard
+  const mockSystemStats = {
+    totalUsers: 25,
+    activeUsers: 18,
+    totalSurveys: 150,
+    totalAirSamples: 89,
+    databaseSize: "2.4 GB",
+    systemUptime: "15 days, 8 hours",
+    lastBackup: "2025-01-13T02:00:00Z"
+  };
+
+  // Mock users data for admin dashboard
+  const mockUsers = [
+    {
+      id: "user-1",
+      firstName: "John",
+      lastName: "Inspector",
+      email: "john.inspector@company.com",
+      role: "admin",
+      status: "active",
+      organization: "Environmental Solutions Inc.",
+      jobTitle: "Senior Environmental Consultant",
+      lastLogin: "2025-01-13T14:30:00Z",
+      createdAt: "2024-01-15T10:00:00Z"
+    },
+    {
+      id: "user-2", 
+      firstName: "Sarah",
+      lastName: "Johnson",
+      email: "sarah.johnson@company.com",
+      role: "manager",
+      status: "active",
+      organization: "Environmental Solutions Inc.",
+      jobTitle: "Project Manager",
+      lastLogin: "2025-01-13T09:15:00Z",
+      createdAt: "2024-02-20T14:00:00Z"
+    },
+    {
+      id: "user-3",
+      firstName: "Mike",
+      lastName: "Chen",
+      email: "mike.chen@company.com", 
+      role: "user",
+      status: "active",
+      organization: "Environmental Solutions Inc.",
+      jobTitle: "Field Technician",
+      lastLogin: "2025-01-12T16:45:00Z",
+      createdAt: "2024-03-10T11:30:00Z"
+    }
+  ];
+
+  // User Profile Routes
+  app.get("/api/user/profile", (req, res) => {
+    res.json(mockUserProfile);
+  });
+
+  app.put("/api/user/profile", (req, res) => {
+    res.json({ ...mockUserProfile, ...req.body });
+  });
+
+  app.post("/api/user/change-password", (req, res) => {
+    res.json({ success: true, message: "Password updated successfully" });
+  });
+
+  app.delete("/api/user/account", (req, res) => {
+    res.json({ success: true, message: "Account deleted successfully" });
+  });
+
+  // Authentication Routes
+  app.post("/api/auth/login", (req, res) => {
+    const { email, password } = req.body;
+    
+    if (email === "admin@sitesense.com" && password === "admin123") {
+      res.json({
+        token: "mock-jwt-token",
+        user: {
+          id: "user-1",
+          email: email,
+          role: "admin",
+          firstName: "John",
+          lastName: "Inspector"
+        }
+      });
+    } else if (email && password) {
+      res.json({
+        token: "mock-jwt-token",
+        user: {
+          id: "user-2", 
+          email: email,
+          role: "user",
+          firstName: "Demo",
+          lastName: "User"
+        }
+      });
+    } else {
+      res.status(401).json({ message: "Invalid email or password" });
+    }
+  });
+
+  app.post("/api/auth/register", (req, res) => {
+    const { firstName, lastName, email, password, organization, jobTitle, role } = req.body;
+    
+    const newUser = {
+      id: `user-${Date.now()}`,
+      firstName,
+      lastName, 
+      email,
+      organization,
+      jobTitle,
+      role: role || "user",
+      status: "active",
+      createdAt: new Date().toISOString()
+    };
+    
+    res.status(201).json({
+      message: "Account created successfully",
+      user: newUser
+    });
+  });
+
+  // Admin Routes
+  app.get("/api/admin/stats", (req, res) => {
+    res.json(mockSystemStats);
+  });
+
+  app.get("/api/admin/users", (req, res) => {
+    res.json(mockUsers);
+  });
+
+  app.put("/api/admin/users/:id", (req, res) => {
+    const userId = req.params.id;
+    const updatedUser = { ...req.body, id: userId };
+    res.json(updatedUser);
+  });
+
+  app.delete("/api/admin/users/:id", (req, res) => {
+    const userId = req.params.id;
+    res.json({ success: true, message: `User ${userId} deleted successfully` });
+  });
+
+  app.post("/api/admin/export", (req, res) => {
+    res.json({ success: true, message: "Export initiated successfully" });
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
