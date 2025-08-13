@@ -54,11 +54,11 @@ export default function Dashboard() {
   const getSiteIcon = (surveyType: string) => {
     switch (surveyType) {
       case "asbestos":
-        return <Building className="text-gray-600" />;
+        return <Building className="text-gray-600 dark:text-gray-400" />;
       case "lead":
-        return <Home className="text-gray-600" />;
+        return <Home className="text-gray-600 dark:text-gray-400" />;
       default:
-        return <Warehouse className="text-gray-600" />;
+        return <Warehouse className="text-gray-600 dark:text-gray-400" />;
     }
   };
 
@@ -67,10 +67,10 @@ export default function Dashboard() {
       {/* Dashboard Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-3xl font-bold text-gray-900" data-testid="title-dashboard">
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100" data-testid="title-dashboard">
             Dashboard
           </h2>
-          <p className="mt-2 text-gray-600" data-testid="text-welcome">
+          <p className="mt-2 text-gray-600 dark:text-gray-400" data-testid="text-welcome">
             Welcome back! Here's an overview of your recent survey activity.
           </p>
         </div>
@@ -100,11 +100,11 @@ export default function Dashboard() {
                 <ClipboardCheck className="text-primary text-2xl" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Surveys</p>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Surveys</p>
                 {statsLoading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
-                  <p className="text-2xl font-bold text-gray-900" data-testid="stat-total-surveys">
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100" data-testid="stat-total-surveys">
                     {stats?.totalSurveys || 0}
                   </p>
                 )}
@@ -120,11 +120,11 @@ export default function Dashboard() {
                 <AlertTriangle className="text-warning text-2xl" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Pending Reviews</p>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Pending Reviews</p>
                 {statsLoading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
-                  <p className="text-2xl font-bold text-gray-900" data-testid="stat-pending-reviews">
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100" data-testid="stat-pending-reviews">
                     {stats?.pendingReviews || 0}
                   </p>
                 )}
@@ -140,11 +140,11 @@ export default function Dashboard() {
                 <TestTubeDiagonal className="text-success text-2xl" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Samples Collected</p>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Samples Collected</p>
                 {statsLoading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
-                  <p className="text-2xl font-bold text-gray-900" data-testid="stat-samples-collected">
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100" data-testid="stat-samples-collected">
                     {stats?.samplesCollected || 0}
                   </p>
                 )}
@@ -160,11 +160,11 @@ export default function Dashboard() {
                 <MapPin className="text-secondary text-2xl" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Active Sites</p>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Active Sites</p>
                 {statsLoading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
-                  <p className="text-2xl font-bold text-gray-900" data-testid="stat-active-sites">
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100" data-testid="stat-active-sites">
                     {stats?.activeSites || 0}
                   </p>
                 )}
@@ -199,9 +199,9 @@ export default function Dashboard() {
             </div>
           ) : recentSurveys.length === 0 ? (
             <div className="text-center py-8">
-              <ClipboardCheck className="mx-auto h-12 w-12 text-gray-400" />
-              <h3 className="mt-2 text-sm font-medium text-gray-900">No surveys yet</h3>
-              <p className="mt-1 text-sm text-gray-500">Get started by creating your first survey.</p>
+              <ClipboardCheck className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" />
+              <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">No surveys yet</h3>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Get started by creating your first survey.</p>
               <div className="mt-6">
                 <Button onClick={() => setShowCreateModal(true)} data-testid="button-create-first-survey">
                   <Plus className="mr-2 h-4 w-4" />
@@ -211,56 +211,56 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-800">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                       Site
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                       Survey Type
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                       Inspector
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                       Date
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
                   {recentSurveys.map((survey) => (
-                    <tr key={survey.id} className="hover:bg-gray-50" data-testid={`row-survey-${survey.id}`}>
+                    <tr key={survey.id} className="hover:bg-gray-50 dark:hover:bg-gray-800" data-testid={`row-survey-${survey.id}`}>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="flex-shrink-0 h-10 w-10">
-                            <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
+                            <div className="h-10 w-10 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
                               {getSiteIcon(survey.surveyType)}
                             </div>
                           </div>
                           <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900" data-testid={`text-site-name-${survey.id}`}>
+                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100" data-testid={`text-site-name-${survey.id}`}>
                               {survey.siteName}
                             </div>
-                            <div className="text-sm text-gray-500" data-testid={`text-address-${survey.id}`}>
+                            <div className="text-sm text-gray-500 dark:text-gray-400" data-testid={`text-address-${survey.id}`}>
                               {survey.address || "No address"}
                             </div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid={`text-survey-type-${survey.id}`}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100" data-testid={`text-survey-type-${survey.id}`}>
                         {survey.surveyType}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid={`text-inspector-${survey.id}`}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100" data-testid={`text-inspector-${survey.id}`}>
                         {survey.inspector}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid={`text-date-${survey.id}`}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400" data-testid={`text-date-${survey.id}`}>
                         {new Date(survey.surveyDate).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">

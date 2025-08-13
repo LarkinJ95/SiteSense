@@ -215,8 +215,8 @@ export default function SurveyDetail() {
   if (!survey) {
     return (
       <div className="text-center py-8">
-        <h2 className="text-2xl font-bold text-gray-900">Survey Not Found</h2>
-        <p className="mt-2 text-gray-600">The requested survey could not be found.</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Survey Not Found</h2>
+        <p className="mt-2 text-gray-600 dark:text-gray-400">The requested survey could not be found.</p>
         <Button onClick={() => setLocation("/")} className="mt-4">
           Back to Dashboard
         </Button>
@@ -238,14 +238,14 @@ export default function SurveyDetail() {
         <CardContent className="p-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900" data-testid="text-site-name">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100" data-testid="text-site-name">
                 {survey.siteName}
               </h2>
-              <p className="text-gray-600 mt-1" data-testid="text-address">
+              <p className="text-gray-600 dark:text-gray-400 mt-1" data-testid="text-address">
                 {survey.address || "No address provided"}
               </p>
               {survey.jobNumber && (
-                <p className="text-gray-600 font-medium mt-1" data-testid="text-job-number">
+                <p className="text-gray-600 dark:text-gray-400 font-medium mt-1" data-testid="text-job-number">
                   Job #{survey.jobNumber}
                 </p>
               )}
@@ -253,10 +253,10 @@ export default function SurveyDetail() {
                 <Badge className="bg-primary text-white" data-testid="badge-survey-type">
                   {survey.surveyType}
                 </Badge>
-                <span className="text-sm text-gray-500">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
                   Inspector: <span className="font-medium" data-testid="text-inspector">{survey.inspector}</span>
                 </span>
-                <span className="text-sm text-gray-500">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
                   Date: <span className="font-medium" data-testid="text-date">
                     {new Date(survey.surveyDate).toLocaleDateString()}
                   </span>
@@ -316,25 +316,25 @@ export default function SurveyDetail() {
               <div className="text-2xl font-bold text-primary" data-testid="stat-observations">
                 {surveyProgress.observations}
               </div>
-              <div className="text-sm text-gray-600">Observations</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">Observations</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-success" data-testid="stat-samples">
                 {surveyProgress.samples}
               </div>
-              <div className="text-sm text-gray-600">Samples Collected</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">Samples Collected</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-warning" data-testid="stat-hazards">
                 {surveyProgress.hazards}
               </div>
-              <div className="text-sm text-gray-600">Hazards Identified</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">Hazards Identified</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-gray-900" data-testid="stat-photos">
+              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100" data-testid="stat-photos">
                 {surveyProgress.photos}
               </div>
-              <div className="text-sm text-gray-600">Photos Taken</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">Photos Taken</div>
             </div>
           </div>
         </CardContent>
@@ -378,11 +378,11 @@ export default function SurveyDetail() {
             </div>
           ) : filteredObservations.length === 0 ? (
             <div className="text-center py-8">
-              <AlertTriangle className="mx-auto h-12 w-12 text-gray-400" />
-              <h3 className="mt-2 text-sm font-medium text-gray-900">
+              <AlertTriangle className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" />
+              <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
                 {searchQuery ? "No observations found" : "No observations yet"}
               </h3>
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 {searchQuery 
                   ? "Try adjusting your search terms." 
                   : "Start by adding your first observation to this survey."
@@ -402,38 +402,38 @@ export default function SurveyDetail() {
               {filteredObservations.map((observation) => (
                 <div 
                   key={observation.id} 
-                  className="border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
+                  className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-sm transition-shadow"
                   data-testid={`card-observation-${observation.id}`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-2">
-                        <h4 className="text-lg font-medium text-gray-900" data-testid={`text-area-${observation.id}`}>
+                        <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100" data-testid={`text-area-${observation.id}`}>
                           {observation.area}
                         </h4>
                         {observation.riskLevel && getRiskBadge(observation.riskLevel)}
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
                         <div>
-                          <span className="text-sm font-medium text-gray-700">Material:</span>
-                          <span className="text-sm text-gray-900 ml-1" data-testid={`text-material-${observation.id}`}>
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Material:</span>
+                          <span className="text-sm text-gray-900 dark:text-gray-100 ml-1" data-testid={`text-material-${observation.id}`}>
                             {observation.materialType}
                           </span>
                         </div>
                         <div>
-                          <span className="text-sm font-medium text-gray-700">Condition:</span>
-                          <span className="text-sm text-gray-900 ml-1" data-testid={`text-condition-${observation.id}`}>
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Condition:</span>
+                          <span className="text-sm text-gray-900 dark:text-gray-100 ml-1" data-testid={`text-condition-${observation.id}`}>
                             {observation.condition}
                           </span>
                         </div>
                         <div>
-                          <span className="text-sm font-medium text-gray-700">Quantity:</span>
-                          <span className="text-sm text-gray-900 ml-1" data-testid={`text-quantity-${observation.id}`}>
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Quantity:</span>
+                          <span className="text-sm text-gray-900 dark:text-gray-100 ml-1" data-testid={`text-quantity-${observation.id}`}>
                             {observation.quantity || "Not specified"}
                           </span>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-4 text-sm text-gray-600">
+                      <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
                         <div className="flex items-center">
                           <Camera className="mr-1 h-4 w-4" />
                           <span data-testid={`text-photos-${observation.id}`}>0 photos</span>
@@ -458,7 +458,7 @@ export default function SurveyDetail() {
                       </div>
                       {observation.notes && (
                         <div className="mt-3">
-                          <p className="text-sm text-gray-700" data-testid={`text-notes-${observation.id}`}>
+                          <p className="text-sm text-gray-700 dark:text-gray-300" data-testid={`text-notes-${observation.id}`}>
                             {observation.notes}
                           </p>
                         </div>

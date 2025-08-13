@@ -169,8 +169,8 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             {/* Site Information */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-lg font-medium text-gray-900 mb-4">Site Information</h4>
+            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Site Information</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -257,8 +257,8 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
             </div>
 
             {/* Survey Details */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-lg font-medium text-gray-900 mb-4">Survey Details</h4>
+            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Survey Details</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -320,8 +320,8 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
             </div>
 
             {/* Additional Options */}
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="text-lg font-medium text-gray-900 mb-4">Additional Options</h4>
+            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Additional Options</h4>
               <div className="space-y-3">
                 <FormField
                   control={form.control}

@@ -73,7 +73,7 @@ export default function Settings() {
   return (
     <div className="space-y-6 max-w-4xl">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold" data-testid="settings-title">Settings</h1>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100" data-testid="settings-title">Settings</h1>
         <Button onClick={handleSave} data-testid="button-save-settings">
           <Save className="h-4 w-4 mr-2" />
           Save Changes

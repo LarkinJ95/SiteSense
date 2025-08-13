@@ -66,7 +66,7 @@ export default function Surveys() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold" data-testid="surveys-title">All Surveys</h1>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100" data-testid="surveys-title">All Surveys</h1>
         <Button onClick={() => setShowCreateModal(true)} data-testid="button-create-survey">
           <Plus className="h-4 w-4 mr-2" />
           New Survey
@@ -87,7 +87,7 @@ export default function Surveys() {
       {filteredSurveys.length === 0 ? (
         <Card>
           <CardContent className="text-center py-12">
-            <div className="text-gray-500">
+            <div className="text-gray-500 dark:text-gray-400">
               {searchQuery ? "No surveys found matching your search." : "No surveys created yet."}
             </div>
             {!searchQuery && (
@@ -114,26 +114,26 @@ export default function Surveys() {
                       {survey.status}
                     </Badge>
                   </div>
-                  <div className="text-sm text-gray-600 capitalize">{survey.surveyType}</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 capitalize">{survey.surveyType}</div>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {survey.address && (
-                    <div className="flex items-center text-sm text-gray-600">
+                    <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
                       <MapPin className="h-4 w-4 mr-2 flex-shrink-0" />
                       <span className="truncate">{survey.address}</span>
                     </div>
                   )}
                   {survey.jobNumber && (
-                    <div className="flex items-center text-sm text-gray-600">
+                    <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
                       <FileText className="h-4 w-4 mr-2 flex-shrink-0" />
                       <span className="truncate">Job #{survey.jobNumber}</span>
                     </div>
                   )}
-                  <div className="flex items-center text-sm text-gray-600">
+                  <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
                     <User className="h-4 w-4 mr-2 flex-shrink-0" />
                     <span className="truncate">{survey.inspector}</span>
                   </div>
-                  <div className="flex items-center text-sm text-gray-600">
+                  <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
                     <Calendar className="h-4 w-4 mr-2 flex-shrink-0" />
                     <span>{new Date(survey.surveyDate).toLocaleDateString()}</span>
                   </div>
