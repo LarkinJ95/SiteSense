@@ -315,7 +315,12 @@ export default function Dashboard() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
                           <Link href={`/surveys/${survey.id}`}>
-                            <Button variant="ghost" size="sm" data-testid={`button-view-${survey.id}`}>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              data-testid={`button-view-${survey.id}`}
+                              className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
+                            >
                               <Eye className="h-4 w-4" />
                             </Button>
                           </Link>
@@ -325,6 +330,7 @@ export default function Dashboard() {
                             onClick={() => generateReportMutation.mutate(survey.id)}
                             disabled={generateReportMutation.isPending}
                             data-testid={`button-report-${survey.id}`}
+                            className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-50"
                           >
                             <FileDown className="h-4 w-4" />
                           </Button>
@@ -333,6 +339,7 @@ export default function Dashboard() {
                             size="sm" 
                             onClick={() => setEditSurvey(survey)}
                             data-testid={`button-edit-${survey.id}`}
+                            className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
@@ -354,11 +361,11 @@ export default function Dashboard() {
             <div className="flex items-center justify-center w-12 h-12 bg-primary bg-opacity-10 rounded-lg mb-4">
               <PlusCircle className="text-primary text-xl" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Start New Survey</h3>
-            <p className="text-gray-600 mb-4">Create a new site survey with our guided workflow.</p>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Start New Survey</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">Create a new site survey with our guided workflow.</p>
             <Button 
               onClick={() => setShowCreateModal(true)}
-              className="w-full bg-primary hover:bg-blue-700"
+              className="w-full bg-primary hover:bg-blue-700 text-white"
               data-testid="button-start-new-survey"
             >
               Get Started
@@ -371,10 +378,10 @@ export default function Dashboard() {
             <div className="flex items-center justify-center w-12 h-12 bg-success bg-opacity-10 rounded-lg mb-4">
               <FileText className="text-success text-xl" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Generate Reports</h3>
-            <p className="text-gray-600 mb-4">Create comprehensive reports from your survey data.</p>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Generate Reports</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">Create comprehensive reports from your survey data.</p>
             <Button 
-              className="w-full bg-success hover:bg-green-700"
+              className="w-full bg-success hover:bg-green-700 text-white"
               data-testid="button-view-reports"
             >
               View Reports
@@ -387,10 +394,10 @@ export default function Dashboard() {
             <div className="flex items-center justify-center w-12 h-12 bg-warning bg-opacity-10 rounded-lg mb-4">
               <Search className="text-warning text-xl" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Search History</h3>
-            <p className="text-gray-600 mb-4">Find and review past surveys and observations.</p>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Search History</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">Find and review past surveys and observations.</p>
             <Button 
-              className="w-full bg-warning hover:bg-orange-600"
+              className="w-full bg-warning hover:bg-orange-600 text-white"
               data-testid="button-search-history"
             >
               Search
