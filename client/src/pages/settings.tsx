@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   Save, 
   User, 
@@ -15,12 +16,18 @@ import {
   Download,
   Upload,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Palette,
+  Sun,
+  Moon,
+  Monitor
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useTheme } from "@/contexts/theme-context";
 
 export default function Settings() {
   const { toast } = useToast();
+  const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState({
     // User Preferences
     defaultInspector: "John Smith",
@@ -72,6 +79,52 @@ export default function Settings() {
           Save Changes
         </Button>
       </div>
+
+      {/* Appearance */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Palette className="h-5 w-5 mr-2" />
+            Appearance
+          </CardTitle>
+          <CardDescription>
+            Customize the visual theme of the application
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="theme">Theme preference</Label>
+            <Select value={theme} onValueChange={setTheme}>
+              <SelectTrigger className="w-48" data-testid="select-theme">
+                <SelectValue placeholder="Select theme" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">
+                  <div className="flex items-center">
+                    <Sun className="h-4 w-4 mr-2" />
+                    Light
+                  </div>
+                </SelectItem>
+                <SelectItem value="dark">
+                  <div className="flex items-center">
+                    <Moon className="h-4 w-4 mr-2" />
+                    Dark
+                  </div>
+                </SelectItem>
+                <SelectItem value="system">
+                  <div className="flex items-center">
+                    <Monitor className="h-4 w-4 mr-2" />
+                    System
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="text-sm text-muted-foreground">
+              Choose your preferred color scheme or use system settings
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* User Preferences */}
       <Card>
