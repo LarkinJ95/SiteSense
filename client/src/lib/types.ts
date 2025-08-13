@@ -42,6 +42,11 @@ export interface CreateObservationFormData {
   sampleId?: string;
   collectionMethod?: string;
   sampleNotes?: string;
+  // Lab Results
+  asbestosType?: string;
+  asbestosPercentage?: string;
+  leadResultMgKg?: string;
+  cadmiumResultMgKg?: string;
   latitude?: string;
   longitude?: string;
   notes?: string;

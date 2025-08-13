@@ -45,6 +45,11 @@ const createObservationSchema = z.object({
   sampleId: z.string().optional(),
   collectionMethod: z.string().optional(),
   sampleNotes: z.string().optional(),
+  // Lab Results
+  asbestosType: z.string().optional(),
+  asbestosPercentage: z.string().optional(),
+  leadResultMgKg: z.string().optional(),
+  cadmiumResultMgKg: z.string().optional(),
   latitude: z.string().optional(),
   longitude: z.string().optional(),
   notes: z.string().optional(),
@@ -75,6 +80,10 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
       sampleId: "",
       collectionMethod: "",
       sampleNotes: "",
+      asbestosType: "",
+      asbestosPercentage: "",
+      leadResultMgKg: "",
+      cadmiumResultMgKg: "",
       latitude: "",
       longitude: "",
       notes: "",
@@ -91,10 +100,14 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
         condition: editingObservation.condition,
         quantity: editingObservation.quantity || "",
         riskLevel: editingObservation.riskLevel || "",
-        sampleCollected: editingObservation.sampleCollected,
+        sampleCollected: editingObservation.sampleCollected ?? false,
         sampleId: editingObservation.sampleId || "",
         collectionMethod: editingObservation.collectionMethod || "",
         sampleNotes: editingObservation.sampleNotes || "",
+        asbestosType: editingObservation.asbestosType || "",
+        asbestosPercentage: editingObservation.asbestosPercentage || "",
+        leadResultMgKg: editingObservation.leadResultMgKg || "",
+        cadmiumResultMgKg: editingObservation.cadmiumResultMgKg || "",
         latitude: editingObservation.latitude || "",
         longitude: editingObservation.longitude || "",
         notes: editingObservation.notes || "",
@@ -111,6 +124,10 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
         sampleId: "",
         collectionMethod: "",
         sampleNotes: "",
+        asbestosType: "",
+        asbestosPercentage: "",
+        leadResultMgKg: "",
+        cadmiumResultMgKg: "",
         latitude: "",
         longitude: "",
         notes: "",
@@ -125,6 +142,9 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
         surveyId,
         latitude: data.latitude ? parseFloat(data.latitude) : undefined,
         longitude: data.longitude ? parseFloat(data.longitude) : undefined,
+        // Calculate percentages for lead and cadmium
+        leadResultPercent: data.leadResultMgKg ? (parseFloat(data.leadResultMgKg) / 10000).toString() : undefined,
+        cadmiumResultPercent: data.cadmiumResultMgKg ? (parseFloat(data.cadmiumResultMgKg) / 10000).toString() : undefined,
       };
 
       let observation;
@@ -458,6 +478,143 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
                     </FormItem>
                   )}
                 />
+              </div>
+            </div>
+
+            {/* Lab Results */}
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h4 className="text-lg font-medium text-gray-900 mb-4">Lab Results</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Asbestos Results */}
+                <div className="space-y-3">
+                  <h5 className="font-medium text-gray-700">Asbestos Analysis</h5>
+                  <FormField
+                    control={form.control}
+                    name="asbestosType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Asbestos Type</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-asbestos-type">
+                              <SelectValue placeholder="Select type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none-detected">None Detected</SelectItem>
+                            <SelectItem value="chrysotile">Chrysotile (White)</SelectItem>
+                            <SelectItem value="amosite">Amosite (Brown)</SelectItem>
+                            <SelectItem value="crocidolite">Crocidolite (Blue)</SelectItem>
+                            <SelectItem value="tremolite">Tremolite</SelectItem>
+                            <SelectItem value="actinolite">Actinolite</SelectItem>
+                            <SelectItem value="anthophyllite">Anthophyllite</SelectItem>
+                            <SelectItem value="mixed">Mixed Types</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {form.watch("asbestosType") && form.watch("asbestosType") !== "none-detected" && (
+                    <FormField
+                      control={form.control}
+                      name="asbestosPercentage"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Percentage (%)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              placeholder="0.00"
+                              {...field}
+                              data-testid="input-asbestos-percentage"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                </div>
+
+                {/* Lead Results */}
+                <div className="space-y-3">
+                  <h5 className="font-medium text-gray-700">Lead Analysis</h5>
+                  <FormField
+                    control={form.control}
+                    name="leadResultMgKg"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Result (mg/kg)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            placeholder="0.0"
+                            {...field}
+                            data-testid="input-lead-mg-kg"
+                            onChange={(e) => {
+                              field.onChange(e);
+                              // Auto-calculate percentage
+                              const mgKg = parseFloat(e.target.value);
+                              if (!isNaN(mgKg)) {
+                                // The percentage will be calculated on the server
+                              }
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {form.watch("leadResultMgKg") && (
+                    <div className="text-sm text-gray-600">
+                      <strong>% by weight:</strong> {((parseFloat(form.watch("leadResultMgKg") || "0")) / 10000).toFixed(6)}%
+                    </div>
+                  )}
+                </div>
+
+                {/* Cadmium Results */}
+                <div className="space-y-3">
+                  <h5 className="font-medium text-gray-700">Cadmium Analysis</h5>
+                  <FormField
+                    control={form.control}
+                    name="cadmiumResultMgKg"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Result (mg/kg)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            placeholder="0.0"
+                            {...field}
+                            data-testid="input-cadmium-mg-kg"
+                            onChange={(e) => {
+                              field.onChange(e);
+                              // Auto-calculate percentage
+                              const mgKg = parseFloat(e.target.value);
+                              if (!isNaN(mgKg)) {
+                                // The percentage will be calculated on the server
+                              }
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {form.watch("cadmiumResultMgKg") && (
+                    <div className="text-sm text-gray-600">
+                      <strong>% by weight:</strong> {((parseFloat(form.watch("cadmiumResultMgKg") || "0")) / 10000).toFixed(6)}%
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

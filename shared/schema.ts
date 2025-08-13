@@ -32,6 +32,15 @@ export const observations = pgTable("observations", {
   sampleId: text("sample_id"),
   collectionMethod: text("collection_method"),
   sampleNotes: text("sample_notes"),
+  // Lab Results
+  asbestosType: text("asbestos_type"), // chrysotile, amosite, crocidolite, etc. or "None Detected"
+  asbestosPercentage: decimal("asbestos_percentage"),
+  leadResultMgKg: decimal("lead_result_mg_kg"),
+  leadResultPercent: decimal("lead_result_percent"), // calculated: leadResultMgKg / 10000
+  cadmiumResultMgKg: decimal("cadmium_result_mg_kg"),
+  cadmiumResultPercent: decimal("cadmium_result_percent"), // calculated: cadmiumResultMgKg / 10000
+  labReportFilename: text("lab_report_filename"),
+  labReportUploadedAt: timestamp("lab_report_uploaded_at"),
   latitude: decimal("latitude"),
   longitude: decimal("longitude"),
   notes: text("notes"),
@@ -93,6 +102,12 @@ export const insertObservationSchema = z.object({
   sampleId: z.string().optional(),
   collectionMethod: z.string().optional(),
   sampleNotes: z.string().optional(),
+  // Lab Results
+  asbestosType: z.string().optional(),
+  asbestosPercentage: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  leadResultMgKg: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  cadmiumResultMgKg: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  labReportFilename: z.string().optional(),
   latitude: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
   longitude: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
   notes: z.string().optional(),
