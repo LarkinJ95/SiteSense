@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MapPin, CloudSun, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Survey, insertAirMonitoringJobSchema } from "@shared/schema";
@@ -29,6 +30,8 @@ type CreateAirJobFormData = z.infer<typeof formSchema>;
 export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("basic");
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [isGettingWeather, setIsGettingWeather] = useState(false);
 
   // Fetch surveys for selection
   const { data: surveys = [] } = useQuery<Survey[]>({
@@ -87,6 +90,116 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
 
   const onSubmit = (data: CreateAirJobFormData) => {
     createJobMutation.mutate(data);
+  };
+
+  const getCurrentLocation = async () => {
+    if (!navigator.geolocation) {
+      toast({
+        title: "GPS Not Available",
+        description: "GPS location services are not supported by this browser",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGettingLocation(true);
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          resolve,
+          reject,
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+        );
+      });
+
+      const { latitude, longitude } = position.coords;
+      const coordinateString = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+      
+      form.setValue("coordinates", coordinateString);
+      
+      toast({
+        title: "Location Retrieved",
+        description: `GPS coordinates: ${coordinateString}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Location Error",
+        description: error.message === "User denied Geolocation" 
+          ? "Location access was denied. Please enable location permissions."
+          : "Unable to retrieve location. Please check your GPS settings.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGettingLocation(false);
+    }
+  };
+
+  const getWeatherData = async () => {
+    if (!navigator.geolocation) {
+      toast({
+        title: "GPS Required",
+        description: "GPS location is needed to get weather data",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGettingWeather(true);
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          resolve,
+          reject,
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+        );
+      });
+
+      const { latitude, longitude } = position.coords;
+      
+      // Use OpenWeatherMap API (free tier)
+      const response = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=YOUR_API_KEY&units=metric`
+      );
+
+      if (!response.ok) {
+        throw new Error("Weather service unavailable");
+      }
+
+      const weatherData = await response.json();
+      
+      // Fill in weather data
+      form.setValue("weatherConditions", weatherData.weather[0].description);
+      form.setValue("temperature", weatherData.main.temp?.toFixed(1));
+      form.setValue("humidity", weatherData.main.humidity?.toString());
+      form.setValue("barometricPressure", (weatherData.main.pressure * 0.1)?.toFixed(1)); // Convert hPa to kPa
+      form.setValue("windSpeed", weatherData.wind?.speed?.toFixed(1));
+      
+      if (weatherData.wind?.deg) {
+        const windDirection = getWindDirection(weatherData.wind.deg);
+        form.setValue("windDirection", windDirection);
+      }
+
+      toast({
+        title: "Weather Retrieved",
+        description: `Current conditions: ${weatherData.weather[0].description}, ${weatherData.main.temp}°C`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Weather Error",
+        description: "Unable to retrieve weather data. Please enter manually or check your internet connection.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGettingWeather(false);
+    }
+  };
+
+  const getWindDirection = (degrees: number): string => {
+    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const index = Math.round(degrees / 45) % 8;
+    return directions[index];
   };
 
   return (
@@ -298,9 +411,25 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>GPS Coordinates</FormLabel>
-                      <FormControl>
-                        <Input placeholder="40.7128, -74.0060" {...field} data-testid="input-coordinates" />
-                      </FormControl>
+                      <div className="flex gap-2">
+                        <FormControl>
+                          <Input placeholder="40.7128, -74.0060" {...field} data-testid="input-coordinates" />
+                        </FormControl>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={getCurrentLocation}
+                          disabled={isGettingLocation}
+                          data-testid="button-get-location"
+                        >
+                          {isGettingLocation ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <MapPin className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -308,6 +437,29 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
               </TabsContent>
 
               <TabsContent value="weather" className="space-y-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium">Weather Conditions</h3>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={getWeatherData}
+                    disabled={isGettingWeather}
+                    data-testid="button-get-weather"
+                  >
+                    {isGettingWeather ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Getting Weather...
+                      </>
+                    ) : (
+                      <>
+                        <CloudSun className="mr-2 h-4 w-4" />
+                        Auto-fill Weather
+                      </>
+                    )}
+                  </Button>
+                </div>
+
                 <FormField
                   control={form.control}
                   name="weatherConditions"
