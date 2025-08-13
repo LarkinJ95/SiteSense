@@ -1256,7 +1256,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/admin/users", (req, res) => {
-    const { firstName, lastName, email, organization, jobTitle, role, status } = req.body;
+    const { firstName, lastName, email, password, organization, jobTitle, role, status } = req.body;
+    
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters long" });
+    }
     
     const newUser = {
       id: `user-${Date.now()}`,
@@ -1271,10 +1275,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       createdAt: new Date().toISOString()
     };
     
-    // In real app, save to database
+    // In real app, save to database with hashed password
     mockUsers.push(newUser);
     
     res.status(201).json(newUser);
+  });
+
+  app.put("/api/admin/users/:id", (req, res) => {
+    const { id } = req.params;
+    const { firstName, lastName, email, organization, jobTitle, role, status } = req.body;
+    
+    const userIndex = mockUsers.findIndex(user => user.id === id);
+    if (userIndex === -1) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    // Update user data
+    mockUsers[userIndex] = {
+      ...mockUsers[userIndex],
+      firstName,
+      lastName,
+      email,
+      organization,
+      jobTitle,
+      role,
+      status
+    };
+    
+    res.json(mockUsers[userIndex]);
+  });
+
+  app.delete("/api/admin/users/:id", (req, res) => {
+    const { id } = req.params;
+    const userIndex = mockUsers.findIndex(user => user.id === id);
+    
+    if (userIndex === -1) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    mockUsers.splice(userIndex, 1);
+    res.json({ success: true, message: "User deleted successfully" });
   });
 
   // White-label brand settings
@@ -1304,10 +1344,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Data management endpoints
   app.get("/api/admin/data-management", (req, res) => {
     res.json({
-      totalSurveys: mockSurveys.length,
+      totalSurveys: surveys.length,
       totalUsers: mockUsers.length,
-      totalAirSamples: mockAirSamples.length,
-      totalObservations: mockObservations.length,
+      totalAirSamples: airSamples.length,
+      totalObservations: observations.length,
       databaseSize: "45.2 MB",
       lastBackup: "2025-01-12T10:30:00Z",
       autoBackupEnabled: true,

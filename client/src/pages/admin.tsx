@@ -69,6 +69,19 @@ export default function AdminDashboard() {
     firstName: "",
     lastName: "",
     email: "",
+    password: "",
+    confirmPassword: "",
+    organization: "",
+    jobTitle: "",
+    role: "user" as 'admin' | 'manager' | 'user',
+    status: "active" as 'active' | 'inactive' | 'pending'
+  });
+
+  const [editUserData, setEditUserData] = useState({
+    id: "",
+    firstName: "",
+    lastName: "",
+    email: "",
     organization: "",
     jobTitle: "",
     role: "user" as 'admin' | 'manager' | 'user',
@@ -135,6 +148,44 @@ export default function AdminDashboard() {
     },
   });
 
+  const editUserMutation = useMutation({
+    mutationFn: async (userData: typeof editUserData) => {
+      const { id, ...updateData } = userData;
+      return await apiRequest("PUT", `/api/admin/users/${id}`, updateData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({
+        title: "User Updated",
+        description: "User information has been updated successfully.",
+      });
+      setIsEditModalOpen(false);
+      setSelectedUser(null);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update user.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEditUser = (user: User) => {
+    setEditUserData({
+      id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      organization: user.organization,
+      jobTitle: user.jobTitle,
+      role: user.role,
+      status: user.status
+    });
+    setSelectedUser(user);
+    setIsEditModalOpen(true);
+  };
+
   const addUserMutation = useMutation({
     mutationFn: async (userData: typeof newUserData) => {
       return await apiRequest("POST", "/api/admin/users", userData);
@@ -151,6 +202,8 @@ export default function AdminDashboard() {
         firstName: "",
         lastName: "",
         email: "",
+        password: "",
+        confirmPassword: "",
         organization: "",
         jobTitle: "",
         role: "user",
@@ -357,10 +410,7 @@ export default function AdminDashboard() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => {
-                                setSelectedUser(user);
-                                setIsEditModalOpen(true);
-                              }}
+                              onClick={() => handleEditUser(user)}
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
@@ -579,6 +629,35 @@ export default function AdminDashboard() {
               />
             </div>
 
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="new-password">Password</Label>
+                <Input 
+                  id="new-password"
+                  type="password"
+                  value={newUserData.password}
+                  onChange={(e) => setNewUserData({ ...newUserData, password: e.target.value })}
+                  placeholder="Enter password"
+                  data-testid="input-new-password"
+                />
+              </div>
+              <div>
+                <Label htmlFor="confirm-password">Confirm Password</Label>
+                <Input 
+                  id="confirm-password"
+                  type="password"
+                  value={newUserData.confirmPassword}
+                  onChange={(e) => setNewUserData({ ...newUserData, confirmPassword: e.target.value })}
+                  placeholder="Confirm password"
+                  data-testid="input-confirm-password"
+                />
+              </div>
+            </div>
+
+            {newUserData.password && newUserData.confirmPassword && newUserData.password !== newUserData.confirmPassword && (
+              <p className="text-sm text-red-500">Passwords do not match</p>
+            )}
+
             <div>
               <Label htmlFor="new-organization">Organization</Label>
               <Input 
@@ -641,7 +720,7 @@ export default function AdminDashboard() {
               </Button>
               <Button 
                 onClick={() => addUserMutation.mutate(newUserData)}
-                disabled={addUserMutation.isPending || !newUserData.firstName || !newUserData.lastName || !newUserData.email}
+                disabled={addUserMutation.isPending || !newUserData.firstName || !newUserData.lastName || !newUserData.email || !newUserData.password || newUserData.password !== newUserData.confirmPassword}
                 data-testid="button-create-user"
               >
                 {addUserMutation.isPending ? "Creating..." : "Create User"}
@@ -653,7 +732,7 @@ export default function AdminDashboard() {
 
       {/* Edit User Modal */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
             <DialogDescription>
@@ -661,38 +740,69 @@ export default function AdminDashboard() {
             </DialogDescription>
           </DialogHeader>
           
-          {selectedUser && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="edit-first-name">First Name</Label>
-                  <Input 
-                    id="edit-first-name" 
-                    defaultValue={selectedUser.firstName}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="edit-last-name">Last Name</Label>
-                  <Input 
-                    id="edit-last-name" 
-                    defaultValue={selectedUser.lastName}
-                  />
-                </div>
-              </div>
-              
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="edit-email">Email</Label>
+                <Label htmlFor="edit-first-name">First Name</Label>
                 <Input 
-                  id="edit-email" 
-                  type="email" 
-                  defaultValue={selectedUser.email}
+                  id="edit-first-name"
+                  value={editUserData.firstName}
+                  onChange={(e) => setEditUserData({ ...editUserData, firstName: e.target.value })}
+                  placeholder="John"
+                  data-testid="input-edit-first-name"
                 />
               </div>
+              <div>
+                <Label htmlFor="edit-last-name">Last Name</Label>
+                <Input 
+                  id="edit-last-name"
+                  value={editUserData.lastName}
+                  onChange={(e) => setEditUserData({ ...editUserData, lastName: e.target.value })}
+                  placeholder="Smith"
+                  data-testid="input-edit-last-name"
+                />
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="edit-email">Email</Label>
+              <Input 
+                id="edit-email"
+                type="email"
+                value={editUserData.email}
+                onChange={(e) => setEditUserData({ ...editUserData, email: e.target.value })}
+                placeholder="john.smith@company.com"
+                data-testid="input-edit-email"
+              />
+            </div>
 
+            <div>
+              <Label htmlFor="edit-organization">Organization</Label>
+              <Input 
+                id="edit-organization"
+                value={editUserData.organization}
+                onChange={(e) => setEditUserData({ ...editUserData, organization: e.target.value })}
+                placeholder="Company Name"
+                data-testid="input-edit-organization"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="edit-job-title">Job Title</Label>
+              <Input 
+                id="edit-job-title"
+                value={editUserData.jobTitle}
+                onChange={(e) => setEditUserData({ ...editUserData, jobTitle: e.target.value })}
+                placeholder="Environmental Consultant"
+                data-testid="input-edit-job-title"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="edit-role">Role</Label>
-                <Select defaultValue={selectedUser.role}>
-                  <SelectTrigger>
+                <Select value={editUserData.role} onValueChange={(value) => setEditUserData({ ...editUserData, role: value as any })}>
+                  <SelectTrigger data-testid="select-edit-role">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -705,8 +815,8 @@ export default function AdminDashboard() {
 
               <div>
                 <Label htmlFor="edit-status">Status</Label>
-                <Select defaultValue={selectedUser.status}>
-                  <SelectTrigger>
+                <Select value={editUserData.status} onValueChange={(value) => setEditUserData({ ...editUserData, status: value as any })}>
+                  <SelectTrigger data-testid="select-edit-status">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -716,25 +826,25 @@ export default function AdminDashboard() {
                   </SelectContent>
                 </Select>
               </div>
-
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={() => {
-                    // In a real app, collect form data and submit
-                    updateUserMutation.mutate({
-                      id: selectedUser.id,
-                      data: { ...selectedUser }
-                    });
-                  }}
-                >
-                  Save Changes
-                </Button>
-              </div>
             </div>
-          )}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button 
+                variant="outline" 
+                onClick={() => setIsEditModalOpen(false)}
+                data-testid="button-cancel-edit-user"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => editUserMutation.mutate(editUserData)}
+                disabled={editUserMutation.isPending || !editUserData.firstName || !editUserData.lastName || !editUserData.email}
+                data-testid="button-update-user"
+              >
+                {editUserMutation.isPending ? "Updating..." : "Update User"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
