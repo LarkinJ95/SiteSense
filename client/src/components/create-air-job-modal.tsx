@@ -158,48 +158,64 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
 
       const { latitude, longitude } = position.coords;
       
-      // Use OpenWeatherMap API (free tier)
-      const apiKey = import.meta.env.VITE_OPENWEATHERMAP_API_KEY;
+      // Use AccuWeather API (free tier)
+      const apiKey = import.meta.env.VITE_ACCUWEATHER_API_KEY;
       
       if (!apiKey) {
         throw new Error("Weather API key not configured");
       }
 
-      const response = await fetch(
-        `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=metric`
+      // First get location key from AccuWeather
+      const locationResponse = await fetch(
+        `https://dataservice.accuweather.com/locations/v1/cities/geoposition/search?apikey=${apiKey}&q=${latitude},${longitude}`
       );
 
-      if (!response.ok) {
+      if (!locationResponse.ok) {
+        throw new Error("Location service unavailable");
+      }
+
+      const locationData = await locationResponse.json();
+      const locationKey = locationData.Key;
+
+      // Then get current conditions
+      const weatherResponse = await fetch(
+        `https://dataservice.accuweather.com/currentconditions/v1/${locationKey}?apikey=${apiKey}&details=true`
+      );
+
+      if (!weatherResponse.ok) {
         throw new Error("Weather service unavailable");
       }
 
-      const weatherData = await response.json();
+      const weatherData = await weatherResponse.json();
+      const currentConditions = weatherData[0];
       
-      // Fill in weather data
-      form.setValue("weatherConditions", weatherData.weather[0].description);
-      form.setValue("temperature", weatherData.main.temp?.toFixed(1));
-      form.setValue("humidity", weatherData.main.humidity?.toString());
-      form.setValue("barometricPressure", (weatherData.main.pressure * 0.1)?.toFixed(1)); // Convert hPa to kPa
-      form.setValue("windSpeed", weatherData.wind?.speed?.toFixed(1));
+      // Fill in weather data from AccuWeather
+      form.setValue("weatherConditions", currentConditions.WeatherText);
+      form.setValue("temperature", currentConditions.Temperature.Metric.Value?.toFixed(1));
+      form.setValue("humidity", currentConditions.RelativeHumidity?.toString());
+      form.setValue("barometricPressure", (currentConditions.Pressure.Metric.Value)?.toFixed(1)); // Already in kPa
+      form.setValue("windSpeed", (currentConditions.Wind.Speed.Metric.Value * 0.277778)?.toFixed(1)); // Convert km/h to m/s
       
-      if (weatherData.wind?.deg) {
-        const windDirection = getWindDirection(weatherData.wind.deg);
+      if (currentConditions.Wind.Direction.Degrees !== undefined) {
+        const windDirection = getWindDirection(currentConditions.Wind.Direction.Degrees);
         form.setValue("windDirection", windDirection);
       }
 
       toast({
         title: "Weather Retrieved",
-        description: `Current conditions: ${weatherData.weather[0].description}, ${weatherData.main.temp}°C`,
+        description: `Current conditions: ${currentConditions.WeatherText}, ${currentConditions.Temperature.Metric.Value}°C`,
       });
     } catch (error: any) {
       let errorMessage = "Unable to retrieve weather data. Please enter manually.";
       
       if (error.message === "Weather API key not configured") {
-        errorMessage = "Weather API key is not configured. Please contact your administrator.";
+        errorMessage = "AccuWeather API key is not configured. Please contact your administrator.";
       } else if (error.message === "User denied Geolocation") {
         errorMessage = "Location access was denied. Please enable location permissions.";
       } else if (!navigator.onLine) {
         errorMessage = "No internet connection. Please check your connection and try again.";
+      } else if (error.message.includes("service unavailable")) {
+        errorMessage = "Weather service is currently unavailable. Please try again later.";
       }
 
       toast({
