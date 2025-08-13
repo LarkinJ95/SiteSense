@@ -71,7 +71,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteSurvey(id: string): Promise<boolean> {
     const result = await db.delete(surveys).where(eq(surveys.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   async searchSurveys(query: string): Promise<Survey[]> {
@@ -121,7 +121,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteObservation(id: string): Promise<boolean> {
     const result = await db.delete(observations).where(eq(observations.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   async getObservationPhotos(observationId: string): Promise<ObservationPhoto[]> {
@@ -141,7 +141,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteObservationPhoto(id: string): Promise<boolean> {
     const result = await db.delete(observationPhotos).where(eq(observationPhotos.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   async getSurveyStats(): Promise<{

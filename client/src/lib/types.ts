@@ -1,4 +1,8 @@
-import type { Survey, Observation, ObservationPhoto } from '@shared/schema';
+import type { Survey as BaseSurvey, Observation as BaseObservation, ObservationPhoto } from '@shared/schema';
+
+export type Survey = BaseSurvey;
+export type Observation = BaseObservation;
+export { ObservationPhoto };
 
 export interface SurveyWithObservations extends Survey {
   observations?: Observation[];

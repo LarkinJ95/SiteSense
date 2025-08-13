@@ -240,9 +240,18 @@ export function AddObservationModal({ open, onOpenChange, surveyId }: AddObserva
                           <SelectItem value="ceiling-tiles">Ceiling Tiles</SelectItem>
                           <SelectItem value="floor-tiles">Floor Tiles</SelectItem>
                           <SelectItem value="pipe-insulation">Pipe Insulation</SelectItem>
-                          <SelectItem value="drywall">Drywall</SelectItem>
-                          <SelectItem value="paint">Paint</SelectItem>
+                          <SelectItem value="duct-insulation">Duct Insulation</SelectItem>
+                          <SelectItem value="boiler-insulation">Boiler Insulation</SelectItem>
+                          <SelectItem value="drywall">Drywall/Joint Compound</SelectItem>
+                          <SelectItem value="paint">Paint/Coatings</SelectItem>
                           <SelectItem value="roofing">Roofing Material</SelectItem>
+                          <SelectItem value="siding">Siding Material</SelectItem>
+                          <SelectItem value="window-glazing">Window Glazing</SelectItem>
+                          <SelectItem value="plaster">Plaster</SelectItem>
+                          <SelectItem value="masonry">Masonry/Mortar</SelectItem>
+                          <SelectItem value="vinyl-tiles">Vinyl Floor Tiles</SelectItem>
+                          <SelectItem value="carpet-mastic">Carpet Mastic</SelectItem>
+                          <SelectItem value="electrical-materials">Electrical Materials</SelectItem>
                           <SelectItem value="other">Other</SelectItem>
                         </SelectContent>
                       </Select>

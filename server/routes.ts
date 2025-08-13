@@ -16,7 +16,7 @@ const upload = multer({
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'), false);
+      cb(new Error('Only image files are allowed'));
     }
   },
 });
@@ -36,7 +36,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(surveys);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch surveys", error: error.message });
+      res.status(500).json({ message: "Failed to fetch surveys", error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 

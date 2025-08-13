@@ -155,9 +155,15 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
                         <SelectContent>
                           <SelectItem value="asbestos">Asbestos Survey</SelectItem>
                           <SelectItem value="lead">Lead Paint Survey</SelectItem>
+                          <SelectItem value="cadmium">Cadmium Survey</SelectItem>
+                          <SelectItem value="asbestos-lead">Asbestos + Lead Combination</SelectItem>
+                          <SelectItem value="asbestos-cadmium">Asbestos + Cadmium Combination</SelectItem>
+                          <SelectItem value="lead-cadmium">Lead + Cadmium Combination</SelectItem>
+                          <SelectItem value="asbestos-lead-cadmium">Asbestos + Lead + Cadmium Combination</SelectItem>
                           <SelectItem value="environmental">Environmental Survey</SelectItem>
                           <SelectItem value="structural">Structural Survey</SelectItem>
                           <SelectItem value="mold">Mold Assessment</SelectItem>
+                          <SelectItem value="comprehensive">Comprehensive Hazmat Survey</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />

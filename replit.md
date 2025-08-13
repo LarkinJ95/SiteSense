@@ -2,7 +2,14 @@
 
 ## Overview
 
-SiteSurvey Pro is a full-stack web application for managing site surveys and environmental assessments. The application allows users to create surveys, record observations, upload photos, and track the progress of site inspections. It's designed for professionals conducting environmental or structural assessments who need to systematically document findings and manage survey data.
+SiteSurvey Pro is a comprehensive full-stack web application for managing site surveys and environmental assessments. The application allows users to create surveys, record observations, upload photos, and track the progress of site inspections. It's designed for professionals conducting environmental or structural assessments who need to systematically document findings and manage survey data.
+
+## Recent Updates (December 2024)
+- Enhanced survey types to support combination surveys (Asbestos + Lead + Cadmium)
+- Expanded material type options for better hazmat survey coverage
+- Fixed TypeScript errors and improved error handling
+- Database schema optimized for PostgreSQL with Drizzle ORM
+- Complete CRUD functionality for surveys, observations, and photo uploads
 
 ## User Preferences
 
