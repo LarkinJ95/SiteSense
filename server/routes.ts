@@ -1255,6 +1255,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(mockUsers);
   });
 
+  app.post("/api/admin/users", (req, res) => {
+    const { firstName, lastName, email, organization, jobTitle, role, status } = req.body;
+    
+    const newUser = {
+      id: `user-${Date.now()}`,
+      firstName,
+      lastName,
+      email,
+      organization,
+      jobTitle,
+      role: role || "user",
+      status: status || "active",
+      lastLogin: null,
+      createdAt: new Date().toISOString()
+    };
+    
+    // In real app, save to database
+    mockUsers.push(newUser);
+    
+    res.status(201).json(newUser);
+  });
+
   app.put("/api/admin/users/:id", (req, res) => {
     const userId = req.params.id;
     const updatedUser = { ...req.body, id: userId };

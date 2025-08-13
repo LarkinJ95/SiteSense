@@ -60,8 +60,19 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const [newUserData, setNewUserData] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    organization: "",
+    jobTitle: "",
+    role: "user" as 'admin' | 'manager' | 'user',
+    status: "active" as 'active' | 'inactive' | 'pending'
+  });
 
   // Fetch system statistics
   const { data: systemStats, isLoading: statsLoading } = useQuery<SystemStats>({
@@ -123,6 +134,37 @@ export default function AdminDashboard() {
     },
   });
 
+  const addUserMutation = useMutation({
+    mutationFn: async (userData: typeof newUserData) => {
+      return await apiRequest("POST", "/api/admin/users", userData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({
+        title: "User Added",
+        description: "New user has been created successfully.",
+      });
+      setIsAddUserModalOpen(false);
+      setNewUserData({
+        firstName: "",
+        lastName: "",
+        email: "",
+        organization: "",
+        jobTitle: "",
+        role: "user",
+        status: "active"
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to create user.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const exportDataMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest("POST", "/api/admin/export");
@@ -163,6 +205,14 @@ export default function AdminDashboard() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            onClick={() => setIsAddUserModalOpen(true)}
+            className="bg-green-600 hover:bg-green-700"
+            data-testid="button-add-user"
+          >
+            <UserPlus className="h-4 w-4 mr-2" />
+            Add New User
+          </Button>
           <Button 
             onClick={() => exportDataMutation.mutate()}
             disabled={exportDataMutation.isPending}
@@ -474,6 +524,124 @@ export default function AdminDashboard() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Add New User Modal */}
+      <Dialog open={isAddUserModalOpen} onOpenChange={setIsAddUserModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add New User</DialogTitle>
+            <DialogDescription>
+              Create a new user account with access to the system
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="new-first-name">First Name</Label>
+                <Input 
+                  id="new-first-name"
+                  value={newUserData.firstName}
+                  onChange={(e) => setNewUserData({ ...newUserData, firstName: e.target.value })}
+                  placeholder="John"
+                  data-testid="input-new-first-name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="new-last-name">Last Name</Label>
+                <Input 
+                  id="new-last-name"
+                  value={newUserData.lastName}
+                  onChange={(e) => setNewUserData({ ...newUserData, lastName: e.target.value })}
+                  placeholder="Smith"
+                  data-testid="input-new-last-name"
+                />
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="new-email">Email</Label>
+              <Input 
+                id="new-email"
+                type="email"
+                value={newUserData.email}
+                onChange={(e) => setNewUserData({ ...newUserData, email: e.target.value })}
+                placeholder="john.smith@company.com"
+                data-testid="input-new-email"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="new-organization">Organization</Label>
+              <Input 
+                id="new-organization"
+                value={newUserData.organization}
+                onChange={(e) => setNewUserData({ ...newUserData, organization: e.target.value })}
+                placeholder="Company Name"
+                data-testid="input-new-organization"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="new-job-title">Job Title</Label>
+              <Input 
+                id="new-job-title"
+                value={newUserData.jobTitle}
+                onChange={(e) => setNewUserData({ ...newUserData, jobTitle: e.target.value })}
+                placeholder="Environmental Consultant"
+                data-testid="input-new-job-title"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="new-role">Role</Label>
+                <Select value={newUserData.role} onValueChange={(value) => setNewUserData({ ...newUserData, role: value as any })}>
+                  <SelectTrigger data-testid="select-new-role">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="user">User</SelectItem>
+                    <SelectItem value="manager">Manager</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="new-status">Status</Label>
+                <Select value={newUserData.status} onValueChange={(value) => setNewUserData({ ...newUserData, status: value as any })}>
+                  <SelectTrigger data-testid="select-new-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button 
+                variant="outline" 
+                onClick={() => setIsAddUserModalOpen(false)}
+                data-testid="button-cancel-add-user"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => addUserMutation.mutate(newUserData)}
+                disabled={addUserMutation.isPending || !newUserData.firstName || !newUserData.lastName || !newUserData.email}
+                data-testid="button-create-user"
+              >
+                {addUserMutation.isPending ? "Creating..." : "Create User"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit User Modal */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
