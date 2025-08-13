@@ -3,6 +3,7 @@ import {
   observations, 
   observationPhotos,
   personnelProfiles,
+  airMonitoringJobs,
   airSamples,
   airMonitoringEquipment,
   type Survey, 
@@ -13,6 +14,8 @@ import {
   type InsertObservationPhoto,
   type PersonnelProfile,
   type InsertPersonnelProfile,
+  type AirMonitoringJob,
+  type InsertAirMonitoringJob,
   type AirSample,
   type InsertAirSample,
   type AirMonitoringEquipment,
@@ -57,6 +60,14 @@ export interface IStorage {
   createPersonnelProfile(profile: InsertPersonnelProfile): Promise<PersonnelProfile>;
   updatePersonnelProfile(id: string, profile: Partial<InsertPersonnelProfile>): Promise<PersonnelProfile | undefined>;
   deletePersonnelProfile(id: string): Promise<boolean>;
+
+  // Air monitoring job methods
+  getAirMonitoringJobs(): Promise<AirMonitoringJob[]>;
+  getAirMonitoringJob(id: string): Promise<AirMonitoringJob | undefined>;
+  createAirMonitoringJob(job: InsertAirMonitoringJob): Promise<AirMonitoringJob>;
+  updateAirMonitoringJob(id: string, job: Partial<InsertAirMonitoringJob>): Promise<AirMonitoringJob | undefined>;
+  deleteAirMonitoringJob(id: string): Promise<boolean>;
+  getAirMonitoringJobSamples(jobId: string): Promise<AirSample[]>;
 
   // Air sample methods
   getAirSamples(): Promise<AirSample[]>;
@@ -232,6 +243,39 @@ export class DatabaseStorage implements IStorage {
   async deletePersonnelProfile(id: string): Promise<boolean> {
     const result = await db.delete(personnelProfiles).where(eq(personnelProfiles.id, id));
     return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Air monitoring job methods
+  async getAirMonitoringJobs(): Promise<AirMonitoringJob[]> {
+    return await db.select().from(airMonitoringJobs).orderBy(desc(airMonitoringJobs.createdAt));
+  }
+
+  async getAirMonitoringJob(id: string): Promise<AirMonitoringJob | undefined> {
+    const [job] = await db.select().from(airMonitoringJobs).where(eq(airMonitoringJobs.id, id));
+    return job;
+  }
+
+  async createAirMonitoringJob(job: InsertAirMonitoringJob): Promise<AirMonitoringJob> {
+    const [newJob] = await db.insert(airMonitoringJobs).values(job).returning();
+    return newJob;
+  }
+
+  async updateAirMonitoringJob(id: string, job: Partial<InsertAirMonitoringJob>): Promise<AirMonitoringJob | undefined> {
+    const [updatedJob] = await db
+      .update(airMonitoringJobs)
+      .set({ ...job, updatedAt: new Date() })
+      .where(eq(airMonitoringJobs.id, id))
+      .returning();
+    return updatedJob;
+  }
+
+  async deleteAirMonitoringJob(id: string): Promise<boolean> {
+    const result = await db.delete(airMonitoringJobs).where(eq(airMonitoringJobs.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async getAirMonitoringJobSamples(jobId: string): Promise<AirSample[]> {
+    return await db.select().from(airSamples).where(eq(airSamples.jobId, jobId)).orderBy(desc(airSamples.createdAt));
   }
 
   // Air sample methods

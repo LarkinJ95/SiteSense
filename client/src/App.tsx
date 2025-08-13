@@ -14,7 +14,7 @@ import Settings from "@/pages/settings";
 import SurveyDetail from "@/pages/survey-detail";
 import FieldTools from "@/pages/field-tools";
 import Templates from "@/pages/templates";
-import AirMonitoring from "@/pages/air-monitoring";
+import AirMonitoring from "@/pages/air-monitoring-new";
 import NotFound from "@/pages/not-found";
 
 function Router() {

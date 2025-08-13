@@ -932,6 +932,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Air monitoring jobs routes
+  app.get("/api/air-monitoring-jobs", async (req, res) => {
+    try {
+      const jobs = await storage.getAirMonitoringJobs();
+      res.json(jobs);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch air monitoring jobs", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  app.post("/api/air-monitoring-jobs", async (req, res) => {
+    try {
+      const job = await storage.createAirMonitoringJob(req.body);
+      res.status(201).json(job);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid air monitoring job data", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  app.get("/api/air-monitoring-jobs/:id/samples", async (req, res) => {
+    try {
+      const samples = await storage.getAirMonitoringJobSamples(req.params.id);
+      res.json(samples);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch job samples", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
   // Air samples routes
   app.get("/api/air-samples", async (req, res) => {
     try {

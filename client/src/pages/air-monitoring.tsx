@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { AirSample, PersonnelProfile } from "@shared/schema";
+import { AirSample, PersonnelProfile, AirMonitoringJob } from "@shared/schema";
 
 export default function AirMonitoringPage() {
+  const [showCreateJobModal, setShowCreateJobModal] = useState(false);
   const [showCreateSampleModal, setShowCreateSampleModal] = useState(false);
   const [showCreatePersonnelModal, setShowCreatePersonnelModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");

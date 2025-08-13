@@ -202,9 +202,73 @@ export const personnelProfiles = pgTable('personnel_profiles', {
   updatedAt: timestamp('updated_at').default(sql`now()`),
 });
 
+// Air monitoring jobs - main container for air sampling projects
+export const airMonitoringJobs = pgTable('air_monitoring_jobs', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  surveyId: varchar('survey_id').references(() => surveys.id),
+  
+  // Job identification
+  jobName: text('job_name').notNull(),
+  jobNumber: text('job_number').notNull(),
+  clientName: text('client_name'),
+  projectManager: text('project_manager'),
+  
+  // Location details
+  siteName: text('site_name').notNull(),
+  address: text('address').notNull(),
+  city: text('city'),
+  state: text('state'),
+  zipCode: text('zip_code'),
+  country: text('country').default('USA'),
+  coordinates: text('coordinates'), // GPS coordinates
+  
+  // Job timing
+  startDate: timestamp('start_date').notNull(),
+  endDate: timestamp('end_date'),
+  actualStartDate: timestamp('actual_start_date'),
+  actualEndDate: timestamp('actual_end_date'),
+  
+  // Weather and environmental conditions
+  weatherConditions: text('weather_conditions'),
+  temperature: decimal('temperature'), // °C
+  humidity: decimal('humidity'), // %
+  barometricPressure: decimal('barometric_pressure'), // kPa
+  windSpeed: decimal('wind_speed'), // m/s
+  windDirection: text('wind_direction'),
+  precipitation: text('precipitation'),
+  visibility: text('visibility'),
+  
+  // Job details
+  workDescription: text('work_description'),
+  hazardsPotential: text('hazards_potential').array(),
+  controlMeasures: text('control_measures').array(),
+  safetyNotes: text('safety_notes'),
+  
+  // Status and workflow
+  status: text('status', {
+    enum: ['planning', 'setup', 'sampling', 'complete', 'lab-analysis', 'reporting', 'closed']
+  }).default('planning'),
+  
+  // Documentation
+  permits: text('permits').array(),
+  photos: text('photos').array(),
+  reports: text('reports').array(),
+  
+  // Team information
+  fieldCrew: text('field_crew').array(),
+  supervisor: text('supervisor'),
+  
+  // Notes and additional info
+  notes: text('notes'),
+  
+  createdAt: timestamp('created_at').default(sql`now()`),
+  updatedAt: timestamp('updated_at').default(sql`now()`),
+});
+
 // Air monitoring samples
 export const airSamples = pgTable('air_samples', {
   id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  jobId: text('job_id').references(() => airMonitoringJobs.id, { onDelete: 'cascade' }).notNull(),
   surveyId: varchar('survey_id').references(() => surveys.id),
   personnelId: text('personnel_id').references(() => personnelProfiles.id),
   sampleType: text('sample_type', { 
@@ -324,6 +388,12 @@ export const insertPersonnelProfileSchema = createInsertSchema(personnelProfiles
   updatedAt: true,
 });
 
+export const insertAirMonitoringJobSchema = createInsertSchema(airMonitoringJobs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertAirSampleSchema = createInsertSchema(airSamples).omit({
   id: true,
   createdAt: true,
@@ -343,6 +413,8 @@ export type InsertObservationPhoto = z.infer<typeof insertObservationPhotoSchema
 export type ObservationPhoto = typeof observationPhotos.$inferSelect;
 export type PersonnelProfile = typeof personnelProfiles.$inferSelect;
 export type InsertPersonnelProfile = z.infer<typeof insertPersonnelProfileSchema>;
+export type AirMonitoringJob = typeof airMonitoringJobs.$inferSelect;
+export type InsertAirMonitoringJob = z.infer<typeof insertAirMonitoringJobSchema>;
 export type AirSample = typeof airSamples.$inferSelect;
 export type InsertAirSample = z.infer<typeof insertAirSampleSchema>;
 export type AirMonitoringEquipment = typeof airMonitoringEquipment.$inferSelect;
