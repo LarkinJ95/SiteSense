@@ -5,6 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppHeader } from "@/components/app-header";
+import { AppFooter } from "@/components/app-footer";
 import { CreateSurveyModal } from "@/components/create-survey-modal";
 import { ThemeProvider } from "@/contexts/theme-context";
 import Dashboard from "@/pages/dashboard";
@@ -48,16 +49,17 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TooltipProvider>
-          <div className="min-h-screen bg-background">
+          <div className="min-h-screen bg-background flex flex-col">
             <AppHeader onCreateSurvey={() => setShowCreateModal(true)} />
-          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <Router />
-          </main>
-          <CreateSurveyModal 
-            open={showCreateModal} 
-            onOpenChange={setShowCreateModal}
-          />
-        </div>
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1">
+              <Router />
+            </main>
+            <AppFooter />
+            <CreateSurveyModal 
+              open={showCreateModal} 
+              onOpenChange={setShowCreateModal}
+            />
+          </div>
         <Toaster />
       </TooltipProvider>
       </ThemeProvider>
