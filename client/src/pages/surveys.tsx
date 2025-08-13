@@ -5,13 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, MapPin, Calendar, User } from "lucide-react";
+import { Search, Plus, MapPin, Calendar, User, Edit } from "lucide-react";
 import { CreateSurveyModal } from "@/components/create-survey-modal";
+import { EditSurveyModal } from "@/components/edit-survey-modal";
 import type { Survey } from "@shared/schema";
 
 export default function Surveys() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editSurvey, setEditSurvey] = useState<Survey | null>(null);
 
   const { data: surveys = [], isLoading } = useQuery<Survey[]>({
     queryKey: ["/api/surveys"],
@@ -146,6 +148,21 @@ export default function Surveys() {
                     <Calendar className="h-4 w-4 mr-2 flex-shrink-0" />
                     <span>{new Date(survey.surveyDate).toLocaleDateString()}</span>
                   </div>
+                  <div className="flex justify-end pt-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setEditSurvey(survey);
+                      }}
+                      className="h-8 w-8 p-0"
+                      data-testid={`button-edit-${survey.id}`}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </Link>
@@ -156,6 +173,12 @@ export default function Surveys() {
       <CreateSurveyModal 
         open={showCreateModal} 
         onOpenChange={setShowCreateModal}
+      />
+      
+      <EditSurveyModal 
+        survey={editSurvey}
+        open={!!editSurvey} 
+        onOpenChange={(open) => !open && setEditSurvey(null)}
       />
     </div>
   );

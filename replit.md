@@ -5,6 +5,11 @@
 SiteSense is a comprehensive full-stack web application for managing site surveys and environmental assessments. The application allows users to create surveys, record observations, upload photos, and track the progress of site inspections. It's designed for professionals conducting environmental or structural assessments who need to systematically document findings and manage survey data.
 
 ## Recent Updates (January 2025)
+- Added survey editing functionality with comprehensive edit modal
+- Implemented status change options (Draft → In Progress → Completed → On Hold)
+- Added edit buttons on both dashboard and surveys page for quick access
+- Fixed download report button functionality on dashboard with proper error handling
+- Enhanced site photo upload feature with full integration across all views
 - Changed application name from "SiteSurvey Pro" to "SiteSense" 
 - Updated branding throughout application interface and documentation
 

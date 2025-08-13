@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CreateSurveyModal } from "@/components/create-survey-modal";
+import { EditSurveyModal } from "@/components/edit-survey-modal";
 import { OfflineIndicator } from "@/components/offline-indicator";
 import type { Survey, SurveyStats } from "@/lib/types";
 import { 
@@ -24,11 +25,13 @@ import {
   Home,
   Warehouse,
   Eye,
-  FileDown
+  FileDown,
+  Edit
 } from "lucide-react";
 
 export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editSurvey, setEditSurvey] = useState<Survey | null>(null);
   const { toast } = useToast();
 
   // Generate report mutation
@@ -325,6 +328,14 @@ export default function Dashboard() {
                           >
                             <FileDown className="h-4 w-4" />
                           </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => setEditSurvey(survey)}
+                            data-testid={`button-edit-${survey.id}`}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -391,6 +402,12 @@ export default function Dashboard() {
       <CreateSurveyModal 
         open={showCreateModal} 
         onOpenChange={setShowCreateModal}
+      />
+      
+      <EditSurveyModal 
+        survey={editSurvey}
+        open={!!editSurvey} 
+        onOpenChange={(open) => !open && setEditSurvey(null)}
       />
     </div>
   );
