@@ -159,8 +159,14 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
       const { latitude, longitude } = position.coords;
       
       // Use OpenWeatherMap API (free tier)
+      const apiKey = import.meta.env.VITE_OPENWEATHERMAP_API_KEY;
+      
+      if (!apiKey) {
+        throw new Error("Weather API key not configured");
+      }
+
       const response = await fetch(
-        `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=YOUR_API_KEY&units=metric`
+        `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=metric`
       );
 
       if (!response.ok) {
@@ -186,9 +192,19 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
         description: `Current conditions: ${weatherData.weather[0].description}, ${weatherData.main.temp}°C`,
       });
     } catch (error: any) {
+      let errorMessage = "Unable to retrieve weather data. Please enter manually.";
+      
+      if (error.message === "Weather API key not configured") {
+        errorMessage = "Weather API key is not configured. Please contact your administrator.";
+      } else if (error.message === "User denied Geolocation") {
+        errorMessage = "Location access was denied. Please enable location permissions.";
+      } else if (!navigator.onLine) {
+        errorMessage = "No internet connection. Please check your connection and try again.";
+      }
+
       toast({
         title: "Weather Error",
-        description: "Unable to retrieve weather data. Please enter manually or check your internet connection.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
