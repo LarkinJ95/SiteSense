@@ -158,9 +158,15 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
 
       const { latitude, longitude } = position.coords;
       
-      // Use Open-Meteo API (completely free, no API key required)
+      // Use WeatherAPI.com
+      const apiKey = import.meta.env.VITE_WEATHERAPI_KEY;
+      
+      if (!apiKey) {
+        throw new Error("Weather API key not configured");
+      }
+
       const weatherResponse = await fetch(
-        `https://api.open-meteo.com/v1/current?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m,weather_code&timezone=auto`
+        `https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${latitude},${longitude}&aqi=no`
       );
 
       if (!weatherResponse.ok) {
@@ -170,29 +176,28 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
       const weatherData = await weatherResponse.json();
       const current = weatherData.current;
       
-      // Convert weather code to description
-      const weatherDescription = getWeatherDescription(current.weather_code);
+      // Fill in weather data from WeatherAPI.com
+      form.setValue("weatherConditions", current.condition.text);
+      form.setValue("temperature", current.temp_c?.toFixed(1));
+      form.setValue("humidity", current.humidity?.toString());
+      form.setValue("barometricPressure", (current.pressure_mb * 0.1)?.toFixed(1)); // Convert mb to kPa
+      form.setValue("windSpeed", (current.wind_kph * 0.277778)?.toFixed(1)); // Convert km/h to m/s
       
-      // Fill in weather data from Open-Meteo
-      form.setValue("weatherConditions", weatherDescription);
-      form.setValue("temperature", current.temperature_2m?.toFixed(1));
-      form.setValue("humidity", current.relative_humidity_2m?.toString());
-      form.setValue("barometricPressure", (current.surface_pressure * 0.1)?.toFixed(1)); // Convert hPa to kPa
-      form.setValue("windSpeed", (current.wind_speed_10m * 0.277778)?.toFixed(1)); // Convert km/h to m/s
-      
-      if (current.wind_direction_10m !== undefined) {
-        const windDirection = getWindDirection(current.wind_direction_10m);
+      if (current.wind_degree !== undefined) {
+        const windDirection = getWindDirection(current.wind_degree);
         form.setValue("windDirection", windDirection);
       }
 
       toast({
         title: "Weather Retrieved",
-        description: `Current conditions: ${weatherDescription}, ${current.temperature_2m}°C`,
+        description: `Current conditions: ${current.condition.text}, ${current.temp_c}°C`,
       });
     } catch (error: any) {
       let errorMessage = "Unable to retrieve weather data. Please enter manually.";
       
-      if (error.message === "User denied Geolocation") {
+      if (error.message === "Weather API key not configured") {
+        errorMessage = "WeatherAPI.com API key is not configured. Please contact your administrator.";
+      } else if (error.message === "User denied Geolocation") {
         errorMessage = "Location access was denied. Please enable location permissions.";
       } else if (!navigator.onLine) {
         errorMessage = "No internet connection. Please check your connection and try again.";
@@ -216,41 +221,7 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
     return directions[index];
   };
 
-  const getWeatherDescription = (weatherCode: number): string => {
-    // Open-Meteo weather codes
-    const weatherCodes: { [key: number]: string } = {
-      0: 'Clear sky',
-      1: 'Mainly clear',
-      2: 'Partly cloudy',
-      3: 'Overcast',
-      45: 'Fog',
-      48: 'Depositing rime fog',
-      51: 'Light drizzle',
-      53: 'Moderate drizzle',
-      55: 'Dense drizzle',
-      56: 'Light freezing drizzle',
-      57: 'Dense freezing drizzle',
-      61: 'Slight rain',
-      63: 'Moderate rain',
-      65: 'Heavy rain',
-      66: 'Light freezing rain',
-      67: 'Heavy freezing rain',
-      71: 'Slight snow fall',
-      73: 'Moderate snow fall',
-      75: 'Heavy snow fall',
-      77: 'Snow grains',
-      80: 'Slight rain showers',
-      81: 'Moderate rain showers',
-      82: 'Violent rain showers',
-      85: 'Slight snow showers',
-      86: 'Heavy snow showers',
-      95: 'Thunderstorm',
-      96: 'Thunderstorm with slight hail',
-      99: 'Thunderstorm with heavy hail'
-    };
-    
-    return weatherCodes[weatherCode] || 'Unknown conditions';
-  };
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
