@@ -21,6 +21,7 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
     { key: "dashboard", label: "Dashboard", href: "/" },
     { key: "surveys", label: "Surveys", href: "/surveys" },
     { key: "reports", label: "Reports", href: "/reports" },
+    { key: "field-tools", label: "Field Tools", href: "/field-tools" },
     { key: "settings", label: "Settings", href: "/settings" },
   ];
 

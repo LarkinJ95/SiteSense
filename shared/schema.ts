@@ -15,6 +15,14 @@ export const surveys = pgTable("surveys", {
   useTemplate: boolean("use_template").default(false),
   requirePhotos: boolean("require_photos").default(false),
   status: text("status").notNull().default("draft"), // draft, in-progress, completed
+  // Weather conditions during survey
+  weatherConditions: text("weather_conditions"),
+  temperature: decimal("temperature"), // in Celsius
+  humidity: decimal("humidity"), // percentage
+  windSpeed: decimal("wind_speed"), // km/h
+  // Equipment tracking
+  equipmentUsed: text("equipment_used").array(),
+  calibrationDates: text("calibration_dates").array(),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });
@@ -88,6 +96,14 @@ export const insertSurveySchema = z.object({
   useTemplate: z.boolean().optional().default(false),
   requirePhotos: z.boolean().optional().default(false),
   status: z.string().optional().default("draft"),
+  // Weather conditions
+  weatherConditions: z.string().optional(),
+  temperature: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  humidity: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  windSpeed: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  // Equipment tracking
+  equipmentUsed: z.array(z.string()).optional(),
+  calibrationDates: z.array(z.string()).optional(),
 });
 
 export const insertObservationSchema = z.object({

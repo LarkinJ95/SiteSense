@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CreateSurveyModal } from "@/components/create-survey-modal";
+import { OfflineIndicator } from "@/components/offline-indicator";
 import type { Survey, SurveyStats } from "@/lib/types";
 import { 
   ClipboardCheck, 
@@ -73,7 +74,8 @@ export default function Dashboard() {
             Welcome back! Here's an overview of your recent survey activity.
           </p>
         </div>
-        <div className="mt-4 md:mt-0 flex space-x-3">
+        <div className="mt-4 md:mt-0 flex items-center space-x-3">
+          <OfflineIndicator />
           <Button variant="outline" data-testid="button-export">
             <Download className="mr-2 h-4 w-4" />
             Export Data

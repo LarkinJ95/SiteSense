@@ -31,6 +31,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { CreateSurveyFormData } from "@/lib/types";
+import { WeatherWidget } from "@/components/weather-widget";
+import { EquipmentTracker, type Equipment } from "@/components/equipment-tracker";
+import { OfflineIndicator } from "@/components/offline-indicator";
 import { X } from "lucide-react";
 
 const createSurveySchema = z.object({
@@ -43,6 +46,7 @@ const createSurveySchema = z.object({
   enableGPS: z.boolean().default(false),
   useTemplate: z.boolean().default(false),
   requirePhotos: z.boolean().default(false),
+  // Weather and equipment are handled separately
 });
 
 interface CreateSurveyModalProps {
@@ -53,6 +57,8 @@ interface CreateSurveyModalProps {
 export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const [weather, setWeather] = useState<any>(null);
 
   const form = useForm<CreateSurveyFormData>({
     resolver: zodResolver(createSurveySchema),
@@ -71,8 +77,19 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
 
   const createSurveyMutation = useMutation({
     mutationFn: async (data: CreateSurveyFormData) => {
-      const response = await apiRequest("POST", "/api/surveys", {
+      const surveyData = {
         ...data,
+        // Add weather data if available
+        weatherConditions: weather?.conditions,
+        temperature: weather?.temperature?.toString(),
+        humidity: weather?.humidity?.toString(),
+        windSpeed: weather?.windSpeed?.toString(),
+        // Add equipment data
+        equipmentUsed: equipment.map(e => `${e.name} (${e.serialNumber})`),
+        calibrationDates: equipment.map(e => e.calibrationDate),
+      };
+      const response = await apiRequest("POST", "/api/surveys", {
+        ...surveyData,
         surveyDate: new Date(data.surveyDate).toISOString(),
       });
       return response.json();
@@ -312,6 +329,21 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
                   )}
                 />
               </div>
+            </div>
+
+            {/* Weather Conditions */}
+            <div className="space-y-4">
+              <WeatherWidget onWeatherUpdate={setWeather} />
+            </div>
+
+            {/* Equipment Tracking */}
+            <div className="space-y-4">
+              <EquipmentTracker equipment={equipment} onEquipmentChange={setEquipment} />
+            </div>
+
+            {/* Offline Status */}
+            <div className="space-y-4">
+              <OfflineIndicator />
             </div>
 
             <div className="flex justify-end space-x-3 pt-4 border-t">

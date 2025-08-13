@@ -29,6 +29,14 @@ export interface CreateSurveyFormData {
   enableGPS?: boolean;
   useTemplate?: boolean;
   requirePhotos?: boolean;
+  // Weather conditions
+  weatherConditions?: string;
+  temperature?: string;
+  humidity?: string;
+  windSpeed?: string;
+  // Equipment tracking
+  equipmentUsed?: string[];
+  calibrationDates?: string[];
 }
 
 export interface CreateObservationFormData {
