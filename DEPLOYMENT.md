@@ -199,17 +199,32 @@ sudo chown -R sitesense:sitesense /opt/sitesense
 sudo -u sitesense -s
 
 # Navigate to app directory
-cd /opt/sitesense/app
+cd /opt/sitesense
 
-# Clone or upload your application
-git clone https://your-repo/sitesense.git .
-# OR upload your built application files
+# Method 1: Clone repository directly into app directory
+git clone https://your-repo/sitesense.git app
+cd app
 
-# Install dependencies
-npm ci --production
+# Method 2: Upload application files and extract
+# If uploading a tar/zip file:
+# tar -xzf sitesense-app.tar.gz -C app/
+# cd app
+
+# Method 3: Copy from local build
+# cp -r /path/to/built/application/* app/
+# cd app
+
+# Ensure package.json exists in the correct location
+ls -la package.json  # This should show the package.json file
+
+# Install dependencies (use --omit=dev instead of --production)
+npm ci --omit=dev
 
 # Build the application
 npm run build
+
+# Verify the build completed successfully
+ls -la dist/  # Should show built files
 ```
 
 #### 3. Environment Configuration
@@ -719,6 +734,213 @@ request.end();
 ```
 
 ## Troubleshooting
+
+### Common Deployment Issues
+
+#### 1. Package.json Not Found Error
+
+**Error:** `npm error path /opt/sitesense/app/package.json ... ENOENT: no such file or directory`
+
+**Solution:**
+```bash
+# Check if you're in the correct directory
+cd /opt/sitesense/app
+pwd  # Should show /opt/sitesense/app
+
+# Verify package.json exists
+ls -la package.json
+
+# If package.json is missing, ensure you've deployed the application correctly:
+# Option A: Re-clone the repository
+cd /opt/sitesense
+rm -rf app
+git clone https://your-repo/sitesense.git app
+
+# Option B: Copy the application files properly
+# Ensure package.json is in the root of the app directory
+cp /path/to/source/package.json /opt/sitesense/app/
+
+# Then retry installation
+cd /opt/sitesense/app
+npm ci --omit=dev
+```
+
+#### 2. NPM Permission Issues
+
+**Error:** Permission denied during npm install
+
+**Solution:**
+```bash
+# Ensure correct ownership
+sudo chown -R sitesense:sitesense /opt/sitesense/app
+
+# Switch to sitesense user
+sudo -u sitesense -s
+cd /opt/sitesense/app
+
+# Clear npm cache and retry
+npm cache clean --force
+npm ci --omit=dev
+```
+
+#### 3. Node.js Version Compatibility
+
+**Error:** Node.js version mismatch
+
+**Solution:**
+```bash
+# Check Node.js version
+node --version
+
+# Should be v20.x.x or higher
+# If not, install the correct version:
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Verify installation
+node --version
+npm --version
+```
+
+#### 4. Build Failures
+
+**Error:** Build process fails
+
+**Solution:**
+```bash
+# Check if all dependencies are installed
+npm list --depth=0
+
+# Install missing dependencies
+npm ci --omit=dev
+
+# Check TypeScript compilation
+npm run check
+
+# Try building again
+npm run build
+
+# If build still fails, check logs:
+npm run build 2>&1 | tee build.log
+```
+
+#### 5. Database Connection Issues
+
+**Error:** Database connection refused
+
+**Solution:**
+```bash
+# Check PostgreSQL status
+sudo systemctl status postgresql
+
+# Verify database exists
+sudo -u postgres psql -c "\l" | grep sitesense
+
+# Test connection with credentials
+psql -h localhost -U sitesense -d sitesense_production -c "SELECT 1;"
+
+# Check DATABASE_URL format in .env
+cat /opt/sitesense/app/.env | grep DATABASE_URL
+```
+
+### File Structure Verification
+
+Ensure your deployed application has this structure:
+```
+/opt/sitesense/
+├── app/
+│   ├── package.json          # REQUIRED: Must be present
+│   ├── package-lock.json     # REQUIRED: For npm ci
+│   ├── node_modules/         # Created by npm ci
+│   ├── dist/                 # Created by npm run build
+│   ├── server/               # Server source code
+│   ├── client/               # Client source code
+│   ├── shared/               # Shared schemas
+│   ├── .env                  # Environment configuration
+│   ├── tsconfig.json         # TypeScript configuration
+│   ├── vite.config.ts        # Vite configuration
+│   └── uploads/              # File upload directory
+├── logs/                     # Application logs
+└── backups/                  # Database backups
+```
+
+### Quick Deployment Verification Script
+
+Create `/opt/sitesense/verify-deployment.sh`:
+```bash
+#!/bin/bash
+
+echo "=== SiteSense Deployment Verification ==="
+
+# Check directory structure
+echo "1. Checking directory structure..."
+if [ -d "/opt/sitesense/app" ]; then
+    echo "✓ App directory exists"
+else
+    echo "✗ App directory missing"
+    exit 1
+fi
+
+# Check package.json
+echo "2. Checking package.json..."
+if [ -f "/opt/sitesense/app/package.json" ]; then
+    echo "✓ package.json found"
+else
+    echo "✗ package.json missing"
+    exit 1
+fi
+
+# Check Node.js
+echo "3. Checking Node.js..."
+NODE_VERSION=$(node --version)
+echo "Node.js version: $NODE_VERSION"
+
+# Check npm
+echo "4. Checking npm..."
+NPM_VERSION=$(npm --version)
+echo "npm version: $NPM_VERSION"
+
+# Check dependencies
+echo "5. Checking dependencies..."
+cd /opt/sitesense/app
+if [ -d "node_modules" ]; then
+    echo "✓ node_modules directory exists"
+else
+    echo "✗ node_modules missing - run 'npm ci --omit=dev'"
+fi
+
+# Check build output
+echo "6. Checking build output..."
+if [ -d "dist" ]; then
+    echo "✓ dist directory exists"
+else
+    echo "✗ dist directory missing - run 'npm run build'"
+fi
+
+# Check environment file
+echo "7. Checking environment..."
+if [ -f ".env" ]; then
+    echo "✓ .env file found"
+else
+    echo "✗ .env file missing"
+fi
+
+# Check database connection
+echo "8. Testing database connection..."
+if command -v psql > /dev/null; then
+    echo "✓ PostgreSQL client available"
+else
+    echo "✗ PostgreSQL client not installed"
+fi
+
+echo "=== Verification Complete ==="
+```
+
+Make it executable and run:
+```bash
+chmod +x /opt/sitesense/verify-deployment.sh
+sudo -u sitesense /opt/sitesense/verify-deployment.sh
+```
 
 ### Common Issues
 
