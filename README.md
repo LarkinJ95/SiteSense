@@ -42,7 +42,7 @@ SiteSense is a comprehensive full-stack web application designed for environment
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/sitesense.git
+git clone https://github.com/LarkinJ95/sitesense.git
 cd sitesense
 
 # Install dependencies
