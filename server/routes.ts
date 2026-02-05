@@ -9,6 +9,48 @@ import fs from "fs/promises";
 import { nanoid } from "nanoid";
 import { getUserDisplayName } from "./auth";
 
+let heicConvert: any | null = null;
+
+async function convertHeicToJpegIfNeeded(file: Express.Multer.File) {
+  const ext = path.extname(file.originalname).toLowerCase();
+  const isHeic =
+    file.mimetype === "image/heic" ||
+    file.mimetype === "image/heif" ||
+    ext === ".heic" ||
+    ext === ".heif";
+
+  if (!isHeic) return file;
+
+  try {
+    if (!heicConvert) {
+      const mod = await import("heic-convert");
+      heicConvert = mod.default || mod;
+    }
+    const inputBuffer = await fs.readFile(file.path);
+    const outputBuffer: Buffer = await heicConvert({
+      buffer: inputBuffer,
+      format: "JPEG",
+      quality: 0.9,
+    });
+    const newFilename = `${nanoid()}.jpg`;
+    const newPath = path.join("uploads", newFilename);
+    await fs.writeFile(newPath, outputBuffer);
+    await fs.unlink(file.path).catch(() => undefined);
+
+    return {
+      ...file,
+      filename: newFilename,
+      originalname: file.originalname.replace(/\.(heic|heif)$/i, ".jpg"),
+      mimetype: "image/jpeg",
+      size: outputBuffer.length,
+      path: newPath,
+    };
+  } catch (error) {
+    console.warn("HEIC conversion failed, storing original file:", error);
+    return file;
+  }
+}
+
 // Configure multer for file uploads
 const upload = multer({
   dest: 'uploads/',
@@ -552,6 +594,18 @@ async function toImageDataUrl(filename: string, originalName?: string | null) {
     const filePath = path.join('uploads', safeName);
     const buffer = await fs.readFile(filePath);
     const ext = (originalName ? path.extname(originalName) : path.extname(safeName)).toLowerCase();
+    if (ext === ".heic" || ext === ".heif") {
+      if (!heicConvert) {
+        const mod = await import("heic-convert");
+        heicConvert = mod.default || mod;
+      }
+      const outputBuffer: Buffer = await heicConvert({
+        buffer,
+        format: "JPEG",
+        quality: 0.9,
+      });
+      return `data:image/jpeg;base64,${outputBuffer.toString("base64")}`;
+    }
     const mime =
       ext === ".png" ? "image/png" :
       ext === ".gif" ? "image/gif" :
@@ -1183,12 +1237,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const uploadedPhotos = [];
       
       for (const file of files) {
+        const normalized = await convertHeicToJpegIfNeeded(file);
         const photo = await storage.createObservationPhoto({
           observationId,
-          filename: file.filename,
-          originalName: file.originalname,
-          mimeType: file.mimetype,
-          size: file.size,
+          filename: normalized.filename,
+          originalName: normalized.originalname,
+          mimeType: normalized.mimetype,
+          size: normalized.size,
         });
         uploadedPhotos.push(photo);
       }

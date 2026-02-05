@@ -29,6 +29,7 @@ const airSampleFormSchema = insertAirSampleSchema.extend({
   endTime: z.string().optional(),
   customSampleType: z.string().optional(),
   customAnalyte: z.string().optional(),
+  sampleNumber: z.string().optional(),
   // Extend for form handling
   result: z.string().optional(),
   resultUnit: z.string().optional(),
@@ -808,6 +809,8 @@ export default function AirMonitoringPage() {
                   <Card className="p-4">
                     <AirSampleForm 
                       jobId={selectedJob.id}
+                      jobNumber={selectedJob.jobNumber}
+                      existingSamples={jobSamples}
                       personnel={personnel}
                       equipmentList={equipmentList}
                       onSuccess={() => setJobDetailsTab("samples")}
@@ -1112,6 +1115,8 @@ export default function AirMonitoringPage() {
             </DialogHeader>
             <AirSampleForm 
               jobId={editingSample.jobId}
+              jobNumber={selectedJob?.jobNumber || ""}
+              existingSamples={jobSamples}
               personnel={personnel}
               equipmentList={equipmentList}
               onSuccess={() => setEditingSample(null)}
@@ -1129,6 +1134,8 @@ export default function AirMonitoringPage() {
 // Air Sample Form Component
 interface AirSampleFormProps {
   jobId: string;
+  jobNumber: string;
+  existingSamples: AirSample[];
   personnel: PersonnelProfile[];
   equipmentList: FieldToolsEquipment[];
   onSuccess: () => void;
@@ -1137,15 +1144,29 @@ interface AirSampleFormProps {
   initialData?: AirSample;
 }
 
-function AirSampleForm({ jobId, personnel, equipmentList, onSuccess, onSubmit, isLoading, initialData }: AirSampleFormProps) {
+function AirSampleForm({ jobId, jobNumber, existingSamples, personnel, equipmentList, onSuccess, onSubmit, isLoading, initialData }: AirSampleFormProps) {
   const [personnelQuery, setPersonnelQuery] = useState("");
   const [lastUnitDefault, setLastUnitDefault] = useState<string>("");
   const [labReportFile, setLabReportFile] = useState<File | null>(null);
+
+  const getNextSampleNumber = () => {
+    const prefix = jobNumber ? `${jobNumber}-` : "";
+    const maxIndex = existingSamples.reduce((max, sample) => {
+      const value = sample.sampleNumber || "";
+      const match = value.match(/-(\d+)$/);
+      if (!match) return max;
+      const num = Number(match[1]);
+      if (!Number.isFinite(num)) return max;
+      return Math.max(max, num);
+    }, 0);
+    return `${prefix}${maxIndex + 1}`;
+  };
 
   const form = useForm<AirSampleFormData>({
     resolver: zodResolver(airSampleFormSchema),
     defaultValues: {
       jobId,
+      sampleNumber: initialData?.sampleNumber || getNextSampleNumber(),
       sampleType: initialData?.sampleType || 'area',
       customSampleType: initialData?.customSampleType || '',
       analyte: initialData?.analyte || 'asbestos',
@@ -1280,6 +1301,19 @@ function AirSampleForm({ jobId, personnel, equipmentList, onSuccess, onSubmit, i
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
         <div className="max-h-[70vh] overflow-y-auto pr-2 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <FormField
+            control={form.control}
+            name="sampleNumber"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Sample Number</FormLabel>
+                <FormControl>
+                  <Input {...field} value={field.value || ""} readOnly />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <FormField
             control={form.control}
             name="sampleType"
@@ -1508,24 +1542,25 @@ function AirSampleForm({ jobId, personnel, equipmentList, onSuccess, onSubmit, i
             )}
           />
 
-          <FormField
-            control={form.control}
-            name="samplingDuration"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Run Time (minutes)</FormLabel>
-                <FormControl>
-                  <Input 
-                    type="number" 
-                    placeholder="480"
-                    value={field.value?.toString() || ''}
-                    readOnly
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+            <FormField
+              control={form.control}
+              name="samplingDuration"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Run Time (minutes)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number" 
+                      placeholder="480"
+                      value={field.value?.toString() || ''}
+                      readOnly
+                      disabled
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
         </div>
 
         <FormField

@@ -325,6 +325,7 @@ export const airSamples = pgTable('air_samples', {
   jobId: text('job_id').references(() => airMonitoringJobs.id, { onDelete: 'cascade' }).notNull(),
   surveyId: varchar('survey_id').references(() => surveys.id),
   personnelId: text('personnel_id').references(() => personnelProfiles.id),
+  sampleNumber: text('sample_number'),
   sampleType: text('sample_type', { 
     enum: ['area', 'blank', 'personal', 'excursion', 'clearance', 'other'] 
   }).notNull(),
