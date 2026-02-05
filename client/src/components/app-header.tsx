@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ClipboardList, Plus, User, Settings, LogOut, UserCircle, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { authClient } from "@/lib/auth";
 
 interface AppHeaderProps {
   onCreateSurvey: () => void;
@@ -19,18 +20,25 @@ interface AppHeaderProps {
 export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
+  const { data: session } = authClient.useSession();
+  const displayName =
+    session?.user?.name || session?.user?.email || "User";
 
-  const handleLogout = () => {
-    // Clear authentication tokens
+  const handleLogout = async () => {
+    try {
+      await authClient.signOut();
+    } catch (error) {
+      console.error("Failed to sign out:", error);
+    }
+
     localStorage.removeItem("authToken");
     localStorage.removeItem("userRole");
-    
+
     toast({
       title: "Logged out",
       description: "You have been logged out successfully.",
     });
-    
-    // Redirect to login page
+
     setLocation("/login");
   };
 
@@ -109,7 +117,7 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
                       <User className="h-4 w-4" />
                     </AvatarFallback>
                   </Avatar>
-                  <span className="hidden md:block text-sm font-medium">John Inspector</span>
+                  <span className="hidden md:block text-sm font-medium">{displayName}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">

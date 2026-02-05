@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { User, Mail, Building, Phone, MapPin, Calendar, Shield, Bell, Key, Trash2, Camera } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { useTheme } from "@/contexts/theme-context";
 
 interface UserProfile {
   id: string;
@@ -41,6 +42,7 @@ export default function UserProfile() {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { theme, setTheme } = useTheme();
 
   // Fetch user profile
   const { data: profile, isLoading } = useQuery<UserProfile>({
@@ -49,10 +51,16 @@ export default function UserProfile() {
 
   const [formData, setFormData] = useState<Partial<UserProfile>>({});
 
+  useEffect(() => {
+    if (!profile) return;
+    setFormData(profile);
+  }, [profile]);
+
   // Update profile mutation
   const updateProfileMutation = useMutation({
     mutationFn: async (data: Partial<UserProfile>) => {
-      return await apiRequest("PUT", "/api/user/profile", data);
+      const response = await apiRequest("PUT", "/api/user/profile", data);
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/user/profile"] });
@@ -62,10 +70,10 @@ export default function UserProfile() {
       });
       setIsEditing(false);
     },
-    onError: () => {
+    onError: (error: any) => {
       toast({
         title: "Error",
-        description: "Failed to update profile.",
+        description: error?.message || "Failed to update profile.",
         variant: "destructive",
       });
     },
@@ -341,7 +349,8 @@ export default function UserProfile() {
                 </div>
                 <Switch 
                   id="dark-mode" 
-                  defaultChecked={profile.preferences.darkMode}
+                  checked={theme === "dark"}
+                  onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
                 />
               </div>
             </CardContent>

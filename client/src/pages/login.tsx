@@ -1,14 +1,14 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Link } from "wouter";
 import { Eye, EyeOff, AlertCircle, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { authClient } from "@/lib/auth";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -20,7 +20,7 @@ export default function Login() {
 
   const [formData, setFormData] = useState({
     email: "",
-    password: ""
+    password: "",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -29,40 +29,26 @@ export default function Login() {
     setError("");
 
     try {
-      // TODO: Replace with actual authentication API call
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-          rememberMe
-        }),
+      const { error: signInError } = await authClient.signIn.email({
+        email: formData.email,
+        password: formData.password,
+        rememberMe,
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        // Store auth token or session
-        localStorage.setItem("authToken", data.token);
-        if (data.user?.role) {
-          localStorage.setItem("userRole", data.user.role);
-        }
-        
-        toast({
-          title: "Welcome back!",
-          description: "You have been logged in successfully.",
-        });
-        
-        // Redirect to dashboard
-        setLocation("/");
-      } else {
-        const errorData = await response.json();
-        setError(errorData.message || "Login failed. Please check your credentials.");
+      if (signInError) {
+        setError(signInError.message || "Login failed. Please check your credentials.");
+        return;
       }
+
+      toast({
+        title: "Welcome back!",
+        description: "You have been logged in successfully.",
+      });
+
+      setLocation("/");
     } catch (err) {
-      setError("Network error. Please try again.");
+      const message = err instanceof Error ? err.message : "Network error. Please try again.";
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -82,7 +68,7 @@ export default function Login() {
             Sign in to your account to access environmental survey tools
           </CardDescription>
         </CardHeader>
-        
+
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
@@ -153,9 +139,9 @@ export default function Login() {
               </Link>
             </div>
 
-            <Button 
-              type="submit" 
-              className="w-full" 
+            <Button
+              type="submit"
+              className="w-full"
               disabled={isLoading}
               data-testid="button-login"
             >

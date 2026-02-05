@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,15 @@ interface ComplianceRule {
   isActive: boolean;
 }
 
+interface UserProfile {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  organization?: string;
+  jobTitle?: string;
+}
+
 export default function SystemSettings() {
   const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
   const [selectedRule, setSelectedRule] = useState<ComplianceRule | null>(null);
@@ -65,6 +74,14 @@ export default function SystemSettings() {
     isActive: true,
   });
 
+  const [profileForm, setProfileForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    organization: "",
+    jobTitle: "",
+  });
+
   // Fetch notification settings
   const { data: notificationSettings, isLoading: loadingNotifications } = useQuery({
     queryKey: ["/api/settings/notifications"],
@@ -77,12 +94,29 @@ export default function SystemSettings() {
     queryFn: async () => (await apiRequest("GET", "/api/compliance-rules")).json(),
   });
 
+  const { data: profileData, isLoading: loadingProfile } = useQuery({
+    queryKey: ["/api/user/profile"],
+    queryFn: async () => (await apiRequest("GET", "/api/user/profile")).json(),
+  });
+
   const notificationSettingsList: NotificationSetting[] = Array.isArray(notificationSettings)
     ? notificationSettings
     : [];
   const complianceRulesList: ComplianceRule[] = Array.isArray(complianceRules)
     ? complianceRules
     : [];
+
+  useEffect(() => {
+    if (!profileData) return;
+    const profile = profileData as UserProfile;
+    setProfileForm({
+      firstName: profile.firstName || "",
+      lastName: profile.lastName || "",
+      email: profile.email || "",
+      organization: profile.organization || "",
+      jobTitle: profile.jobTitle || "",
+    });
+  }, [profileData]);
 
   // Update notification settings
   const updateNotificationMutation = useMutation({
@@ -111,6 +145,27 @@ export default function SystemSettings() {
       });
       setIsComplianceModalOpen(false);
       resetForm();
+    },
+  });
+
+  const updateProfileMutation = useMutation({
+    mutationFn: async (updates: Partial<UserProfile>) => {
+      const response = await apiRequest("PUT", "/api/user/profile", updates);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user/profile"] });
+      toast({
+        title: "Profile Updated",
+        description: "Your profile information has been saved.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Update failed",
+        description: error?.message || "Unable to save profile changes.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -147,11 +202,91 @@ export default function SystemSettings() {
 
       <Tabs defaultValue="notifications" className="space-y-6">
         <TabsList>
+          <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="compliance">Compliance</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="profile" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Users className="h-5 w-5 mr-2" />
+                Profile Settings
+              </CardTitle>
+              <CardDescription>
+                Update your personal information and organization details
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingProfile ? (
+                <div className="flex justify-center py-8">Loading profile...</div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="profile-first-name">First Name</Label>
+                      <Input
+                        id="profile-first-name"
+                        value={profileForm.firstName}
+                        onChange={(e) => setProfileForm({ ...profileForm, firstName: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="profile-last-name">Last Name</Label>
+                      <Input
+                        id="profile-last-name"
+                        value={profileForm.lastName}
+                        onChange={(e) => setProfileForm({ ...profileForm, lastName: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="profile-email">Email</Label>
+                      <Input
+                        id="profile-email"
+                        type="email"
+                        value={profileForm.email}
+                        onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="profile-job-title">Job Title</Label>
+                      <Input
+                        id="profile-job-title"
+                        value={profileForm.jobTitle}
+                        onChange={(e) => setProfileForm({ ...profileForm, jobTitle: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="profile-organization">Organization</Label>
+                    <Input
+                      id="profile-organization"
+                      value={profileForm.organization}
+                      onChange={(e) => setProfileForm({ ...profileForm, organization: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={() => updateProfileMutation.mutate(profileForm)}
+                      disabled={updateProfileMutation.isPending}
+                    >
+                      <Save className="h-4 w-4 mr-2" />
+                      {updateProfileMutation.isPending ? "Saving..." : "Save Profile"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="notifications" className="space-y-4">
           <Card>

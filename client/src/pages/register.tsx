@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,9 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Link } from "wouter";
-import { Eye, EyeOff, AlertCircle, Shield, UserPlus } from "lucide-react";
+import { Eye, EyeOff, AlertCircle, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { authClient } from "@/lib/auth";
 
 export default function Register() {
   const [, setLocation] = useLocation();
@@ -28,7 +28,7 @@ export default function Register() {
     confirmPassword: "",
     organization: "",
     jobTitle: "",
-    role: "user"
+    role: "user",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -36,7 +36,6 @@ export default function Register() {
     setIsLoading(true);
     setError("");
 
-    // Validation
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match");
       setIsLoading(false);
@@ -50,37 +49,32 @@ export default function Register() {
     }
 
     try {
-      // TODO: Replace with actual registration API call
-      const response = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          email: formData.email,
-          password: formData.password,
-          organization: formData.organization,
-          jobTitle: formData.jobTitle,
-          role: formData.role
-        }),
+      const name = `${formData.firstName} ${formData.lastName}`.trim();
+      const { data, error: signUpError } = await authClient.signUp.email({
+        name: name || formData.email,
+        email: formData.email,
+        password: formData.password,
       });
 
-      if (response.ok) {
-        toast({
-          title: "Account created successfully!",
-          description: "Please check your email to verify your account.",
-        });
-        
-        // Redirect to login
-        setLocation("/login");
-      } else {
-        const errorData = await response.json();
-        setError(errorData.message || "Registration failed. Please try again.");
+      if (signUpError) {
+        setError(signUpError.message || "Registration failed. Please try again.");
+        return;
       }
+
+      toast({
+        title: "Account created successfully!",
+        description: "Please check your email to verify your account.",
+      });
+
+      if (data?.token) {
+        setLocation("/");
+        return;
+      }
+
+      setLocation("/login");
     } catch (err) {
-      setError("Network error. Please try again.");
+      const message = err instanceof Error ? err.message : "Network error. Please try again.";
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -100,7 +94,7 @@ export default function Register() {
             Join SiteSense to manage environmental surveys and assessments
           </CardDescription>
         </CardHeader>
-        
+
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
@@ -269,9 +263,9 @@ export default function Register() {
               </Label>
             </div>
 
-            <Button 
-              type="submit" 
-              className="w-full" 
+            <Button
+              type="submit"
+              className="w-full"
               disabled={isLoading}
               data-testid="button-register"
             >

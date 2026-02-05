@@ -7,6 +7,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
 import { nanoid } from "nanoid";
+import { getUserDisplayName } from "./auth";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -60,6 +61,15 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
       .split("-")
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(" ");
+  };
+  const formatSurveyType = (value: string | null | undefined) => {
+    const raw = value || "";
+    if (!raw) return "";
+    return raw
+      .split("-")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(", ");
   };
   const formatDateLong = (value: string | Date) =>
     new Date(value).toLocaleDateString("en-US", {
@@ -251,7 +261,7 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
         <h1>Site Survey Report</h1>
         <h2>${survey.siteName}</h2>
         <p><strong>Address:</strong> ${survey.address || 'Not specified'}</p>
-        <p><strong>Survey Type:</strong> ${survey.surveyType}</p>
+        <p><strong>Survey Type:</strong> ${formatSurveyType(survey.surveyType)}</p>
         <p><strong>Inspector:</strong> ${survey.inspector}</p>
         <p><strong>Survey Date:</strong> ${formatDateLong(survey.surveyDate)}</p>
         <p><strong>Status:</strong> ${formatStatus(survey.status)}</p>
@@ -470,7 +480,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/surveys", async (req, res) => {
     try {
-      const validatedData = insertSurveySchema.parse(req.body);
+      const inspectorName = getUserDisplayName(req.user);
+      const validatedData = insertSurveySchema.parse({
+        ...req.body,
+        inspector: inspectorName || req.body?.inspector,
+      });
       const survey = await storage.createSurvey(validatedData);
       res.status(201).json(survey);
     } catch (error) {
@@ -1267,7 +1281,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Mock user profile data (in real app, this would come from database)
-  const mockUserProfile = {
+  let mockUserProfile = {
     id: "user-1",
     firstName: "John",
     lastName: "Inspector",
@@ -1347,7 +1361,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.put("/api/user/profile", (req, res) => {
-    res.json({ ...mockUserProfile, ...req.body });
+    mockUserProfile = { ...mockUserProfile, ...req.body };
+    res.json(mockUserProfile);
   });
 
   app.post("/api/user/change-password", (req, res) => {
@@ -1407,6 +1422,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(201).json({
       message: "Account created successfully",
       user: newUser
+    });
+  });
+
+  app.get("/api/me", (req, res) => {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    res.json({
+      id: user.sub,
+      email: user.email,
+      name: getUserDisplayName(user),
+      user,
     });
   });
 

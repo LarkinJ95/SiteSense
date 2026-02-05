@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Switch, Route } from "wouter";
-import { queryClient } from "./lib/queryClient";
+import { useEffect, useState } from "react";
+import { Switch, Route, useLocation } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppHeader } from "@/components/app-header";
@@ -26,27 +26,113 @@ import AdminDashboard from "@/pages/admin";
 import UserProfile from "@/pages/user-profile";
 import WhiteLabelDashboard from "@/pages/white-label";
 import NotFound from "@/pages/not-found";
+import { Account } from "./pages/account";
+import { authClient } from "./lib/auth";
+
+function Protected({ children }: { children: React.ReactNode }) {
+  const [, setLocation] = useLocation();
+  const { data: session, isPending } = authClient.useSession();
+
+  useEffect(() => {
+    if (!isPending && !session) {
+      setLocation("/login");
+    }
+  }, [isPending, session, setLocation]);
+
+  if (isPending || !session) {
+    return null;
+  }
+
+  return (
+    <>{children}</>
+  );
+}
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
-      <Route path="/admin" component={AdminDashboard} />
-      <Route path="/profile" component={UserProfile} />
-      <Route path="/surveys" component={Surveys} />
-      <Route path="/surveys/:id" component={SurveyDetail} />
-      <Route path="/reports" component={Reports} />
-      <Route path="/settings" component={SystemSettings} />
-      <Route path="/field-tools" component={FieldTools} />
-      <Route path="/templates" component={Templates} />
-      <Route path="/report-builder" component={ReportBuilder} />
-      <Route path="/client-portal" component={ClientPortal} />
-      <Route path="/messaging" component={Messaging} />
-      <Route path="/air-monitoring" component={AirMonitoring} />
-      <Route path="/air-monitoring-advanced" component={AdvancedAirMonitoring} />
-      <Route path="/white-label" component={WhiteLabelDashboard} />
+      <Route path="/account/:pathname*">
+        <Protected>
+          <Account />
+        </Protected>
+      </Route>
+      <Route path="/">
+        <Protected>
+          <Dashboard />
+        </Protected>
+      </Route>
+      <Route path="/admin">
+        <Protected>
+          <AdminDashboard />
+        </Protected>
+      </Route>
+      <Route path="/profile">
+        <Protected>
+          <UserProfile />
+        </Protected>
+      </Route>
+      <Route path="/surveys">
+        <Protected>
+          <Surveys />
+        </Protected>
+      </Route>
+      <Route path="/surveys/:id">
+        <Protected>
+          <SurveyDetail />
+        </Protected>
+      </Route>
+      <Route path="/reports">
+        <Protected>
+          <Reports />
+        </Protected>
+      </Route>
+      <Route path="/settings">
+        <Protected>
+          <SystemSettings />
+        </Protected>
+      </Route>
+      <Route path="/field-tools">
+        <Protected>
+          <FieldTools />
+        </Protected>
+      </Route>
+      <Route path="/templates">
+        <Protected>
+          <Templates />
+        </Protected>
+      </Route>
+      <Route path="/report-builder">
+        <Protected>
+          <ReportBuilder />
+        </Protected>
+      </Route>
+      <Route path="/client-portal">
+        <Protected>
+          <ClientPortal />
+        </Protected>
+      </Route>
+      <Route path="/messaging">
+        <Protected>
+          <Messaging />
+        </Protected>
+      </Route>
+      <Route path="/air-monitoring">
+        <Protected>
+          <AirMonitoring />
+        </Protected>
+      </Route>
+      <Route path="/air-monitoring-advanced">
+        <Protected>
+          <AdvancedAirMonitoring />
+        </Protected>
+      </Route>
+      <Route path="/white-label">
+        <Protected>
+          <WhiteLabelDashboard />
+        </Protected>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
@@ -65,13 +151,13 @@ function App() {
               <Router />
             </main>
             <AppFooter />
-            <CreateSurveyModal 
-              open={showCreateModal} 
+            <CreateSurveyModal
+              open={showCreateModal}
               onOpenChange={setShowCreateModal}
             />
           </div>
-        <Toaster />
-      </TooltipProvider>
+          <Toaster />
+        </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

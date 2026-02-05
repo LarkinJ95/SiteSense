@@ -1,0 +1,139 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0, 0%, 98%);
+  --foreground: hsl(222, 84%, 5%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(222, 84%, 5%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(222, 84%, 5%);
+  --primary: hsl(207, 74%, 40%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(210, 40%, 26%);
+  --secondary-foreground: hsl(0, 0%, 100%);
+  --muted: hsl(210, 40%, 98%);
+  --muted-foreground: hsl(215, 16%, 47%);
+  --accent: hsl(210, 40%, 98%);
+  --accent-foreground: hsl(222, 84%, 5%);
+  --destructive: hsl(0, 84%, 60%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --border: hsl(214, 32%, 91%);
+  --input: hsl(214, 32%, 91%);
+  --ring: hsl(207, 74%, 40%);
+  --success: hsl(122, 39%, 49%);
+  --warning: hsl(35, 91%, 48%);
+  --danger: hsl(0, 84%, 60%);
+  --surface: hsl(0, 0%, 100%);
+  --font-inter: 'Inter', sans-serif;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: hsl(224, 71%, 4%);
+  --foreground: hsl(213, 31%, 91%);
+  --card: hsl(224, 71%, 4%);
+  --card-foreground: hsl(213, 31%, 91%);
+  --popover: hsl(224, 71%, 4%);
+  --popover-foreground: hsl(213, 31%, 91%);
+  --primary: hsl(207, 74%, 40%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(220, 14%, 14%);
+  --secondary-foreground: hsl(210, 40%, 98%);
+  --muted: hsl(220, 14%, 14%);
+  --muted-foreground: hsl(215, 20%, 65%);
+  --accent: hsl(220, 14%, 14%);
+  --accent-foreground: hsl(210, 40%, 98%);
+  --destructive: hsl(0, 62%, 30%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --border: hsl(215, 27%, 17%);
+  --input: hsl(215, 27%, 17%);
+  --ring: hsl(207, 74%, 40%);
+  --success: hsl(122, 39%, 49%);
+  --warning: hsl(35, 91%, 48%);
+  --danger: hsl(0, 62%, 30%);
+  --surface: hsl(220, 14%, 14%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: var(--font-inter);
+  }
+}
+
+@layer utilities {
+  .text-primary-custom {
+    color: hsl(207, 74%, 40%);
+  }
+  
+  .bg-primary-custom {
+    background-color: hsl(207, 74%, 40%);
+  }
+  
+  .bg-success-custom {
+    background-color: hsl(122, 39%, 49%);
+  }
+  
+  .bg-warning-custom {
+    background-color: hsl(35, 91%, 48%);
+  }
+  
+  .bg-danger-custom {
+    background-color: hsl(0, 84%, 60%);
+  }
+  
+  .text-success-custom {
+    color: hsl(122, 39%, 49%);
+  }
+  
+  .text-warning-custom {
+    color: hsl(35, 91%, 48%);
+  }
+  
+  .text-danger-custom {
+    color: hsl(0, 84%, 60%);
+  }
+  
+  /* Mobile-first responsive utilities */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Improved touch interactions */
+  .touch-card {
+    @apply transition-all duration-200 active:scale-[0.98] hover:shadow-md;
+  }
+  
+  /* Mobile-optimized spacing */
+  .mobile-spacing {
+    @apply px-4 py-3 sm:px-6 sm:py-4;
+  }
+  
+  /* Responsive text sizing */
+  .responsive-text {
+    @apply text-sm sm:text-base;
+  }
+  
+  /* Mobile-friendly buttons */
+  .mobile-button {
+    @apply h-12 px-4 text-base font-medium touch-target;
+  }
+  
+  /* Better scrolling on mobile */
+  .mobile-scroll {
+    @apply overflow-x-auto;
+  }
+  
+  /* Touch-optimized cards */
+  .touch-optimized {
+    @apply active:bg-gray-50 dark:active:bg-gray-800 transition-colors;
+  }
+}
