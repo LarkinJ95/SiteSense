@@ -12,6 +12,7 @@ import {
 import { ClipboardList, Plus, User, Settings, LogOut, UserCircle, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/lib/auth";
+import { useQuery } from "@tanstack/react-query";
 
 interface AppHeaderProps {
   onCreateSurvey: () => void;
@@ -21,8 +22,18 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
   const { data: session } = authClient.useSession();
+  const { data: profile } = useQuery({
+    queryKey: ["/api/user/profile"],
+  });
+  const profileName =
+    profile && typeof profile === "object"
+      ? `${(profile as any).firstName || ""} ${(profile as any).lastName || ""}`.trim()
+      : "";
   const displayName =
-    session?.user?.name || session?.user?.email || "User";
+    profileName ||
+    session?.user?.name ||
+    session?.user?.email ||
+    "User";
 
   const handleLogout = async () => {
     try {

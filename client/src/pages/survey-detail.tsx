@@ -38,8 +38,38 @@ export default function SurveyDetail() {
   const [editingObservation, setEditingObservation] = useState<Observation | null>(null);
   const [editSurvey, setEditSurvey] = useState<Survey | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [homogeneousAreaForm, setHomogeneousAreaForm] = useState({
+    description: "",
+  });
+  const [functionalAreaForm, setFunctionalAreaForm] = useState({
+    title: "",
+    description: "",
+    length: "",
+    width: "",
+    height: "",
+    wallCount: "",
+    doorCount: "",
+    windowCount: "",
+    photo: null as File | null,
+  });
+  const [editingFunctionalAreaId, setEditingFunctionalAreaId] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const calcSqft = () => {
+    const length = Number(functionalAreaForm.length);
+    const width = Number(functionalAreaForm.width);
+    if (!Number.isFinite(length) || !Number.isFinite(width)) return "";
+    return (length * width).toFixed(2);
+  };
+
+  const calcWallSqft = () => {
+    const width = Number(functionalAreaForm.width);
+    const height = Number(functionalAreaForm.height);
+    const walls = Number(functionalAreaForm.wallCount);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || !Number.isFinite(walls)) return "";
+    return (width * height * walls).toFixed(2);
+  };
 
   const { data: survey, isLoading: surveyLoading } = useQuery<Survey>({
     queryKey: ["/api/surveys", id],
@@ -49,6 +79,145 @@ export default function SurveyDetail() {
   const { data: observations = [], isLoading: observationsLoading } = useQuery<Observation[]>({
     queryKey: ["/api/surveys", id, "observations"],
     enabled: !!id,
+  });
+
+  const { data: homogeneousAreas = [] } = useQuery<any[]>({
+    queryKey: ["/api/surveys", id, "homogeneous-areas"],
+    enabled: !!id,
+  });
+
+  const { data: functionalAreas = [] } = useQuery<any[]>({
+    queryKey: ["/api/surveys", id, "functional-areas"],
+    enabled: !!id,
+  });
+
+  const createHomogeneousAreaMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/surveys/${id}/homogeneous-areas`, {
+        description: homogeneousAreaForm.description || undefined,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/surveys", id, "homogeneous-areas"] });
+      setHomogeneousAreaForm({ description: "" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add homogeneous area",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteHomogeneousAreaMutation = useMutation({
+    mutationFn: async (areaId: string) => {
+      await apiRequest("DELETE", `/api/surveys/${id}/homogeneous-areas/${areaId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/surveys", id, "homogeneous-areas"] });
+    },
+  });
+
+  const createFunctionalAreaMutation = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        title: functionalAreaForm.title,
+        description: functionalAreaForm.description || undefined,
+        length: functionalAreaForm.length ? Number(functionalAreaForm.length) : undefined,
+        width: functionalAreaForm.width ? Number(functionalAreaForm.width) : undefined,
+        height: functionalAreaForm.height ? Number(functionalAreaForm.height) : undefined,
+        wallCount: functionalAreaForm.wallCount ? Number(functionalAreaForm.wallCount) : undefined,
+        doorCount: functionalAreaForm.doorCount ? Number(functionalAreaForm.doorCount) : undefined,
+        windowCount: functionalAreaForm.windowCount ? Number(functionalAreaForm.windowCount) : undefined,
+      };
+      const response = await apiRequest("POST", `/api/surveys/${id}/functional-areas`, payload);
+      return response.json();
+    },
+    onSuccess: async (area) => {
+      if (functionalAreaForm.photo) {
+        const formData = new FormData();
+        formData.append("photo", functionalAreaForm.photo);
+        await apiRequest("POST", `/api/surveys/${id}/functional-areas/${area.id}/photo`, formData);
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/surveys", id, "functional-areas"] });
+      setFunctionalAreaForm({
+        title: "",
+        description: "",
+        length: "",
+        width: "",
+        height: "",
+        wallCount: "",
+        doorCount: "",
+        windowCount: "",
+        photo: null,
+      });
+      setEditingFunctionalAreaId(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add functional area",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateFunctionalAreaMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingFunctionalAreaId) {
+        throw new Error("No functional area selected");
+      }
+      const payload = {
+        title: functionalAreaForm.title,
+        description: functionalAreaForm.description || undefined,
+        length: functionalAreaForm.length ? Number(functionalAreaForm.length) : undefined,
+        width: functionalAreaForm.width ? Number(functionalAreaForm.width) : undefined,
+        height: functionalAreaForm.height ? Number(functionalAreaForm.height) : undefined,
+        wallCount: functionalAreaForm.wallCount ? Number(functionalAreaForm.wallCount) : undefined,
+        doorCount: functionalAreaForm.doorCount ? Number(functionalAreaForm.doorCount) : undefined,
+        windowCount: functionalAreaForm.windowCount ? Number(functionalAreaForm.windowCount) : undefined,
+      };
+      const response = await apiRequest("PUT", `/api/surveys/${id}/functional-areas/${editingFunctionalAreaId}`, payload);
+      return response.json();
+    },
+    onSuccess: async (area) => {
+      if (functionalAreaForm.photo) {
+        const formData = new FormData();
+        formData.append("photo", functionalAreaForm.photo);
+        await apiRequest("POST", `/api/surveys/${id}/functional-areas/${area.id}/photo`, formData);
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/surveys", id, "functional-areas"] });
+      setFunctionalAreaForm({
+        title: "",
+        description: "",
+        length: "",
+        width: "",
+        height: "",
+        wallCount: "",
+        doorCount: "",
+        windowCount: "",
+        photo: null,
+      });
+      setEditingFunctionalAreaId(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update functional area",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteFunctionalAreaMutation = useMutation({
+    mutationFn: async (areaId: string) => {
+      await apiRequest("DELETE", `/api/surveys/${id}/functional-areas/${areaId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/surveys", id, "functional-areas"] });
+    },
   });
 
   const deleteObservationMutation = useMutation({
@@ -108,6 +277,13 @@ export default function SurveyDetail() {
     observation.materialType.toLowerCase().includes(searchQuery.toLowerCase()) ||
     observation.notes?.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const sampleCountByHA = observations.reduce((acc, observation) => {
+    if (observation.homogeneousArea && observation.sampleCollected) {
+      acc[observation.homogeneousArea] = (acc[observation.homogeneousArea] || 0) + 1;
+    }
+    return acc;
+  }, {} as Record<string, number>);
 
   const getRiskBadge = (riskLevel: string | null) => {
     switch (riskLevel) {
@@ -364,6 +540,232 @@ export default function SurveyDetail() {
       {/* Observations List */}
       <Card>
         <CardHeader>
+          <CardTitle>Homogeneous Areas</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col md:flex-row gap-2 mb-4">
+            <Input
+              placeholder="Description (optional)"
+              value={homogeneousAreaForm.description}
+              onChange={(e) => setHomogeneousAreaForm({ description: e.target.value })}
+              data-testid="input-homogeneous-area-description"
+            />
+            <Button
+              onClick={() => createHomogeneousAreaMutation.mutate()}
+              disabled={createHomogeneousAreaMutation.isPending}
+              data-testid="button-add-homogeneous-area"
+            >
+              Add Homogeneous Area
+            </Button>
+          </div>
+          {homogeneousAreas.length === 0 ? (
+            <div className="text-sm text-gray-500">No homogeneous areas defined yet.</div>
+          ) : (
+            <div className="space-y-2">
+              {homogeneousAreas.map((area: any) => (
+                <div key={area.id} className="flex items-center justify-between border rounded-lg px-3 py-2">
+                  <div>
+                    <div className="text-sm font-medium">{area.title}</div>
+                    {area.description && (
+                      <div className="text-xs text-gray-500">{area.description}</div>
+                    )}
+                    <div className="text-xs text-gray-500">
+                      Samples: {sampleCountByHA[area.title] || 0}
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteHomogeneousAreaMutation.mutate(area.id)}
+                    data-testid={`button-delete-homogeneous-${area.id}`}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Functional Areas</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
+            <Input
+              placeholder="Functional area title"
+              value={functionalAreaForm.title}
+              onChange={(e) => setFunctionalAreaForm(prev => ({ ...prev, title: e.target.value }))}
+              data-testid="input-functional-area-title"
+            />
+            <Input
+              placeholder="Description"
+              value={functionalAreaForm.description}
+              onChange={(e) => setFunctionalAreaForm(prev => ({ ...prev, description: e.target.value }))}
+              data-testid="input-functional-area-description"
+            />
+            <Input
+              placeholder="Length"
+              type="number"
+              value={functionalAreaForm.length}
+              onChange={(e) => setFunctionalAreaForm(prev => ({ ...prev, length: e.target.value }))}
+              data-testid="input-functional-area-length"
+            />
+            <Input
+              placeholder="Width"
+              type="number"
+              value={functionalAreaForm.width}
+              onChange={(e) => setFunctionalAreaForm(prev => ({ ...prev, width: e.target.value }))}
+              data-testid="input-functional-area-width"
+            />
+            <Input
+              placeholder="Height"
+              type="number"
+              value={functionalAreaForm.height}
+              onChange={(e) => setFunctionalAreaForm(prev => ({ ...prev, height: e.target.value }))}
+              data-testid="input-functional-area-height"
+            />
+            <Input
+              placeholder="# Walls"
+              type="number"
+              value={functionalAreaForm.wallCount}
+              onChange={(e) => setFunctionalAreaForm(prev => ({ ...prev, wallCount: e.target.value }))}
+              data-testid="input-functional-area-walls"
+            />
+            <Input
+              placeholder="# Doors"
+              type="number"
+              value={functionalAreaForm.doorCount}
+              onChange={(e) => setFunctionalAreaForm(prev => ({ ...prev, doorCount: e.target.value }))}
+              data-testid="input-functional-area-doors"
+            />
+            <Input
+              placeholder="# Windows"
+              type="number"
+              value={functionalAreaForm.windowCount}
+              onChange={(e) => setFunctionalAreaForm(prev => ({ ...prev, windowCount: e.target.value }))}
+              data-testid="input-functional-area-windows"
+            />
+            <Input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setFunctionalAreaForm(prev => ({ ...prev, photo: e.target.files?.[0] || null }))}
+              data-testid="input-functional-area-photo"
+            />
+            <div className="text-sm text-gray-600">
+              SqFt (L x W): <strong>{calcSqft() || "-"}</strong>
+            </div>
+            <div className="text-sm text-gray-600">
+              Wall SqFt (W x H x Walls): <strong>{calcWallSqft() || "-"}</strong>
+            </div>
+            <Button
+              onClick={() => {
+                if (editingFunctionalAreaId) {
+                  updateFunctionalAreaMutation.mutate();
+                } else {
+                  createFunctionalAreaMutation.mutate();
+                }
+              }}
+              disabled={
+                !functionalAreaForm.title ||
+                createFunctionalAreaMutation.isPending ||
+                updateFunctionalAreaMutation.isPending
+              }
+              data-testid="button-add-functional-area"
+            >
+              {editingFunctionalAreaId ? "Save Changes" : "Add"}
+            </Button>
+            {editingFunctionalAreaId && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditingFunctionalAreaId(null);
+                  setFunctionalAreaForm({
+                    title: "",
+                    description: "",
+                    length: "",
+                    width: "",
+                    height: "",
+                    wallCount: "",
+                    doorCount: "",
+                    windowCount: "",
+                    photo: null,
+                  });
+                }}
+              >
+                Cancel
+              </Button>
+            )}
+          </div>
+          {functionalAreas.length === 0 ? (
+            <div className="text-sm text-gray-500">No functional areas defined yet.</div>
+          ) : (
+            <div className="space-y-2">
+              {functionalAreas.map((area: any) => (
+                <div key={area.id} className="flex items-center justify-between border rounded-lg px-3 py-2">
+                  <div>
+                    <div className="text-sm font-medium">{area.title}</div>
+                    {area.description && (
+                      <div className="text-xs text-gray-500">{area.description}</div>
+                    )}
+                    <div className="text-xs text-gray-500">
+                      {area.length ? `L: ${area.length}` : ""} {area.width ? ` W: ${area.width}` : ""} {area.height ? ` H: ${area.height}` : ""}
+                      {area.wallCount ? ` • Walls: ${area.wallCount}` : ""}
+                      {area.doorCount ? ` • Doors: ${area.doorCount}` : ""}
+                      {area.windowCount ? ` • Windows: ${area.windowCount}` : ""}
+                      {area.sqft ? ` • SqFt: ${area.sqft}` : ""}
+                      {area.wallSqft ? ` • Wall SqFt: ${area.wallSqft}` : ""}
+                    </div>
+                    {area.photoUrl && (
+                      <div className="mt-2">
+                        <img src={area.photoUrl} alt={area.title} className="h-16 w-24 object-cover rounded" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setEditingFunctionalAreaId(area.id);
+                        setFunctionalAreaForm({
+                          title: area.title || "",
+                          description: area.description || "",
+                          length: area.length ? String(area.length) : "",
+                          width: area.width ? String(area.width) : "",
+                          height: area.height ? String(area.height) : "",
+                          wallCount: area.wallCount ? String(area.wallCount) : "",
+                          doorCount: area.doorCount ? String(area.doorCount) : "",
+                          windowCount: area.windowCount ? String(area.windowCount) : "",
+                          photo: null,
+                        });
+                      }}
+                      data-testid={`button-edit-functional-${area.id}`}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => deleteFunctionalAreaMutation.mutate(area.id)}
+                      data-testid={`button-delete-functional-${area.id}`}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-600" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Observations List */}
+      <Card>
+        <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle data-testid="title-observations">Observations</CardTitle>
             <div className="flex items-center space-x-3">
@@ -522,6 +924,9 @@ export default function SurveyDetail() {
         }}
         surveyId={survey.id}
         editingObservation={editingObservation}
+        homogeneousAreas={homogeneousAreas.map((area: any) => area.title)}
+        functionalAreas={functionalAreas.map((area: any) => area.title)}
+        observations={observations}
       />
       
       <EditSurveyModal 

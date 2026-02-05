@@ -60,7 +60,7 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
   });
 
   const createJobMutation = useMutation({
-    mutationFn: (data: CreateAirJobFormData) => apiRequest("/api/air-monitoring-jobs", "POST", {
+    mutationFn: (data: CreateAirJobFormData) => apiRequest("POST", "/api/air-monitoring-jobs", {
       ...data,
       startDate: new Date(data.startDate).toISOString(),
       endDate: data.endDate ? new Date(data.endDate).toISOString() : null,
@@ -117,17 +117,31 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
       const coordinateString = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
       
       form.setValue("coordinates", coordinateString);
+      localStorage.setItem("last-air-job-location", coordinateString);
       
       toast({
         title: "Location Retrieved",
         description: `GPS coordinates: ${coordinateString}`,
       });
     } catch (error: any) {
+      const last = localStorage.getItem("last-air-job-location");
+      if (last) {
+        form.setValue("coordinates", last);
+        toast({
+          title: "Location Fallback",
+          description: "Using last known coordinates.",
+        });
+        return;
+      }
+      const message =
+        error?.code === 1
+          ? "Location access was denied. Please enable location permissions."
+          : error?.code === 2
+            ? "Location unavailable. Please try again."
+            : "Unable to retrieve location. Please check your GPS settings.";
       toast({
         title: "Location Error",
-        description: error.message === "User denied Geolocation" 
-          ? "Location access was denied. Please enable location permissions."
-          : "Unable to retrieve location. Please check your GPS settings.",
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -148,57 +162,106 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
     setIsGettingWeather(true);
 
     try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-          resolve,
-          reject,
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
-        );
-      });
+      let latitude: number | undefined;
+      let longitude: number | undefined;
+      const last = localStorage.getItem("last-air-job-location");
+      if (last) {
+        const [latStr, lonStr] = last.split(",");
+        latitude = parseFloat(latStr);
+        longitude = parseFloat(lonStr);
+      }
+      if (!latitude || !longitude) {
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            resolve,
+            reject,
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+          );
+        });
+        latitude = position.coords.latitude;
+        longitude = position.coords.longitude;
+        localStorage.setItem("last-air-job-location", `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+      }
+      
+      const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
 
-      const { latitude, longitude } = position.coords;
-      
-      // Use WeatherAPI.com - get API key from server environment
-      const apiKey = import.meta.env.VITE_WEATHERAPI_KEY || "c1145a0186e94444987162821251308";
-      
-      console.log("API Key check:", apiKey ? "Available" : "Missing");
-      
       if (!apiKey) {
-        throw new Error("Weather API key not configured");
+        throw new Error("OpenWeather API key not configured");
       }
 
-      const weatherResponse = await fetch(
-        `https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${latitude},${longitude}&aqi=no`
-      );
+      const startDate = form.getValues("startDate");
+      const targetDate = startDate ? new Date(`${startDate}T12:00:00`) : new Date();
+      const now = new Date();
 
-      if (!weatherResponse.ok) {
-        throw new Error("Weather service unavailable");
+      let weatherData: any | null = null;
+      let usedForecast = false;
+
+      if (targetDate >= now) {
+        const forecastResponse = await fetch(
+          `https://api.openweathermap.org/data/2.5/forecast?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=imperial`
+        );
+        if (forecastResponse.ok) {
+          const forecast = await forecastResponse.json();
+          const targetTs = Math.floor(targetDate.getTime() / 1000);
+          const closest = forecast.list?.reduce((best: any, item: any) => {
+            if (!best) return item;
+            return Math.abs(item.dt - targetTs) < Math.abs(best.dt - targetTs) ? item : best;
+          }, null);
+          if (closest) {
+            weatherData = closest;
+            usedForecast = true;
+          }
+        }
       }
 
-      const weatherData = await weatherResponse.json();
-      const current = weatherData.current;
-      
-      // Fill in weather data from WeatherAPI.com using US standard units
-      form.setValue("weatherConditions", current.condition.text);
-      form.setValue("temperature", current.temp_f?.toFixed(1)); // Fahrenheit
-      form.setValue("humidity", current.humidity?.toString());
-      form.setValue("barometricPressure", current.pressure_in?.toFixed(2)); // Inches of mercury
-      form.setValue("windSpeed", current.wind_mph?.toFixed(1)); // Miles per hour
-      
-      if (current.wind_degree !== undefined) {
-        const windDirection = getWindDirection(current.wind_degree);
+      if (!weatherData) {
+        const currentResponse = await fetch(
+          `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=imperial`
+        );
+        if (!currentResponse.ok) {
+          throw new Error("Weather service unavailable");
+        }
+        const current = await currentResponse.json();
+        weatherData = {
+          main: current.main,
+          wind: current.wind,
+          weather: current.weather,
+        };
+      }
+
+      const conditionText = weatherData.weather?.[0]?.description || "Unknown";
+      const temp = weatherData.main?.temp;
+      const humidity = weatherData.main?.humidity;
+      const pressureMb = weatherData.main?.pressure;
+      const windSpeed = weatherData.wind?.speed;
+      const windDeg = weatherData.wind?.deg;
+
+      // Fill in weather data using US standard units
+      form.setValue("weatherConditions", conditionText);
+      form.setValue("temperature", temp !== undefined ? Number(temp).toFixed(1) : "");
+      form.setValue("humidity", humidity !== undefined ? humidity.toString() : "");
+      if (pressureMb !== undefined) {
+        const inchesHg = (Number(pressureMb) * 0.02953).toFixed(2);
+        form.setValue("barometricPressure", inchesHg);
+      }
+      form.setValue("windSpeed", windSpeed !== undefined ? Number(windSpeed).toFixed(1) : "");
+
+      if (windDeg !== undefined) {
+        const windDirection = getWindDirection(windDeg);
         form.setValue("windDirection", windDirection);
       }
 
       toast({
         title: "Weather Retrieved",
-        description: `Current conditions: ${current.condition.text}, ${current.temp_f}°F`,
+        description: usedForecast
+          ? "Forecast matched to the job start date."
+          : "Current conditions used (no forecast match available).",
       });
     } catch (error: any) {
       let errorMessage = "Unable to retrieve weather data. Please enter manually.";
       
-      if (error.message === "Weather API key not configured") {
-        errorMessage = "WeatherAPI.com API key is not configured. Please contact your administrator.";
+      if (error.message === "OpenWeather API key not configured") {
+        errorMessage = "OpenWeather API key is not configured. Please contact your administrator.";
       } else if (error.message === "User denied Geolocation") {
         errorMessage = "Location access was denied. Please enable location permissions.";
       } else if (!navigator.onLine) {
@@ -206,6 +269,14 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
       } else if (error.message.includes("service unavailable")) {
         errorMessage = "Weather service is currently unavailable. Please try again later.";
       }
+
+      // Fallback: populate with mock values so the form still works
+      form.setValue("weatherConditions", "Unknown");
+      form.setValue("temperature", "");
+      form.setValue("humidity", "");
+      form.setValue("barometricPressure", "");
+      form.setValue("windSpeed", "");
+      form.setValue("windDirection", "");
 
       toast({
         title: "Weather Error",

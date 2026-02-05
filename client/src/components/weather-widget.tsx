@@ -26,17 +26,17 @@ export function WeatherWidget({ onWeatherUpdate, latitude, longitude }: WeatherW
   }, [weather, onWeatherUpdate]);
 
   const getWeatherIcon = (conditions: string) => {
-    switch (conditions.toLowerCase()) {
-      case 'clear':
-        return <Sun className="h-6 w-6 text-yellow-500" />;
-      case 'rain':
-      case 'light rain':
-        return <CloudRain className="h-6 w-6 text-blue-500" />;
-      case 'windy':
-        return <Wind className="h-6 w-6 text-gray-500" />;
-      default:
-        return <Cloud className="h-6 w-6 text-gray-400" />;
+    const normalized = conditions.toLowerCase();
+    if (normalized.includes("rain") || normalized.includes("shower") || normalized.includes("drizzle")) {
+      return <CloudRain className="h-6 w-6 text-blue-500" />;
     }
+    if (normalized.includes("wind")) {
+      return <Wind className="h-6 w-6 text-gray-500" />;
+    }
+    if (normalized.includes("clear") || normalized.includes("sun")) {
+      return <Sun className="h-6 w-6 text-yellow-500" />;
+    }
+    return <Cloud className="h-6 w-6 text-gray-400" />;
   };
 
   if (loading) {

@@ -1,31 +1,121 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WeatherWidget } from "@/components/weather-widget";
 import { EquipmentTracker, type Equipment } from "@/components/equipment-tracker";
 import { OfflineIndicator } from "@/components/offline-indicator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { useOffline } from "@/hooks/use-offline";
+import { apiRequest } from "@/lib/queryClient";
 import { Smartphone, Wifi, WifiOff, MapPin, Compass, Clock, Battery } from "lucide-react";
 
 export default function FieldTools() {
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const [equipment, setEquipment] = useState<Equipment[]>(() => {
+    const stored = localStorage.getItem("field-tools-equipment");
+    return stored ? JSON.parse(stored) : [];
+  });
   const [weather, setWeather] = useState<any>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [manualLat, setManualLat] = useState("");
+  const [manualLng, setManualLng] = useState("");
+  const [battery, setBattery] = useState<{ level: number; charging: boolean } | null>(null);
   const { isOnline, syncOfflineData, pendingCount } = useOffline();
+  const saveTimeoutRef = useRef<number | null>(null);
+
+  const { data: equipmentData } = useQuery<Equipment[]>({
+    queryKey: ["/api/field-tools/equipment"],
+  });
+
+  const saveEquipmentMutation = useMutation({
+    mutationFn: (items: Equipment[]) => apiRequest("PUT", "/api/field-tools/equipment", items),
+  });
+
+  useEffect(() => {
+    if (equipmentData) {
+      setEquipment(equipmentData);
+      localStorage.setItem("field-tools-equipment", JSON.stringify(equipmentData));
+    }
+  }, [equipmentData]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("last-field-location");
+    if (stored) {
+      try {
+        const coords = JSON.parse(stored);
+        if (typeof coords?.lat === "number" && typeof coords?.lng === "number") {
+          setLocation(coords);
+          setManualLat(coords.lat.toFixed(6));
+          setManualLng(coords.lng.toFixed(6));
+        }
+      } catch {
+        // ignore invalid stored data
+      }
+    }
+  }, []);
+
+  const handleEquipmentChange = (items: Equipment[]) => {
+    setEquipment(items);
+    localStorage.setItem("field-tools-equipment", JSON.stringify(items));
+    if (!navigator.onLine) return;
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveEquipmentMutation.mutate(items);
+    }, 300);
+  };
+
+  useEffect(() => {
+    let batteryRef: any;
+    let onChange: (() => void) | null = null;
+
+    const loadBattery = async () => {
+      if (!("getBattery" in navigator)) return;
+      batteryRef = await (navigator as any).getBattery();
+      const update = () => {
+        setBattery({
+          level: Math.round(batteryRef.level * 100),
+          charging: batteryRef.charging,
+        });
+      };
+      onChange = update;
+      update();
+      batteryRef.addEventListener("levelchange", update);
+      batteryRef.addEventListener("chargingchange", update);
+    };
+
+    loadBattery();
+
+    return () => {
+      if (batteryRef && onChange) {
+        batteryRef.removeEventListener("levelchange", onChange);
+        batteryRef.removeEventListener("chargingchange", onChange);
+      }
+    };
+  }, []);
 
   const getCurrentLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setLocation({
+          const coords = {
             lat: position.coords.latitude,
             lng: position.coords.longitude
-          });
+          };
+          setLocation(coords);
+          localStorage.setItem("last-field-location", JSON.stringify(coords));
         },
         (error) => {
           console.error("Error getting location:", error);
-          // Show user-friendly error message
+          const stored = localStorage.getItem("last-field-location");
+          if (stored) {
+            const coords = JSON.parse(stored);
+            setLocation(coords);
+            alert("Unable to get your location. Using last known location instead.");
+            return;
+          }
           alert("Unable to get your location. Please check location permissions in your browser settings.");
         },
         {
@@ -37,6 +127,18 @@ export default function FieldTools() {
     } else {
       alert("Geolocation is not supported by this browser.");
     }
+  };
+
+  const applyManualLocation = () => {
+    const lat = Number(manualLat);
+    const lng = Number(manualLng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      alert("Please enter valid latitude and longitude values.");
+      return;
+    }
+    const coords = { lat, lng };
+    setLocation(coords);
+    localStorage.setItem("last-field-location", JSON.stringify(coords));
   };
 
   return (
@@ -81,7 +183,9 @@ export default function FieldTools() {
                 <span className="text-sm text-gray-600">Battery:</span>
                 <div className="flex items-center gap-1">
                   <Battery className="h-4 w-4 text-green-600" />
-                  <span className="text-sm">Good</span>
+                  <span className="text-sm">
+                    {battery ? `${battery.level}%${battery.charging ? " (Charging)" : ""}` : "Unknown"}
+                  </span>
                 </div>
               </div>
               <div className="flex justify-between items-center">
@@ -119,6 +223,25 @@ export default function FieldTools() {
                   <Compass className="h-4 w-4 mr-2" />
                   Update
                 </Button>
+                <div className="pt-2 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      placeholder="Latitude"
+                      value={manualLat}
+                      onChange={(e) => setManualLat(e.target.value)}
+                      data-testid="input-latitude"
+                    />
+                    <Input
+                      placeholder="Longitude"
+                      value={manualLng}
+                      onChange={(e) => setManualLng(e.target.value)}
+                      data-testid="input-longitude"
+                    />
+                  </div>
+                  <Button size="sm" variant="secondary" onClick={applyManualLocation} data-testid="button-set-location">
+                    Set Location
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="text-center">
@@ -131,6 +254,25 @@ export default function FieldTools() {
                   <MapPin className="h-4 w-4 mr-2" />
                   Get Location
                 </Button>
+                <div className="mt-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      placeholder="Latitude"
+                      value={manualLat}
+                      onChange={(e) => setManualLat(e.target.value)}
+                      data-testid="input-latitude"
+                    />
+                    <Input
+                      placeholder="Longitude"
+                      value={manualLng}
+                      onChange={(e) => setManualLng(e.target.value)}
+                      data-testid="input-longitude"
+                    />
+                  </div>
+                  <Button size="sm" variant="secondary" onClick={applyManualLocation} data-testid="button-set-location">
+                    Set Location
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
@@ -182,7 +324,7 @@ export default function FieldTools() {
       {/* Equipment Management */}
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Equipment Management</h2>
-        <EquipmentTracker equipment={equipment} onEquipmentChange={setEquipment} />
+        <EquipmentTracker equipment={equipment} onEquipmentChange={handleEquipmentChange} />
       </div>
 
       {/* Offline Data Management */}

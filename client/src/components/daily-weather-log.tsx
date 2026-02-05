@@ -73,12 +73,9 @@ export function DailyWeatherLog({ jobId }: DailyWeatherLogProps) {
   // Create weather log mutation
   const createWeatherLogMutation = useMutation({
     mutationFn: (data: WeatherLogFormData) =>
-      apiRequest(`/api/air-monitoring/jobs/${jobId}/weather-logs`, {
-        method: 'POST',
-        body: {
-          ...data,
-          logTime: new Date(`${data.logDate}T${data.logTime}`).toISOString(),
-        },
+      apiRequest("POST", `/api/air-monitoring/jobs/${jobId}/weather-logs`, {
+        ...data,
+        logTime: new Date(`${data.logDate}T${data.logTime}`).toISOString(),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/air-monitoring', 'jobs', jobId, 'weather-logs'] });
@@ -98,12 +95,9 @@ export function DailyWeatherLog({ jobId }: DailyWeatherLogProps) {
   // Update weather log mutation
   const updateWeatherLogMutation = useMutation({
     mutationFn: ({ id, ...data }: WeatherLogFormData & { id: string }) =>
-      apiRequest(`/api/air-monitoring/weather-logs/${id}`, {
-        method: 'PUT',
-        body: {
-          ...data,
-          logTime: new Date(`${data.logDate}T${data.logTime}`).toISOString(),
-        },
+      apiRequest("PUT", `/api/air-monitoring/weather-logs/${id}`, {
+        ...data,
+        logTime: new Date(`${data.logDate}T${data.logTime}`).toISOString(),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/air-monitoring', 'jobs', jobId, 'weather-logs'] });
@@ -122,7 +116,7 @@ export function DailyWeatherLog({ jobId }: DailyWeatherLogProps) {
   // Delete weather log mutation
   const deleteWeatherLogMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest(`/api/air-monitoring/weather-logs/${id}`, { method: 'DELETE' }),
+      apiRequest("DELETE", `/api/air-monitoring/weather-logs/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/air-monitoring', 'jobs', jobId, 'weather-logs'] });
       toast({ title: 'Success', description: 'Weather log deleted successfully' });
@@ -203,34 +197,79 @@ export function DailyWeatherLog({ jobId }: DailyWeatherLogProps) {
         throw new Error("Invalid coordinates format");
       }
 
-      const apiKey = import.meta.env.VITE_WEATHERAPI_KEY || "c1145a0186e94444987162821251308";
+      const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
+      if (!apiKey) {
+        throw new Error("OpenWeather API key not configured");
+      }
       
-      const weatherResponse = await fetch(
-        `https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${lat},${lon}&aqi=no`
-      );
+      const logDate = form.getValues("logDate");
+      const logTime = form.getValues("logTime");
+      const targetDate = new Date(`${logDate}T${logTime || "12:00"}`);
+      const now = new Date();
 
-      if (!weatherResponse.ok) {
-        throw new Error("Failed to fetch weather data");
+      let weatherData: any | null = null;
+      let usedForecast = false;
+
+      if (targetDate >= now) {
+        const forecastResponse = await fetch(
+          `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=imperial`
+        );
+        if (forecastResponse.ok) {
+          const forecast = await forecastResponse.json();
+          const targetTs = Math.floor(targetDate.getTime() / 1000);
+          const closest = forecast.list?.reduce((best: any, item: any) => {
+            if (!best) return item;
+            return Math.abs(item.dt - targetTs) < Math.abs(best.dt - targetTs) ? item : best;
+          }, null);
+          if (closest) {
+            weatherData = closest;
+            usedForecast = true;
+          }
+        }
       }
 
-      const weatherData = await weatherResponse.json();
-      const current = weatherData.current;
-      
+      if (!weatherData) {
+        const currentResponse = await fetch(
+          `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=imperial`
+        );
+        if (!currentResponse.ok) {
+          throw new Error("Failed to fetch weather data");
+        }
+        const current = await currentResponse.json();
+        weatherData = {
+          main: current.main,
+          wind: current.wind,
+          weather: current.weather,
+        };
+      }
+
+      const conditionText = weatherData.weather?.[0]?.description || "Unknown";
+      const temp = weatherData.main?.temp;
+      const humidity = weatherData.main?.humidity;
+      const pressureMb = weatherData.main?.pressure;
+      const windSpeed = weatherData.wind?.speed;
+      const windDeg = weatherData.wind?.deg;
+
       // Fill in weather data using US standard units
-      form.setValue("weatherConditions", current.condition.text);
-      form.setValue("temperature", current.temp_f?.toFixed(1)); // Fahrenheit
-      form.setValue("humidity", current.humidity?.toString());
-      form.setValue("barometricPressure", current.pressure_in?.toFixed(2)); // Inches of mercury
-      form.setValue("windSpeed", current.wind_mph?.toFixed(1)); // Miles per hour
-      
-      if (current.wind_degree !== undefined) {
-        const windDirection = getWindDirection(current.wind_degree);
+      form.setValue("weatherConditions", conditionText);
+      form.setValue("temperature", temp !== undefined ? Number(temp).toFixed(1) : "");
+      form.setValue("humidity", humidity !== undefined ? humidity.toString() : "");
+      if (pressureMb !== undefined) {
+        const inchesHg = (Number(pressureMb) * 0.02953).toFixed(2);
+        form.setValue("barometricPressure", inchesHg);
+      }
+      form.setValue("windSpeed", windSpeed !== undefined ? Number(windSpeed).toFixed(1) : "");
+
+      if (windDeg !== undefined) {
+        const windDirection = getWindDirection(windDeg);
         form.setValue("windDirection", windDirection);
       }
 
       toast({
         title: "Weather Retrieved",
-        description: `Current conditions: ${current.condition.text}, ${current.temp_f}°F`,
+        description: usedForecast
+          ? "Forecast matched to the log date."
+          : "Current conditions used (no forecast match available).",
       });
     } catch (error: any) {
       toast({

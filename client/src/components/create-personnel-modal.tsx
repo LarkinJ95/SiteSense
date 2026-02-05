@@ -43,7 +43,7 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
   });
 
   const createPersonnelMutation = useMutation({
-    mutationFn: (data: CreatePersonnelFormData) => apiRequest("/api/personnel", "POST", data),
+    mutationFn: (data: CreatePersonnelFormData) => apiRequest("POST", "/api/personnel", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/personnel"] });
       toast({

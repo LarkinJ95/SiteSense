@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 
 export interface WeatherData {
   conditions: string;
-  temperature: number; // Celsius
+  temperature: number; // Fahrenheit
   humidity: number; // Percentage
-  windSpeed: number; // km/h
+  windSpeed: number; // mph
   description: string;
   location: string;
 }
@@ -13,6 +13,10 @@ export function useWeather() {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastCoords, setLastCoords] = useState<{ lat: number; lon: number } | null>(() => {
+    const stored = localStorage.getItem("last-weather-coords");
+    return stored ? JSON.parse(stored) : null;
+  });
 
   const getCurrentWeather = async (latitude?: number, longitude?: number) => {
     setLoading(true);
@@ -21,36 +25,76 @@ export function useWeather() {
     try {
       // If no coordinates provided, try to get current location
       if (!latitude || !longitude) {
-        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject);
-        });
-        latitude = position.coords.latitude;
-        longitude = position.coords.longitude;
+        try {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject);
+          });
+          latitude = position.coords.latitude;
+          longitude = position.coords.longitude;
+        } catch {
+          if (lastCoords) {
+            latitude = lastCoords.lat;
+            longitude = lastCoords.lon;
+          }
+        }
+      }
+      if (latitude && longitude) {
+        const coords = { lat: latitude, lon: longitude };
+        setLastCoords(coords);
+        localStorage.setItem("last-weather-coords", JSON.stringify(coords));
       }
 
-      // Using OpenWeatherMap API (requires API key)
-      // For demo purposes, we'll simulate weather data based on location
-      const mockWeatherData: WeatherData = {
-        conditions: getWeatherConditions(),
-        temperature: Math.round(Math.random() * 30 + 5), // 5-35°C
-        humidity: Math.round(Math.random() * 40 + 40), // 40-80%
-        windSpeed: Math.round(Math.random() * 20 + 5), // 5-25 km/h
-        description: getWeatherDescription(),
-        location: `${latitude?.toFixed(2)}, ${longitude?.toFixed(2)}`
-      };
-
-      setWeather(mockWeatherData);
+      const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
+      if (apiKey && latitude && longitude) {
+        const response = await fetch(
+          `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=imperial`
+        );
+        if (!response.ok) {
+          throw new Error("Failed to fetch weather data");
+        }
+        const data = await response.json();
+        const weatherData: WeatherData = {
+          conditions: data?.weather?.[0]?.main || "Unknown",
+          temperature: Math.round(data?.main?.temp ?? 0),
+          humidity: Math.round(data?.main?.humidity ?? 0),
+          windSpeed: Math.round(data?.wind?.speed ?? 0),
+          description: data?.weather?.[0]?.description || "Weather data unavailable",
+          location: data?.name
+            ? `${data.name}${data?.sys?.country ? `, ${data.sys.country}` : ""}`
+            : latitude && longitude
+              ? `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`
+              : "Location unknown",
+        };
+        setWeather(weatherData);
+        setError(null);
+      } else {
+        // Fallback to simulated data if no API key is configured
+        const mockWeatherData: WeatherData = {
+          conditions: getWeatherConditions(),
+          temperature: Math.round(Math.random() * 30 + 40), // 40-70°F
+          humidity: Math.round(Math.random() * 40 + 40), // 40-80%
+          windSpeed: Math.round(Math.random() * 20 + 5), // 5-25 mph
+          description: getWeatherDescription(),
+          location: latitude && longitude
+            ? `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`
+            : 'Location unknown'
+        };
+        setWeather(mockWeatherData);
+        setError(apiKey ? null : "OpenWeather API key not configured. Showing simulated data.");
+      }
     } catch (err) {
-      setError('Unable to get weather data. Please enable location services or enter manually.');
-      // Provide fallback weather data
+      const fallbackCoords = lastCoords;
       setWeather({
-        conditions: 'Unknown',
-        temperature: 20,
-        humidity: 50,
-        windSpeed: 10,
+        conditions: getWeatherConditions(),
+        temperature: Math.round(Math.random() * 30 + 40),
+        humidity: Math.round(Math.random() * 40 + 40),
+        windSpeed: Math.round(Math.random() * 20 + 5),
         description: 'Weather data unavailable',
-        location: 'Location unknown'
+        location: fallbackCoords
+          ? `${fallbackCoords.lat.toFixed(2)}, ${fallbackCoords.lon.toFixed(2)}`
+          : 'Location unknown'
       });
+      setError(err instanceof Error ? err.message : "Weather data unavailable");
     } finally {
       setLoading(false);
     }

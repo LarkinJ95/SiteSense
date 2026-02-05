@@ -1,12 +1,13 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation, useParams } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,8 +15,8 @@ import { Plus, Search, MapPin, Calendar, Users, FileText, Wind, CloudSun, Clock,
 import { CreateAirJobModal } from "@/components/create-air-job-modal";
 import { CreatePersonnelModal } from "@/components/create-personnel-modal";
 import { DailyWeatherLog } from "@/components/daily-weather-log";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { AirSample, PersonnelProfile, AirMonitoringJob, insertAirSampleSchema, type InsertAirSample } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
+import { AirSample, PersonnelProfile, AirMonitoringJob, FieldToolsEquipment, insertAirSampleSchema, type InsertAirSample } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -23,8 +24,11 @@ import { z } from "zod";
 
 // Air sample form schema
 const airSampleFormSchema = insertAirSampleSchema.extend({
+  sampleDate: z.string(),
   startTime: z.string(),
   endTime: z.string().optional(),
+  customSampleType: z.string().optional(),
+  customAnalyte: z.string().optional(),
   // Extend for form handling
   result: z.string().optional(),
   resultUnit: z.string().optional(),
@@ -34,6 +38,24 @@ const airSampleFormSchema = insertAirSampleSchema.extend({
 });
 
 type AirSampleFormData = z.infer<typeof airSampleFormSchema>;
+
+const editJobSchema = z.object({
+  jobName: z.string().min(1),
+  jobNumber: z.string().min(1),
+  siteName: z.string().min(1),
+  address: z.string().min(1),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  zipCode: z.string().optional(),
+  clientName: z.string().optional(),
+  projectManager: z.string().optional(),
+  status: z.string().optional(),
+  workDescription: z.string().optional(),
+  startDate: z.string().min(1),
+  endDate: z.string().optional(),
+});
+
+type EditJobFormData = z.infer<typeof editJobSchema>;
 
 // Analyte to analysis method mapping
 const analyteMethodMap: Record<string, string> = {
@@ -51,14 +73,16 @@ const analyteMethodMap: Record<string, string> = {
 export default function AirMonitoringPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { id: jobId } = useParams();
+  const [, setLocation] = useLocation();
   const [showCreateJobModal, setShowCreateJobModal] = useState(false);
   const [showCreatePersonnelModal, setShowCreatePersonnelModal] = useState(false);
   const [editingSample, setEditingSample] = useState<AirSample | null>(null);
   const [editingJob, setEditingJob] = useState<AirMonitoringJob | null>(null);
   const [selectedJob, setSelectedJob] = useState<AirMonitoringJob | null>(null);
+  const [jobDetailsTab, setJobDetailsTab] = useState("overview");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [showCreateSampleModal, setShowCreateSampleModal] = useState(false);
 
   // Fetch air monitoring jobs
   const { data: airJobs = [], isLoading: jobsLoading } = useQuery<AirMonitoringJob[]>({
@@ -70,11 +94,53 @@ export default function AirMonitoringPage() {
     queryKey: ["/api/personnel"],
   });
 
+  const { data: equipmentList = [] } = useQuery<FieldToolsEquipment[]>({
+    queryKey: ["/api/field-tools/equipment"],
+  });
+
   // Fetch air samples for selected job
   const { data: airSamples = [] } = useQuery<AirSample[]>({
     queryKey: ["/api/air-samples"],
     enabled: !!selectedJob,
   });
+
+  const editJobForm = useForm<EditJobFormData>({
+    resolver: zodResolver(editJobSchema),
+    defaultValues: {
+      jobName: "",
+      jobNumber: "",
+      siteName: "",
+      address: "",
+      city: "",
+      state: "",
+      zipCode: "",
+      clientName: "",
+      projectManager: "",
+      status: "planning",
+      workDescription: "",
+      startDate: "",
+      endDate: "",
+    },
+  });
+
+  useEffect(() => {
+    if (!editingJob) return;
+    editJobForm.reset({
+      jobName: editingJob.jobName,
+      jobNumber: editingJob.jobNumber,
+      siteName: editingJob.siteName,
+      address: editingJob.address,
+      city: editingJob.city || "",
+      state: editingJob.state || "",
+      zipCode: editingJob.zipCode || "",
+      clientName: editingJob.clientName || "",
+      projectManager: editingJob.projectManager || "",
+      status: editingJob.status || "planning",
+      workDescription: editingJob.workDescription || "",
+      startDate: editingJob.startDate ? new Date(editingJob.startDate).toISOString().slice(0, 10) : "",
+      endDate: editingJob.endDate ? new Date(editingJob.endDate).toISOString().slice(0, 10) : "",
+    });
+  }, [editingJob, editJobForm]);
 
   // Filter samples for the selected job
   const jobSamples = useMemo(() => 
@@ -84,18 +150,24 @@ export default function AirMonitoringPage() {
 
   // Air sample mutations
   const createSampleMutation = useMutation({
-    mutationFn: async (data: InsertAirSample) => {
+    mutationFn: async ({ data, file }: { data: InsertAirSample; file?: File | null }) => {
       const response = await fetch('/api/air-samples', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       if (!response.ok) throw new Error('Failed to create sample');
-      return response.json();
+      const created = await response.json();
+      if (file && created?.id) {
+        const formData = new FormData();
+        formData.append("labReport", file);
+        await apiRequest("POST", `/api/air-samples/${created.id}/lab-report`, formData);
+      }
+      return created;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/air-samples'] });
-      setShowCreateSampleModal(false);
+      setJobDetailsTab("samples");
       toast({ description: "Air sample created successfully" });
     },
     onError: (error: any) => {
@@ -107,14 +179,20 @@ export default function AirMonitoringPage() {
   });
 
   const updateSampleMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: InsertAirSample }) => {
+    mutationFn: async ({ id, data, file }: { id: string; data: InsertAirSample; file?: File | null }) => {
       const response = await fetch(`/api/air-samples/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       if (!response.ok) throw new Error('Failed to update sample');
-      return response.json();
+      const updated = await response.json();
+      if (file) {
+        const formData = new FormData();
+        formData.append("labReport", file);
+        await apiRequest("POST", `/api/air-samples/${id}/lab-report`, formData);
+      }
+      return updated;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/air-samples'] });
@@ -149,21 +227,49 @@ export default function AirMonitoringPage() {
     }
   });
 
+  const updateJobMutation = useMutation({
+    mutationFn: async (data: EditJobFormData) => {
+      if (!editingJob) {
+        throw new Error("No job selected");
+      }
+      const payload = {
+        ...data,
+        startDate: data.startDate ? new Date(`${data.startDate}T00:00:00`).toISOString() : undefined,
+        endDate: data.endDate ? new Date(`${data.endDate}T00:00:00`).toISOString() : null,
+      };
+      const response = await apiRequest("PUT", `/api/air-monitoring-jobs/${editingJob.id}`, payload);
+      return response.json();
+    },
+    onSuccess: (job) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/air-monitoring-jobs"] });
+      setSelectedJob(job);
+      setEditingJob(null);
+      toast({ description: "Job updated successfully" });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        description: error.message || "Failed to update job",
+      });
+    },
+  });
+
   const generateReportMutation = useMutation({
     mutationFn: async (jobId: string) => {
       const response = await fetch(`/api/air-monitoring-jobs/${jobId}/report`, {
         method: 'GET',
       });
       if (!response.ok) throw new Error('Failed to generate report');
-      return response.blob();
+      return response.text();
     },
-    onSuccess: (blob, jobId) => {
+    onSuccess: (htmlContent, jobId) => {
       const job = airJobs.find(j => j.id === jobId);
+      const blob = new Blob([htmlContent], { type: 'text/html' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = url;
-      a.download = `${job?.jobNumber || jobId}_Air_Monitoring_Report.xlsx`;
+      a.download = `${job?.jobNumber || jobId}_Air_Monitoring_Report.html`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -190,6 +296,23 @@ export default function AirMonitoringPage() {
     
     return matchesSearch && matchesStatus;
   });
+
+  useEffect(() => {
+    if (selectedJob) {
+      setJobDetailsTab("overview");
+    }
+  }, [selectedJob]);
+
+  useEffect(() => {
+    if (!jobId) {
+      setSelectedJob(null);
+      return;
+    }
+    const job = airJobs.find((item) => item.id === jobId) || null;
+    setSelectedJob(job);
+  }, [jobId, airJobs]);
+
+  const showJobOverview = !jobId;
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -221,196 +344,200 @@ export default function AirMonitoringPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100" data-testid="page-title">
-            Air Monitoring
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Manage air sampling jobs and track environmental monitoring activities
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={() => setShowCreatePersonnelModal(true)} variant="outline" data-testid="button-add-personnel">
-            <Users className="mr-2 h-4 w-4" />
-            Add Personnel
-          </Button>
-          <Button onClick={() => setShowCreateJobModal(true)} data-testid="button-create-job">
-            <Plus className="mr-2 h-4 w-4" />
-            New Air Job
-          </Button>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center">
-              <FileText className="h-8 w-8 text-blue-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Jobs</p>
-                <p className="text-2xl font-bold">{airJobs.length}</p>
-              </div>
+      {showJobOverview && (
+        <>
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100" data-testid="page-title">
+                Air Monitoring
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">
+                Manage air sampling jobs and track environmental monitoring activities
+              </p>
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center">
-              <Wind className="h-8 w-8 text-green-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Active Jobs</p>
-                <p className="text-2xl font-bold">
-                  {airJobs.filter(job => ['setup', 'sampling'].includes(job.status)).length}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center">
-              <Calendar className="h-8 w-8 text-orange-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">This Week</p>
-                <p className="text-2xl font-bold">
-                  {airJobs.filter(job => {
-                    const jobDate = new Date(job.startDate);
-                    const weekAgo = new Date();
-                    weekAgo.setDate(weekAgo.getDate() - 7);
-                    return jobDate >= weekAgo;
-                  }).length}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center">
-              <Users className="h-8 w-8 text-purple-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Personnel</p>
-                <p className="text-2xl font-bold">{personnel.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search and Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-          <Input
-            placeholder="Search by job name, number, site, or client..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-            data-testid="search-input"
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[180px]" data-testid="status-filter">
-            <SelectValue placeholder="Filter by status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="planning">Planning</SelectItem>
-            <SelectItem value="setup">Setup</SelectItem>
-            <SelectItem value="sampling">Sampling</SelectItem>
-            <SelectItem value="complete">Complete</SelectItem>
-            <SelectItem value="lab-analysis">Lab Analysis</SelectItem>
-            <SelectItem value="reporting">Reporting</SelectItem>
-            <SelectItem value="closed">Closed</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Jobs Grid */}
-      {filteredJobs.length === 0 ? (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <Wind className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-              {airJobs.length === 0 ? "No Air Monitoring Jobs" : "No Jobs Match Your Search"}
-            </h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              {airJobs.length === 0 
-                ? "Start by creating your first air monitoring job to track environmental sampling activities."
-                : "Try adjusting your search terms or filters to find the jobs you're looking for."
-              }
-            </p>
-            {airJobs.length === 0 && (
-              <Button onClick={() => setShowCreateJobModal(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Create First Job
+            <div className="flex gap-2">
+              <Button onClick={() => setShowCreatePersonnelModal(true)} variant="outline" data-testid="button-add-personnel">
+                <Users className="mr-2 h-4 w-4" />
+                Add Personnel
               </Button>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-          {filteredJobs.map((job) => (
-            <Card key={job.id} className="hover:shadow-md transition-shadow cursor-pointer" data-testid={`job-card-${job.id}`}>
-              <CardHeader>
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <CardTitle className="text-lg">{job.jobName}</CardTitle>
-                    <CardDescription className="mt-1">
-                      Job #{job.jobNumber} • {job.siteName}
-                    </CardDescription>
+              <Button onClick={() => setShowCreateJobModal(true)} data-testid="button-create-job">
+                <Plus className="mr-2 h-4 w-4" />
+                New Air Job
+              </Button>
+            </div>
+          </div>
+
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center">
+                  <FileText className="h-8 w-8 text-blue-600" />
+                  <div className="ml-4">
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Jobs</p>
+                    <p className="text-2xl font-bold">{airJobs.length}</p>
                   </div>
-                  <Badge className={getStatusColor(job.status)}>
-                    {job.status.replace('-', ' ')}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent onClick={() => setSelectedJob(job)}>
-                <div className="space-y-3">
-                  {job.clientName && (
-                    <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                      <Users className="h-4 w-4 mr-2" />
-                      {job.clientName}
-                    </div>
-                  )}
-                  <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                    <MapPin className="h-4 w-4 mr-2" />
-                    {job.city && job.state ? `${job.city}, ${job.state}` : 'Location TBD'}
-                  </div>
-                  <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                    <Calendar className="h-4 w-4 mr-2" />
-                    {formatDate(job.startDate)}
-                    {job.endDate && ` - ${formatDate(job.endDate)}`}
-                  </div>
-                  {job.weatherConditions && (
-                    <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                      <Wind className="h-4 w-4 mr-2" />
-                      {job.weatherConditions}
-                    </div>
-                  )}
-                  {job.projectManager && (
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      PM: {job.projectManager}
-                    </div>
-                  )}
-                </div>
-                <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="w-full"
-                    onClick={() => setSelectedJob(job)}
-                  >
-                    View Details & Samples
-                  </Button>
                 </div>
               </CardContent>
             </Card>
-          ))}
-        </div>
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center">
+                  <Wind className="h-8 w-8 text-green-600" />
+                  <div className="ml-4">
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Active Jobs</p>
+                    <p className="text-2xl font-bold">
+                      {airJobs.filter(job => ['setup', 'sampling'].includes(job.status)).length}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center">
+                  <Calendar className="h-8 w-8 text-orange-600" />
+                  <div className="ml-4">
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">This Week</p>
+                    <p className="text-2xl font-bold">
+                      {airJobs.filter(job => {
+                        const jobDate = new Date(job.startDate);
+                        const weekAgo = new Date();
+                        weekAgo.setDate(weekAgo.getDate() - 7);
+                        return jobDate >= weekAgo;
+                      }).length}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center">
+                  <Users className="h-8 w-8 text-purple-600" />
+                  <div className="ml-4">
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Personnel</p>
+                    <p className="text-2xl font-bold">{personnel.length}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Search and Filters */}
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search by job name, number, site, or client..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+                data-testid="search-input"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[180px]" data-testid="status-filter">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="planning">Planning</SelectItem>
+                <SelectItem value="setup">Setup</SelectItem>
+                <SelectItem value="sampling">Sampling</SelectItem>
+                <SelectItem value="complete">Complete</SelectItem>
+                <SelectItem value="lab-analysis">Lab Analysis</SelectItem>
+                <SelectItem value="reporting">Reporting</SelectItem>
+                <SelectItem value="closed">Closed</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Jobs Grid */}
+          {filteredJobs.length === 0 ? (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <Wind className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                  {airJobs.length === 0 ? "No Air Monitoring Jobs" : "No Jobs Match Your Search"}
+                </h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-4">
+                  {airJobs.length === 0 
+                    ? "Start by creating your first air monitoring job to track environmental sampling activities."
+                    : "Try adjusting your search terms or filters to find the jobs you're looking for."
+                  }
+                </p>
+                {airJobs.length === 0 && (
+                  <Button onClick={() => setShowCreateJobModal(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create First Job
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+              {filteredJobs.map((job) => (
+                <Card key={job.id} className="hover:shadow-md transition-shadow cursor-pointer" data-testid={`job-card-${job.id}`}>
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <CardTitle className="text-lg">{job.jobName}</CardTitle>
+                        <CardDescription className="mt-1">
+                          Job #{job.jobNumber} • {job.siteName}
+                        </CardDescription>
+                      </div>
+                      <Badge className={getStatusColor(job.status)}>
+                        {job.status.replace('-', ' ')}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent onClick={() => setLocation(`/air-monitoring/${job.id}`)}>
+                    <div className="space-y-3">
+                      {job.clientName && (
+                        <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                          <Users className="h-4 w-4 mr-2" />
+                          {job.clientName}
+                        </div>
+                      )}
+                      <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                        <MapPin className="h-4 w-4 mr-2" />
+                        {job.city && job.state ? `${job.city}, ${job.state}` : 'Location TBD'}
+                      </div>
+                      <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                        <Calendar className="h-4 w-4 mr-2" />
+                        {formatDate(job.startDate)}
+                        {job.endDate && ` - ${formatDate(job.endDate)}`}
+                      </div>
+                      {job.weatherConditions && (
+                        <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                          <Wind className="h-4 w-4 mr-2" />
+                          {job.weatherConditions}
+                        </div>
+                      )}
+                      {job.projectManager && (
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          PM: {job.projectManager}
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full"
+                        onClick={() => setLocation(`/air-monitoring/${job.id}`)}
+                      >
+                        View Details & Samples
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {/* Modals */}
@@ -423,10 +550,22 @@ export default function AirMonitoringPage() {
         onOpenChange={setShowCreatePersonnelModal}
       />
 
-      {/* Job Details Modal/Panel would go here */}
+      {/* Job Details */}
       {selectedJob && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div
+          className={
+            jobId
+              ? "w-full"
+              : "fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+          }
+        >
+          <div
+            className={
+              jobId
+                ? "bg-white dark:bg-gray-800 rounded-lg w-full"
+                : "bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            }
+          >
             <div className="p-6">
               <div className="flex justify-between items-start mb-4">
                 <div>
@@ -453,16 +592,23 @@ export default function AirMonitoringPage() {
                     <Settings className="mr-2 h-4 w-4" />
                     Edit Job
                   </Button>
-                  <Button variant="outline" onClick={() => setSelectedJob(null)}>
-                    Close
-                  </Button>
+                  {jobId ? (
+                    <Button variant="outline" onClick={() => setLocation("/air-monitoring")}>
+                      Back to Air Jobs
+                    </Button>
+                  ) : (
+                    <Button variant="outline" onClick={() => setSelectedJob(null)}>
+                      Close
+                    </Button>
+                  )}
                 </div>
               </div>
               
-              <Tabs defaultValue="overview" className="w-full">
-                <TabsList className="grid w-full grid-cols-4">
+              <Tabs value={jobDetailsTab} onValueChange={setJobDetailsTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-5">
                   <TabsTrigger value="overview">Overview</TabsTrigger>
                   <TabsTrigger value="samples">Air Samples</TabsTrigger>
+                  <TabsTrigger value="add-sample">Add Sample</TabsTrigger>
                   <TabsTrigger value="weather">
                     <CloudSun className="mr-2 h-4 w-4" />
                     Weather Logs
@@ -498,26 +644,10 @@ export default function AirMonitoringPage() {
                 <TabsContent value="samples" className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h4 className="font-semibold">Air Samples ({jobSamples.length})</h4>
-                    <Dialog open={showCreateSampleModal} onOpenChange={setShowCreateSampleModal}>
-                      <DialogTrigger asChild>
-                        <Button size="sm">
-                          <Plus className="mr-2 h-4 w-4" />
-                          Add Sample
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-2xl">
-                        <DialogHeader>
-                          <DialogTitle>Add Air Sample</DialogTitle>
-                        </DialogHeader>
-                        <AirSampleForm 
-                          jobId={selectedJob.id}
-                          personnel={personnel}
-                          onSuccess={() => setShowCreateSampleModal(false)}
-                          onSubmit={(data) => createSampleMutation.mutate(data)}
-                          isLoading={createSampleMutation.isPending}
-                        />
-                      </DialogContent>
-                    </Dialog>
+                    <Button size="sm" onClick={() => setJobDetailsTab("add-sample")}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Sample
+                    </Button>
                   </div>
                   
                   {jobSamples.length === 0 ? (
@@ -529,7 +659,7 @@ export default function AirMonitoringPage() {
                       <p className="text-gray-600 dark:text-gray-400 mb-4">
                         Start by adding air samples for this monitoring job.
                       </p>
-                      <Button onClick={() => setShowCreateSampleModal(true)}>
+                      <Button onClick={() => setJobDetailsTab("add-sample")}>
                         <Plus className="mr-2 h-4 w-4" />
                         Add First Sample
                       </Button>
@@ -606,6 +736,22 @@ export default function AirMonitoringPage() {
                     </div>
                   )}
                 </TabsContent>
+
+                <TabsContent value="add-sample" className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="font-semibold">Add Air Sample</h4>
+                  </div>
+                  <Card className="p-4">
+                    <AirSampleForm 
+                      jobId={selectedJob.id}
+                      personnel={personnel}
+                      equipmentList={equipmentList}
+                      onSuccess={() => setJobDetailsTab("samples")}
+                      onSubmit={(data, file) => createSampleMutation.mutate({ data, file })}
+                      isLoading={createSampleMutation.isPending}
+                    />
+                  </Card>
+                </TabsContent>
                 
                 <TabsContent value="weather">
                   <DailyWeatherLog jobId={selectedJob.id} />
@@ -651,6 +797,217 @@ export default function AirMonitoringPage() {
         </div>
       )}
 
+      {editingJob && (
+        <Dialog open={!!editingJob} onOpenChange={() => setEditingJob(null)}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Air Monitoring Job</DialogTitle>
+            </DialogHeader>
+            <Form {...editJobForm}>
+              <form
+                onSubmit={editJobForm.handleSubmit((data) => updateJobMutation.mutate(data))}
+                className="space-y-4"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={editJobForm.control}
+                    name="jobName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Job Name</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editJobForm.control}
+                    name="jobNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Job Number</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editJobForm.control}
+                    name="siteName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Site Name</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editJobForm.control}
+                    name="address"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Address</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editJobForm.control}
+                    name="city"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>City</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editJobForm.control}
+                    name="state"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>State</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editJobForm.control}
+                    name="zipCode"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Zip Code</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editJobForm.control}
+                    name="clientName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Client</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editJobForm.control}
+                    name="projectManager"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Project Manager</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editJobForm.control}
+                    name="status"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Status</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || ""}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="planning">Planning</SelectItem>
+                            <SelectItem value="setup">Setup</SelectItem>
+                            <SelectItem value="sampling">Sampling</SelectItem>
+                            <SelectItem value="complete">Complete</SelectItem>
+                            <SelectItem value="lab-analysis">Lab Analysis</SelectItem>
+                            <SelectItem value="reporting">Reporting</SelectItem>
+                            <SelectItem value="closed">Closed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editJobForm.control}
+                    name="startDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Start Date</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editJobForm.control}
+                    name="endDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>End Date</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={editJobForm.control}
+                  name="workDescription"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Work Description</FormLabel>
+                      <FormControl>
+                        <Textarea {...field} value={field.value || ""} rows={3} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => setEditingJob(null)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={updateJobMutation.isPending}>
+                    {updateJobMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* Edit Sample Modal */}
       {editingSample && (
         <Dialog open={!!editingSample} onOpenChange={() => setEditingSample(null)}>
@@ -661,8 +1018,9 @@ export default function AirMonitoringPage() {
             <AirSampleForm 
               jobId={editingSample.jobId}
               personnel={personnel}
+              equipmentList={equipmentList}
               onSuccess={() => setEditingSample(null)}
-              onSubmit={(data) => updateSampleMutation.mutate({ id: editingSample.id, data })}
+              onSubmit={(data, file) => updateSampleMutation.mutate({ id: editingSample.id, data, file })}
               isLoading={updateSampleMutation.isPending}
               initialData={editingSample}
             />
@@ -677,24 +1035,33 @@ export default function AirMonitoringPage() {
 interface AirSampleFormProps {
   jobId: string;
   personnel: PersonnelProfile[];
+  equipmentList: FieldToolsEquipment[];
   onSuccess: () => void;
-  onSubmit: (data: InsertAirSample) => void;
+  onSubmit: (data: InsertAirSample, file?: File | null) => void;
   isLoading: boolean;
   initialData?: AirSample;
 }
 
-function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initialData }: AirSampleFormProps) {
+function AirSampleForm({ jobId, personnel, equipmentList, onSuccess, onSubmit, isLoading, initialData }: AirSampleFormProps) {
+  const [personnelQuery, setPersonnelQuery] = useState("");
+  const [lastUnitDefault, setLastUnitDefault] = useState<string>("");
+  const [labReportFile, setLabReportFile] = useState<File | null>(null);
+
   const form = useForm<AirSampleFormData>({
     resolver: zodResolver(airSampleFormSchema),
     defaultValues: {
       jobId,
-      sampleType: initialData?.sampleType || 'personal',
+      sampleType: initialData?.sampleType || 'area',
+      customSampleType: initialData?.customSampleType || '',
       analyte: initialData?.analyte || 'asbestos',
+      customAnalyte: initialData?.customAnalyte || '',
+      pumpId: initialData?.pumpId || '',
       location: initialData?.location || '',
-      collectedBy: initialData?.collectedBy || '',
+      collectedBy: initialData?.collectedBy || 'N/A',
       monitorWornBy: initialData?.monitorWornBy || '',
-      startTime: initialData?.startTime ? new Date(initialData.startTime).toISOString().slice(0, 16) : '',
-      endTime: initialData?.endTime ? new Date(initialData.endTime).toISOString().slice(0, 16) : '',
+      sampleDate: initialData?.startTime ? new Date(initialData.startTime).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      startTime: initialData?.startTime ? new Date(initialData.startTime).toISOString().slice(11, 16) : '',
+      endTime: initialData?.endTime ? new Date(initialData.endTime).toISOString().slice(11, 16) : '',
       flowRate: initialData?.flowRate?.toString() || '',
       samplingDuration: initialData?.samplingDuration || undefined,
       analysisMethod: initialData?.analysisMethod || '',
@@ -711,24 +1078,67 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
       
       // Results posting defaults
       labReportDate: initialData?.labReportDate ? new Date(initialData.labReportDate).toISOString().slice(0, 10) : '',
-      reportedBy: initialData?.reportedBy || '',
-      reviewedBy: initialData?.reviewedBy || '',
       reportNotes: initialData?.reportNotes || '',
     },
   });
 
+  const filteredPersonnel = personnel.filter((person) => {
+    const needle = personnelQuery.trim().toLowerCase();
+    if (!needle) return true;
+    const fullName = `${person.firstName} ${person.lastName}`.toLowerCase();
+    const accreditation = person.stateAccreditationNumber?.toLowerCase() || "";
+    return fullName.includes(needle) || accreditation.includes(needle);
+  });
+
   const handleSubmit = (data: AirSampleFormData) => {
+    const startDateTime = data.sampleDate && data.startTime
+      ? new Date(`${data.sampleDate}T${data.startTime}`)
+      : undefined;
+    const endDateTime = data.sampleDate && data.endTime
+      ? new Date(`${data.sampleDate}T${data.endTime}`)
+      : undefined;
     const submitData: InsertAirSample = {
       ...data,
-      startTime: new Date(data.startTime),
-      endTime: data.endTime ? new Date(data.endTime) : undefined,
+      startTime: startDateTime || new Date(),
+      endTime: endDateTime || undefined,
       flowRate: data.flowRate ? parseFloat(data.flowRate as string) : undefined,
       result: data.result ? parseFloat(data.result) : undefined,
       uncertainty: data.uncertainty ? parseFloat(data.uncertainty) : undefined,
       regulatoryLimit: data.regulatoryLimit ? parseFloat(data.regulatoryLimit) : undefined,
       labReportDate: data.labReportDate ? new Date(data.labReportDate) : undefined,
     };
-    onSubmit(submitData);
+    if (!submitData.collectedBy) {
+      submitData.collectedBy = "N/A";
+    }
+    if (submitData.sampleType !== "other") {
+      submitData.customSampleType = undefined;
+    }
+    if (submitData.analyte !== "other") {
+      submitData.customAnalyte = undefined;
+    }
+    if (submitData.pumpId === "") {
+      submitData.pumpId = undefined;
+    }
+    onSubmit(submitData, labReportFile);
+  };
+
+  const getDefaultUnitForAnalyte = (analyte: string) => {
+    switch (analyte) {
+      case "asbestos":
+        return "f/cc";
+      case "lead":
+      case "cadmium":
+      case "hexavalent_chromium":
+      case "heavy_metals":
+        return "ug/m3";
+      case "silica":
+        return "mg/m3";
+      case "benzene":
+      case "toluene":
+        return "ppm";
+      default:
+        return "";
+    }
   };
 
   // Auto-fill analysis method when analyte changes
@@ -737,12 +1147,34 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
     if (analyteMethodMap[value]) {
       form.setValue('analysisMethod', analyteMethodMap[value]);
     }
+    const nextUnit = getDefaultUnitForAnalyte(value);
+    const currentUnit = form.getValues("resultUnit") || "";
+    if (!currentUnit || currentUnit === lastUnitDefault) {
+      form.setValue("resultUnit", nextUnit);
+    }
+    setLastUnitDefault(nextUnit);
   };
+
+  const startTimeValue = form.watch("startTime");
+  const endTimeValue = form.watch("endTime");
+  const sampleDateValue = form.watch("sampleDate");
+
+  useEffect(() => {
+    if (!sampleDateValue || !startTimeValue || !endTimeValue) return;
+    const start = new Date(`${sampleDateValue}T${startTimeValue}`);
+    const end = new Date(`${sampleDateValue}T${endTimeValue}`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
+    const diffMs = end.getTime() - start.getTime();
+    if (diffMs < 0) return;
+    const minutes = Math.round(diffMs / 60000);
+    form.setValue("samplingDuration", minutes);
+  }, [sampleDateValue, startTimeValue, endTimeValue, form]);
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="max-h-[70vh] overflow-y-auto pr-2 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <FormField
             control={form.control}
             name="sampleType"
@@ -756,10 +1188,12 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="personal">Personal</SelectItem>
                     <SelectItem value="area">Area</SelectItem>
-                    <SelectItem value="background">Background</SelectItem>
-                    <SelectItem value="outdoor">Outdoor</SelectItem>
+                    <SelectItem value="blank">Blank</SelectItem>
+                    <SelectItem value="personal">Personal</SelectItem>
+                    <SelectItem value="excursion">Excursion</SelectItem>
+                    <SelectItem value="clearance">Clearance</SelectItem>
+                    <SelectItem value="other">Other (Custom)</SelectItem>
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -797,6 +1231,38 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
           />
         </div>
 
+        {form.watch("analyte") === "other" && (
+          <FormField
+            control={form.control}
+            name="customAnalyte"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Custom Analyte</FormLabel>
+                <FormControl>
+                  <Input {...field} value={field.value || ''} placeholder="Enter analyte name" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
+
+        {form.watch("sampleType") === "other" && (
+          <FormField
+            control={form.control}
+            name="customSampleType"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Custom Sample Type</FormLabel>
+                <FormControl>
+                  <Input {...field} value={field.value || ''} placeholder="Enter custom sample type" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
+
         <FormField
           control={form.control}
           name="location"
@@ -814,35 +1280,16 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField
             control={form.control}
-            name="collectedBy"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Sample Collected By</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select personnel collecting sample" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {personnel.map((person) => (
-                      <SelectItem key={person.id} value={`${person.firstName} ${person.lastName}`}>
-                        {person.firstName} {person.lastName} - {person.stateAccreditationNumber}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
             name="monitorWornBy"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Monitor Worn By</FormLabel>
+                <Input
+                  placeholder="Search personnel..."
+                  value={personnelQuery}
+                  onChange={(e) => setPersonnelQuery(e.target.value)}
+                  className="mb-2"
+                />
                 <Select onValueChange={field.onChange} value={field.value || ''}>
                   <FormControl>
                     <SelectTrigger>
@@ -851,7 +1298,7 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
                   </FormControl>
                   <SelectContent>
                     <SelectItem value="N/A">Not applicable (area/background sample)</SelectItem>
-                    {personnel.map((person) => (
+                    {filteredPersonnel.map((person) => (
                       <SelectItem key={person.id} value={`${person.firstName} ${person.lastName}`}>
                         {person.firstName} {person.lastName} - {person.stateAccreditationNumber}
                       </SelectItem>
@@ -864,7 +1311,21 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <FormField
+            control={form.control}
+            name="sampleDate"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Sample Date</FormLabel>
+                <FormControl>
+                  <Input type="date" {...field} value={field.value || ''} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
           <FormField
             control={form.control}
             name="startTime"
@@ -872,7 +1333,7 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
               <FormItem>
                 <FormLabel>Start Time</FormLabel>
                 <FormControl>
-                  <Input type="datetime-local" {...field} />
+                  <Input type="time" {...field} value={field.value || ''} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -886,7 +1347,7 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
               <FormItem>
                 <FormLabel>End Time (Optional)</FormLabel>
                 <FormControl>
-                  <Input type="datetime-local" {...field} />
+                  <Input type="time" {...field} value={field.value || ''} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -917,16 +1378,41 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
 
           <FormField
             control={form.control}
+            name="pumpId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Pump ID</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value || ""}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select pump from equipment list" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {equipmentList.map((equipment) => (
+                      <SelectItem key={equipment.id} value={equipment.id}>
+                        {equipment.name}{equipment.serialNumber ? ` (${equipment.serialNumber})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
             name="samplingDuration"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Duration (minutes)</FormLabel>
+                <FormLabel>Run Time (minutes)</FormLabel>
                 <FormControl>
                   <Input 
                     type="number" 
                     placeholder="480"
                     value={field.value?.toString() || ''}
-                    onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                    readOnly
                   />
                 </FormControl>
                 <FormMessage />
@@ -960,12 +1446,12 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
           name="fieldNotes"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Field Notes</FormLabel>
+              <FormLabel>Description</FormLabel>
               <FormControl>
                 <Textarea 
                   {...field} 
                   value={field.value || ''}
-                  placeholder="Additional notes about the sample collection..."
+                  placeholder="Describe the sample, location, and any observations..."
                   rows={3}
                 />
               </FormControl>
@@ -1153,41 +1639,6 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="reportedBy"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Reported By</FormLabel>
-                    <FormControl>
-                      <Input 
-                        {...field} 
-                        value={field.value || ''}
-                        placeholder="Lab technician or analyst name"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="reviewedBy"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Reviewed By</FormLabel>
-                    <FormControl>
-                      <Input 
-                        {...field} 
-                        value={field.value || ''}
-                        placeholder="Quality control reviewer"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </div>
 
             <FormField
@@ -1208,7 +1659,18 @@ function AirSampleForm({ jobId, personnel, onSuccess, onSubmit, isLoading, initi
                 </FormItem>
               )}
             />
+
+            <div className="mt-4">
+              <FormLabel>Lab Report Upload</FormLabel>
+              <Input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                onChange={(e) => setLabReportFile(e.target.files?.[0] || null)}
+              />
+              <p className="text-xs text-gray-500 mt-1">Attach a lab report file (optional).</p>
+            </div>
           </div>
+        </div>
         </div>
 
         <div className="flex justify-end gap-2 mt-6">

@@ -1,8 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertSurveySchema, insertObservationSchema, insertAirMonitoringJobSchema } from "@shared/schema";
-import type { Survey, Observation } from "@shared/schema";
+import { insertSurveySchema, insertObservationSchema, insertAirMonitoringJobSchema, insertDailyWeatherLogSchema, insertPersonnelProfileSchema, insertFieldToolsEquipmentSchema, insertUserProfileSchema } from "@shared/schema";
+import type { Survey, Observation, ObservationPhoto, AirMonitoringJob, AirSample, DailyWeatherLog } from "@shared/schema";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
@@ -25,7 +25,15 @@ const upload = multer({
 });
 
 // Report generation function
-function generateSurveyReport(survey: Survey, observations: Observation[], baseUrl?: string): string {
+function generateSurveyReport(
+  survey: Survey,
+  observations: Observation[],
+  photosByObservation: Array<{ observation: Observation; photos: Array<ObservationPhoto & { dataUrl?: string }> }>,
+  homogeneousAreas: Array<{ title: string; description?: string | null }>,
+  functionalAreas: Array<{ title: string; description?: string | null }>,
+  baseUrl?: string,
+  sitePhotoDataUrl?: string | null
+): string {
   const materialTypeLabels: Record<string, string> = {
     "ceiling-tiles": "Ceiling Tiles",
     "floor-tiles-9x9": '9"x9" Floor Tiles',
@@ -77,6 +85,12 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
       month: "long",
       day: "numeric",
     });
+  const toSentenceCaseIfOneWord = (value: string | null | undefined) => {
+    if (!value) return "";
+    const trimmed = value.trim();
+    if (!/^[A-Za-z]+$/.test(trimmed)) return trimmed;
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+  };
   const parseQuantity = (rawQuantity: string | null) => {
     if (!rawQuantity) return null;
     const raw = rawQuantity.trim();
@@ -144,13 +158,33 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
     return acc;
   }, {} as Record<string, { total: Record<string, number>, hazardous: Record<string, number>, sampled: Record<string, number> }>);
   
-  const sitePhotoSrc = survey.sitePhotoUrl
+  const sitePhotoSrc = sitePhotoDataUrl || (survey.sitePhotoUrl
     ? (survey.sitePhotoUrl.startsWith("http://") || survey.sitePhotoUrl.startsWith("https://")
       ? survey.sitePhotoUrl
       : baseUrl
         ? `${baseUrl}${survey.sitePhotoUrl.startsWith("/") ? survey.sitePhotoUrl : `/${survey.sitePhotoUrl}`}`
         : survey.sitePhotoUrl)
-    : null;
+    : null);
+
+  const photoRows = photosByObservation
+    .filter(entry => entry.photos.length > 0)
+    .map(entry => {
+      const photoCells = entry.photos.map(photo => {
+        const photoSrc = photo.dataUrl || (baseUrl
+          ? `${baseUrl}/uploads/${photo.filename}`
+          : `/uploads/${photo.filename}`);
+        return `<img src="${photoSrc}" alt="${photo.originalName}" class="photo-thumb" />`;
+      }).join("");
+      return `
+        <tr>
+          <td>${toSentenceCaseIfOneWord(entry.observation.area)}</td>
+          <td>${formatMaterialType(entry.observation.materialType)}</td>
+          <td>${toSentenceCaseIfOneWord(entry.observation.condition)}</td>
+          <td class="photo-cell">${photoCells || "-"}</td>
+        </tr>
+      `;
+    })
+    .join("");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -177,6 +211,9 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
         th { background: #f8f9fa; font-weight: bold; }
         .quantity-section { background: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 5px solid #ffc107; }
         .quantity-table { background: #fff; margin-top: 15px; }
+        .page-break { page-break-before: always; }
+        .photo-table img { width: 120px; height: 90px; object-fit: cover; border-radius: 6px; border: 1px solid #ddd; margin: 4px; }
+        .photo-cell { display: flex; flex-wrap: wrap; gap: 6px; }
         .footer { margin-top: 50px; padding-top: 20px; border-top: 2px solid #ddd; font-size: 0.9em; color: #666; }
         .print-button { 
             position: fixed; 
@@ -297,6 +334,28 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
         </div>
     </div>
 
+    <div class="section">
+        <h3>Homogeneous Areas</h3>
+        ${homogeneousAreas.length > 0 ? `
+        <table>
+            <thead>
+                <tr>
+                    <th>Homogeneous Area</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${homogeneousAreas.map(area => `
+                <tr>
+                    <td>${area.title}</td>
+                    <td>${area.description || '-'}</td>
+                </tr>
+                `).join('')}
+            </tbody>
+        </table>
+        ` : '<p><em>No homogeneous areas defined for this survey.</em></p>'}
+    </div>
+
     <div class="quantity-section">
         <h3>📊 Quantity Analysis</h3>
         <div class="stats">
@@ -344,9 +403,9 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
         <h3>High Risk Observations</h3>
         ${highRiskObservations.map(obs => `
         <div class="observation risk-high">
-            <h4>${obs.area}</h4>
+          <h4>${toSentenceCaseIfOneWord(obs.area)}</h4>
             <p><strong>Material Type:</strong> ${formatMaterialType(obs.materialType)}</p>
-            <p><strong>Condition:</strong> ${obs.condition}</p>
+            <p><strong>Condition:</strong> ${toSentenceCaseIfOneWord(obs.condition)}</p>
             ${obs.quantity ? `<p><strong>Quantity:</strong> ${obs.quantity}</p>` : ''}
             ${obs.sampleCollected ? `<p><strong>Sample ID:</strong> ${obs.sampleId || 'Not specified'}</p>` : ''}
             ${obs.notes ? `<p><strong>Notes:</strong> ${obs.notes}</p>` : ''}
@@ -371,10 +430,10 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
             <tbody>
                 ${observations.map(obs => `
                 <tr>
-                    <td>${obs.area}</td>
+                    <td>${toSentenceCaseIfOneWord(obs.area)}</td>
                     <td>${formatMaterialType(obs.materialType)}</td>
-                    <td>${obs.condition}</td>
-                    <td>${obs.riskLevel || 'Not assessed'}</td>
+                    <td>${toSentenceCaseIfOneWord(obs.condition)}</td>
+                    <td>${toSentenceCaseIfOneWord(obs.riskLevel || 'Not assessed')}</td>
                     <td>${obs.sampleCollected ? 'Yes' : 'No'}</td>
                     <td>${obs.notes || '-'}</td>
                 </tr>
@@ -400,9 +459,9 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
                 ${samplesCollected.map(obs => `
                 <tr>
                     <td>${obs.sampleId || 'Not specified'}</td>
-                    <td>${obs.area}</td>
+                    <td>${toSentenceCaseIfOneWord(obs.area)}</td>
                     <td>${formatMaterialType(obs.materialType)}</td>
-                    <td>${obs.collectionMethod || 'Not specified'}</td>
+                    <td>${toSentenceCaseIfOneWord(obs.collectionMethod || 'Not specified')}</td>
                     <td>${obs.sampleNotes || '-'}</td>
                 </tr>
                 `).join('')}
@@ -410,6 +469,25 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
         </table>
     </div>
     ` : ''}
+
+    <div class="section page-break">
+        <h3>Observation Photos</h3>
+        ${photoRows ? `
+        <table class="photo-table">
+            <thead>
+                <tr>
+                    <th>Functional Area</th>
+                    <th>Material Type</th>
+                    <th>Condition</th>
+                    <th>Photos</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${photoRows}
+            </tbody>
+        </table>
+        ` : '<p><em>No observation photos uploaded.</em></p>'}
+    </div>
 
     ${survey.notes ? `
     <div class="section">
@@ -443,6 +521,192 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
             document.body.style.fontSize = '';
         });
     </script>
+</body>
+</html>`;
+}
+
+async function toImageDataUrl(filename: string, originalName?: string | null) {
+  try {
+    const safeName = path.basename(filename);
+    const filePath = path.join('uploads', safeName);
+    const buffer = await fs.readFile(filePath);
+    const ext = (originalName ? path.extname(originalName) : path.extname(safeName)).toLowerCase();
+    const mime =
+      ext === ".png" ? "image/png" :
+      ext === ".gif" ? "image/gif" :
+      ext === ".webp" ? "image/webp" :
+      "image/jpeg";
+    return `data:${mime};base64,${buffer.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
+const parsePreferences = (raw?: string | null) => {
+  if (!raw) {
+    return {
+      emailNotifications: true,
+      smsNotifications: false,
+      weeklyReports: true,
+      darkMode: false,
+    };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      emailNotifications: parsed.emailNotifications ?? true,
+      smsNotifications: parsed.smsNotifications ?? false,
+      weeklyReports: parsed.weeklyReports ?? true,
+      darkMode: parsed.darkMode ?? false,
+    };
+  } catch {
+    return {
+      emailNotifications: true,
+      smsNotifications: false,
+      weeklyReports: true,
+      darkMode: false,
+    };
+  }
+};
+
+const getAuthUserId = (req: any) => req.user?.sub || req.user?.email || "local-user";
+
+function generateAirMonitoringReport(
+  job: AirMonitoringJob,
+  samples: AirSample[],
+  weatherLogs: DailyWeatherLog[]
+): string {
+  const formatDate = (value?: string | Date | null) =>
+    value ? new Date(value).toLocaleDateString("en-US") : "";
+  const formatDateTime = (value?: string | Date | null) =>
+    value ? new Date(value).toLocaleString("en-US") : "";
+  const formatNumber = (value?: number | null) => {
+    if (value === null || value === undefined) return "";
+    if (Number.isInteger(value)) return value.toString();
+    return parseFloat(value.toFixed(6)).toString();
+  };
+
+  const sampleRows = samples.map(sample => `
+      <tr>
+        <td>${sample.sampleType || ""}</td>
+        <td>${sample.analyte || ""}</td>
+        <td>${sample.location || ""}</td>
+        <td>${sample.collectedBy || ""}</td>
+        <td>${sample.monitorWornBy || ""}</td>
+        <td>${formatDateTime(sample.startTime)}</td>
+        <td>${formatDateTime(sample.endTime)}</td>
+        <td>${formatNumber(sample.samplingDuration)}${sample.samplingDuration ? " min" : ""}</td>
+        <td>${formatNumber(sample.flowRate)}${sample.flowRate ? " L/min" : ""}</td>
+        <td>${sample.result ?? ""} ${sample.resultUnit || ""}</td>
+        <td>${sample.fieldNotes || ""}</td>
+      </tr>
+  `).join("");
+
+  const weatherRows = weatherLogs.map(log => `
+      <tr>
+        <td>${formatDate(log.date)}</td>
+        <td>${log.time || ""}</td>
+        <td>${log.weatherConditions || ""}</td>
+        <td>${log.temperature ?? ""}</td>
+        <td>${log.humidity ?? ""}</td>
+        <td>${log.barometricPressure ?? ""}</td>
+        <td>${log.windSpeed ?? ""} ${log.windDirection || ""}</td>
+        <td>${log.notes || ""}</td>
+      </tr>
+  `).join("");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Air Monitoring Report - ${job.jobName}</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+    .header { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+    .section { margin-bottom: 30px; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; vertical-align: top; }
+    th { background: #f1f5f9; font-weight: bold; }
+    .stat { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+    .stat-card { background: #f8f9fa; padding: 12px; border-radius: 8px; text-align: center; }
+    .stat-number { font-size: 1.5em; font-weight: bold; color: #0f172a; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Air Monitoring Report</h1>
+    <h2>${job.jobName} (Job #${job.jobNumber})</h2>
+    <p><strong>Site:</strong> ${job.siteName}</p>
+    <p><strong>Address:</strong> ${job.address}${job.city ? `, ${job.city}` : ""}${job.state ? `, ${job.state}` : ""} ${job.zipCode || ""}</p>
+    <p><strong>Status:</strong> ${job.status}</p>
+    <p><strong>Start Date:</strong> ${formatDate(job.startDate)}</p>
+    <p><strong>End Date:</strong> ${formatDate(job.endDate)}</p>
+    <p><strong>Report Generated:</strong> ${new Date().toLocaleString("en-US")}</p>
+  </div>
+
+  <div class="section">
+    <h3>Job Summary</h3>
+    <div class="stat">
+      <div class="stat-card">
+        <div class="stat-number">${samples.length}</div>
+        <div>Samples Collected</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">${weatherLogs.length}</div>
+        <div>Weather Logs</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Air Samples</h3>
+    ${samples.length ? `
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Analyte</th>
+            <th>Location</th>
+            <th>Collected By</th>
+            <th>Monitor Worn By</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Duration</th>
+            <th>Flow Rate</th>
+            <th>Result</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sampleRows}
+        </tbody>
+      </table>
+    ` : '<p><em>No air samples recorded.</em></p>'}
+  </div>
+
+  <div class="section">
+    <h3>Weather Logs</h3>
+    ${weatherLogs.length ? `
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Conditions</th>
+            <th>Temp</th>
+            <th>Humidity</th>
+            <th>Pressure</th>
+            <th>Wind</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${weatherRows}
+        </tbody>
+      </table>
+    ` : '<p><em>No weather logs recorded.</em></p>'}
+  </div>
 </body>
 </html>`;
 }
@@ -520,9 +784,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (const surveyId of surveyIds) {
           const survey = await storage.getSurvey(surveyId);
           const observations = await storage.getObservations(surveyId);
-          
+          const homogeneousAreas = await storage.getHomogeneousAreas(surveyId);
+          const functionalAreas = await storage.getFunctionalAreas(surveyId);
+
           if (survey && observations) {
-            const reportHtml = generateSurveyReport(survey, observations, baseUrl);
+            const photosByObservation = await Promise.all(
+              observations.map(async (observation) => {
+                const photos = await storage.getObservationPhotos(observation.id);
+                const photosWithData = await Promise.all(
+                  photos.map(async (photo) => ({
+                    ...photo,
+                    dataUrl: await toImageDataUrl(photo.filename, photo.originalName),
+                  }))
+                );
+                return { observation, photos: photosWithData };
+              })
+            );
+            const sitePhotoDataUrl = survey.sitePhotoUrl
+              ? await toImageDataUrl(path.basename(survey.sitePhotoUrl))
+              : null;
+            const reportHtml = generateSurveyReport(
+              survey,
+              observations,
+              photosByObservation,
+              homogeneousAreas,
+              functionalAreas,
+              baseUrl,
+              sitePhotoDataUrl
+            );
             reports.push({
               surveyId,
               siteName: survey.siteName,
@@ -602,14 +891,199 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const observations = await storage.getObservations(req.params.id);
+      const homogeneousAreas = await storage.getHomogeneousAreas(req.params.id);
+      const functionalAreas = await storage.getFunctionalAreas(req.params.id);
+      const photosByObservation = await Promise.all(
+        observations.map(async (observation) => {
+          const photos = await storage.getObservationPhotos(observation.id);
+          const photosWithData = await Promise.all(
+            photos.map(async (photo) => ({
+              ...photo,
+              dataUrl: await toImageDataUrl(photo.filename, photo.originalName),
+            }))
+          );
+          return { observation, photos: photosWithData };
+        })
+      );
       const baseUrl = `${req.protocol}://${req.get("host")}`;
-      const reportHtml = generateSurveyReport(survey, observations, baseUrl);
+      const sitePhotoDataUrl = survey.sitePhotoUrl
+        ? await toImageDataUrl(path.basename(survey.sitePhotoUrl))
+        : null;
+      const reportHtml = generateSurveyReport(
+        survey,
+        observations,
+        photosByObservation,
+        homogeneousAreas,
+        functionalAreas,
+        baseUrl,
+        sitePhotoDataUrl
+      );
       
       res.setHeader('Content-Type', 'text/html');
       res.setHeader('Content-Disposition', `attachment; filename="${survey.siteName}_report.html"`);
       res.send(reportHtml);
     } catch (error) {
       res.status(500).json({ message: "Failed to generate report", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  // Homogeneous and functional area routes
+  app.get("/api/surveys/:surveyId/homogeneous-areas", async (req, res) => {
+    try {
+      const areas = await storage.getHomogeneousAreas(req.params.surveyId);
+      res.json(areas);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch homogeneous areas", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.post("/api/surveys/:surveyId/homogeneous-areas", async (req, res) => {
+    try {
+      const { title, description } = req.body || {};
+      const area = await storage.createHomogeneousArea(req.params.surveyId, { title, description });
+      res.status(201).json(area);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to create homogeneous area", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.delete("/api/surveys/:surveyId/homogeneous-areas/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteHomogeneousArea(req.params.surveyId, req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Homogeneous area not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete homogeneous area", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.get("/api/surveys/:surveyId/functional-areas", async (req, res) => {
+    try {
+      const areas = await storage.getFunctionalAreas(req.params.surveyId);
+      res.json(areas);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch functional areas", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.post("/api/surveys/:surveyId/functional-areas", async (req, res) => {
+    try {
+      const {
+        title,
+        description,
+        length,
+        width,
+        height,
+        wallCount,
+        doorCount,
+        windowCount,
+      } = req.body || {};
+
+      if (!title) {
+        return res.status(400).json({ message: "Title is required" });
+      }
+
+      const numLength = length !== undefined && length !== null ? Number(length) : null;
+      const numWidth = width !== undefined && width !== null ? Number(width) : null;
+      const numHeight = height !== undefined && height !== null ? Number(height) : null;
+      const numWalls = wallCount !== undefined && wallCount !== null ? Number(wallCount) : null;
+
+      const sqft = numLength && numWidth ? numLength * numWidth : null;
+      const wallSqft = numWidth && numHeight && numWalls ? numWidth * numHeight * numWalls : null;
+
+      const area = await storage.createFunctionalArea(req.params.surveyId, {
+        title,
+        description,
+        length: Number.isFinite(numLength) ? numLength : null,
+        width: Number.isFinite(numWidth) ? numWidth : null,
+        height: Number.isFinite(numHeight) ? numHeight : null,
+        wallCount: Number.isFinite(numWalls) ? numWalls : null,
+        doorCount: doorCount !== undefined && doorCount !== null ? Number(doorCount) : null,
+        windowCount: windowCount !== undefined && windowCount !== null ? Number(windowCount) : null,
+        sqft: Number.isFinite(sqft as number) ? (sqft as number) : null,
+        wallSqft: Number.isFinite(wallSqft as number) ? (wallSqft as number) : null,
+      });
+      res.status(201).json(area);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to create functional area", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.put("/api/surveys/:surveyId/functional-areas/:id", async (req, res) => {
+    try {
+      const {
+        title,
+        description,
+        length,
+        width,
+        height,
+        wallCount,
+        doorCount,
+        windowCount,
+        photoUrl,
+      } = req.body || {};
+
+      const numLength = length !== undefined && length !== null ? Number(length) : null;
+      const numWidth = width !== undefined && width !== null ? Number(width) : null;
+      const numHeight = height !== undefined && height !== null ? Number(height) : null;
+      const numWalls = wallCount !== undefined && wallCount !== null ? Number(wallCount) : null;
+
+      const sqft = numLength && numWidth ? numLength * numWidth : null;
+      const wallSqft = numWidth && numHeight && numWalls ? numWidth * numHeight * numWalls : null;
+
+      const updated = await storage.updateFunctionalArea(req.params.surveyId, req.params.id, {
+        title,
+        description,
+        length: Number.isFinite(numLength) ? numLength : null,
+        width: Number.isFinite(numWidth) ? numWidth : null,
+        height: Number.isFinite(numHeight) ? numHeight : null,
+        wallCount: Number.isFinite(numWalls) ? numWalls : null,
+        doorCount: doorCount !== undefined && doorCount !== null ? Number(doorCount) : null,
+        windowCount: windowCount !== undefined && windowCount !== null ? Number(windowCount) : null,
+        sqft: Number.isFinite(sqft as number) ? (sqft as number) : null,
+        wallSqft: Number.isFinite(wallSqft as number) ? (wallSqft as number) : null,
+        photoUrl,
+      });
+
+      if (!updated) {
+        return res.status(404).json({ message: "Functional area not found" });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to update functional area", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.post("/api/surveys/:surveyId/functional-areas/:id/photo", upload.single("photo"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file provided" });
+      }
+      const photoUrl = `/uploads/${req.file.filename}`;
+      const areas = await storage.getFunctionalAreas(req.params.surveyId);
+      const area = areas.find(item => item.id === req.params.id);
+      if (!area) {
+        return res.status(404).json({ message: "Functional area not found" });
+      }
+      area.photoUrl = photoUrl;
+      res.json({ photoUrl });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to upload functional area photo", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.delete("/api/surveys/:surveyId/functional-areas/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteFunctionalArea(req.params.surveyId, req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Functional area not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete functional area", error: error instanceof Error ? error.message : "Unknown error" });
     }
   });
 
@@ -1008,6 +1482,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Field tools equipment routes
+  app.get("/api/field-tools/equipment", async (req, res) => {
+    const userId = getAuthUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    try {
+      const equipment = await storage.getFieldToolsEquipment(userId);
+      res.json(equipment);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch equipment", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.put("/api/field-tools/equipment", async (req, res) => {
+    const userId = getAuthUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    try {
+      const items = Array.isArray(req.body) ? req.body : req.body?.items;
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ message: "Invalid equipment payload" });
+      }
+      const validated = items.map((item) => insertFieldToolsEquipmentSchema.parse(item));
+      const saved = await storage.replaceFieldToolsEquipment(userId, validated);
+      res.json(saved);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid equipment data", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
   // Personnel routes
   app.get("/api/personnel", async (req, res) => {
     try {
@@ -1020,7 +1526,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/personnel", async (req, res) => {
     try {
-      const personnel = await storage.createPersonnelProfile(req.body);
+      const normalized = {
+        ...req.body,
+        employeeId: req.body.employeeId || undefined,
+        jobTitle: req.body.jobTitle || undefined,
+        department: req.body.department || undefined,
+        company: req.body.company || undefined,
+        email: req.body.email || undefined,
+        phone: req.body.phone || undefined,
+        notes: req.body.notes || undefined,
+        lastMedicalDate: req.body.lastMedicalDate || undefined,
+        stateAccreditationNumber: req.body.stateAccreditationNumber || undefined,
+        certifications: Array.isArray(req.body.certifications)
+          ? req.body.certifications.filter(Boolean)
+          : typeof req.body.certifications === "string"
+            ? req.body.certifications.split(",").map((item: string) => item.trim()).filter(Boolean)
+            : [],
+      };
+      const validated = insertPersonnelProfileSchema.parse(normalized);
+      const personnel = await storage.createPersonnelProfile(validated);
       res.status(201).json(personnel);
     } catch (error) {
       res.status(400).json({ message: "Invalid personnel data", error: error instanceof Error ? error.message : 'Unknown error' });
@@ -1047,12 +1571,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put("/api/air-monitoring-jobs/:id", async (req, res) => {
+    try {
+      const validatedData = insertAirMonitoringJobSchema.partial().parse(req.body);
+      const job = await storage.updateAirMonitoringJob(req.params.id, validatedData);
+      if (!job) {
+        return res.status(404).json({ message: "Air monitoring job not found" });
+      }
+      res.json(job);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid air monitoring job data", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
   app.get("/api/air-monitoring-jobs/:id/samples", async (req, res) => {
     try {
       const samples = await storage.getAirMonitoringJobSamples(req.params.id);
       res.json(samples);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch job samples", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  // Daily weather log routes
+  app.get("/api/air-monitoring/jobs/:jobId/weather-logs", async (req, res) => {
+    try {
+      const logs = await storage.getDailyWeatherLogs(req.params.jobId);
+      res.json(logs);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch weather logs", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.post("/api/air-monitoring/jobs/:jobId/weather-logs", async (req, res) => {
+    try {
+      const validated = insertDailyWeatherLogSchema.parse({
+        ...req.body,
+        jobId: req.params.jobId,
+      });
+      const log = await storage.createDailyWeatherLog(validated);
+      res.status(201).json(log);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid weather log data", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.put("/api/air-monitoring/weather-logs/:id", async (req, res) => {
+    try {
+      const validated = insertDailyWeatherLogSchema.partial().parse(req.body);
+      const updated = await storage.updateDailyWeatherLog(req.params.id, validated);
+      if (!updated) {
+        return res.status(404).json({ message: "Weather log not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid weather log data", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.delete("/api/air-monitoring/weather-logs/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteDailyWeatherLog(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Weather log not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete weather log", error: error instanceof Error ? error.message : "Unknown error" });
     }
   });
 
@@ -1090,6 +1675,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ message: "Failed to delete air sample", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  app.post("/api/air-samples/:id/lab-report", upload.single("labReport"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      const updated = await storage.updateAirSample(req.params.id, {
+        labReportFilename: req.file.filename,
+        labReportUploadedAt: new Date(),
+      });
+      if (!updated) {
+        return res.status(404).json({ message: "Air sample not found" });
+      }
+      res.json({ labReportFilename: updated.labReportFilename });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to upload lab report", error: error instanceof Error ? error.message : "Unknown error" });
     }
   });
 
@@ -1182,127 +1785,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const job = await storage.getAirMonitoringJobById(jobId);
       const samples = await storage.getAirMonitoringJobSamples(jobId);
       const weatherLogs = await storage.getDailyWeatherLogs(jobId);
-      
-      // Generate Excel report
-      const XLSX = await import('xlsx');
-      const workbook = XLSX.utils.book_new();
-      
-      // Job Overview Sheet
-      const jobData = [
-        ['Job Information', ''],
-        ['Job Name', job.jobName],
-        ['Job Number', job.jobNumber],
-        ['Site Name', job.siteName],
-        ['Address', job.address],
-        ['City, State', `${job.city || ''}, ${job.state || ''}`],
-        ['Client', job.clientName || ''],
-        ['Project Manager', job.projectManager || ''],
-        ['Status', job.status],
-        ['Start Date', new Date(job.startDate).toLocaleDateString()],
-        ['End Date', job.endDate ? new Date(job.endDate).toLocaleDateString() : ''],
-        ['Work Description', job.workDescription || ''],
-        ['', ''],
-        ['Weather Summary', ''],
-        ['Temperature', job.temperature ? `${job.temperature}°F` : ''],
-        ['Humidity', job.humidity ? `${job.humidity}%` : ''],
-        ['Pressure', job.barometricPressure ? `${job.barometricPressure} inHg` : ''],
-        ['Wind', job.windSpeed ? `${job.windSpeed} mph ${job.windDirection || ''}` : ''],
-        ['Conditions', job.weatherConditions || '']
-      ];
-      
-      const jobSheet = XLSX.utils.aoa_to_sheet(jobData);
-      XLSX.utils.book_append_sheet(workbook, jobSheet, 'Job Overview');
-      
-      // Air Samples Sheet
-      const sampleHeaders = [
-        'Sample ID', 'Sample Type', 'Analyte', 'Location', 'Collected By', 'Monitor Worn By',
-        'Start Time', 'End Time', 'Duration (min)', 'Flow Rate (L/min)',
-        'Analysis Method', 'Status', 'Field Notes'
-      ];
-      
-      const sampleData = [
-        sampleHeaders,
-        ...samples.map(sample => [
-          sample.id,
-          sample.sampleType,
-          sample.analyte,
-          sample.location || '',
-          sample.collectedBy,
-          sample.monitorWornBy || 'N/A',
-          new Date(sample.startTime).toLocaleString(),
-          sample.endTime ? new Date(sample.endTime).toLocaleString() : '',
-          sample.samplingDuration || '',
-          sample.flowRate || '',
-          sample.analysisMethod || '',
-          sample.status,
-          sample.fieldNotes || ''
-        ])
-      ];
-      
-      const sampleSheet = XLSX.utils.aoa_to_sheet(sampleData);
-      XLSX.utils.book_append_sheet(workbook, sampleSheet, 'Air Samples');
-      
-      // Weather Logs Sheet
-      if (weatherLogs.length > 0) {
-        const weatherHeaders = [
-          'Date', 'Time', 'Temperature (°F)', 'Humidity (%)', 'Pressure (inHg)',
-          'Wind Speed (mph)', 'Wind Direction', 'Conditions', 'Notes'
-        ];
-        
-        const weatherData = [
-          weatherHeaders,
-          ...weatherLogs.map(log => [
-            new Date(log.date).toLocaleDateString(),
-            log.time,
-            log.temperature || '',
-            log.humidity || '',
-            log.barometricPressure || '',
-            log.windSpeed || '',
-            log.windDirection || '',
-            log.weatherConditions || '',
-            log.notes || ''
-          ])
-        ];
-        
-        const weatherSheet = XLSX.utils.aoa_to_sheet(weatherData);
-        XLSX.utils.book_append_sheet(workbook, weatherSheet, 'Weather Logs');
-      }
-      
-      // Generate buffer and send
-      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-      
-      res.setHeader('Content-Disposition', `attachment; filename="${job.jobNumber}_Air_Monitoring_Report.xlsx"`);
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.send(buffer);
+
+      const reportHtml = generateAirMonitoringReport(job, samples, weatherLogs);
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Disposition', `attachment; filename="${job.jobNumber}_Air_Monitoring_Report.html"`);
+      res.send(reportHtml);
       
     } catch (error) {
       res.status(500).json({ message: "Failed to generate report", error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
-  // Mock user profile data (in real app, this would come from database)
-  let mockUserProfile = {
-    id: "user-1",
-    firstName: "John",
-    lastName: "Inspector",
-    email: "john.inspector@company.com",
-    phone: "+1-555-0123",
-    organization: "Environmental Solutions Inc.",
-    jobTitle: "Senior Environmental Consultant",
-    department: "Field Operations",
-    address: "123 Main St, Springfield, IL 62701",
-    role: "admin",
-    status: "active",
-    avatar: "",
-    createdAt: "2024-01-15T10:00:00Z",
-    lastLogin: new Date().toISOString(),
-    preferences: {
-      emailNotifications: true,
-      smsNotifications: false,
-      weeklyReports: true,
-      darkMode: false,
-    }
-  };
 
   // Mock system stats for admin dashboard
   const mockSystemStats = {
@@ -1355,14 +1848,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   ];
 
-  // User Profile Routes
-  app.get("/api/user/profile", (req, res) => {
-    res.json(mockUserProfile);
+  // User Profile Routes (DB-backed)
+  app.get("/api/user/profile", async (req, res) => {
+    const userId = getAuthUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const profile = await storage.getUserProfile(userId);
+    if (profile) {
+      return res.json({
+        ...profile,
+        id: userId,
+        preferences: parsePreferences(profile.preferences),
+      });
+    }
+
+    const firstName = typeof req.user?.given_name === "string" ? req.user.given_name : "";
+    const lastName = typeof req.user?.family_name === "string" ? req.user.family_name : "";
+    const email = typeof req.user?.email === "string" ? req.user.email : undefined;
+
+    const created = await storage.upsertUserProfile({
+      userId,
+      firstName,
+      lastName,
+      email,
+      role: "user",
+      status: "active",
+      preferences: JSON.stringify(parsePreferences(null)),
+    });
+
+    res.json({
+      ...created,
+      id: userId,
+      preferences: parsePreferences(created.preferences),
+    });
   });
 
-  app.put("/api/user/profile", (req, res) => {
-    mockUserProfile = { ...mockUserProfile, ...req.body };
-    res.json(mockUserProfile);
+  app.put("/api/user/profile", async (req, res) => {
+    const userId = getAuthUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const existing = await storage.getUserProfile(userId);
+    const mergedPreferences = {
+      ...parsePreferences(existing?.preferences),
+      ...(req.body?.preferences || {}),
+    };
+
+    const payload = insertUserProfileSchema.partial().parse({
+      userId,
+      ...req.body,
+      preferences: JSON.stringify(mergedPreferences),
+    });
+
+    const updated = await storage.upsertUserProfile(payload);
+    res.json({
+      ...updated,
+      id: userId,
+      preferences: parsePreferences(updated.preferences),
+    });
+  });
+
+  app.post("/api/user/avatar", upload.single("avatar"), async (req, res) => {
+    const userId = getAuthUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+    const avatarUrl = `/uploads/${req.file.filename}`;
+    const existing = await storage.getUserProfile(userId);
+    const updated = await storage.upsertUserProfile({
+      userId,
+      avatar: avatarUrl,
+      preferences: existing?.preferences || JSON.stringify(parsePreferences(null)),
+      email: existing?.email,
+      firstName: existing?.firstName,
+      lastName: existing?.lastName,
+      phone: existing?.phone,
+      organization: existing?.organization,
+      jobTitle: existing?.jobTitle,
+      department: existing?.department,
+      address: existing?.address,
+      role: existing?.role,
+      status: existing?.status,
+    });
+    res.json({ avatar: updated.avatar });
   });
 
   app.post("/api/user/change-password", (req, res) => {

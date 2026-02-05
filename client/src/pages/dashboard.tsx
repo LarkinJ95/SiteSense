@@ -39,6 +39,16 @@ export default function Dashboard() {
   const [editSurvey, setEditSurvey] = useState<Survey | null>(null);
   const { toast } = useToast();
 
+  const formatSurveyType = (value?: string | null) => {
+    const raw = value || "";
+    if (!raw) return "";
+    return raw
+      .split("-")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(", ");
+  };
+
   // Generate report mutation
   const generateReportMutation = useMutation({
     mutationFn: async (surveyId: string) => {
@@ -353,13 +363,23 @@ export default function Dashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={analyticsData.surveyTypeData}>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart
+                  data={analyticsData.surveyTypeData}
+                  margin={{ top: 10, right: 10, left: 0, bottom: 40 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" angle={-45} textAnchor="end" height={60} />
+                  <XAxis
+                    dataKey="name"
+                    interval={0}
+                    angle={-30}
+                    textAnchor="end"
+                    height={50}
+                    tick={{ fontSize: 11 }}
+                  />
                   <YAxis />
                   <Tooltip />
-                  <Bar dataKey="count" fill="#3b82f6" />
+                  <Bar dataKey="count" fill="#3b82f6" barSize={28} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -471,7 +491,7 @@ export default function Dashboard() {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100" data-testid={`text-survey-type-${survey.id}`}>
-                        {survey.surveyType}
+                        {formatSurveyType(survey.surveyType)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100" data-testid={`text-inspector-${survey.id}`}>
                         {survey.inspector}

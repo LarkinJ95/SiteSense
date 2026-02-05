@@ -4,8 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Download, FileText, Calendar, BarChart3, TrendingUp } from "lucide-react";
 import type { Survey } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Reports() {
+  const { toast } = useToast();
   const { data: surveys = [], isLoading } = useQuery<Survey[]>({
     queryKey: ["/api/surveys"],
   });
@@ -21,6 +24,61 @@ export default function Reports() {
   const recentReports = completedSurveys
     .sort((a, b) => new Date(b.updatedAt || '').getTime() - new Date(a.updatedAt || '').getTime())
     .slice(0, 5);
+
+  const handleViewReport = async (survey: Survey) => {
+    try {
+      const response = await apiRequest("GET", `/api/surveys/${survey.id}/report`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    } catch (error: any) {
+      toast({
+        title: "Report Error",
+        description: error?.message || "Unable to open report.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDownloadReport = async (survey: Survey) => {
+    try {
+      const response = await apiRequest("GET", `/api/surveys/${survey.id}/report`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const safeName = survey.siteName ? survey.siteName.replace(/[^a-z0-9-_]+/gi, "_") : "survey";
+      a.download = `${safeName}_report.html`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      toast({
+        title: "Download Error",
+        description: error?.message || "Unable to download report.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleExportAll = async () => {
+    try {
+      const response = await apiRequest("POST", "/api/admin/export-all");
+      const data = await response.json();
+      toast({
+        title: "Export Started",
+        description: data?.message || "Export initiated.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Export Error",
+        description: error?.message || "Unable to export reports.",
+        variant: "destructive",
+      });
+    }
+  };
 
   if (isLoading) {
     return (
@@ -52,7 +110,7 @@ export default function Reports() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold" data-testid="reports-title">Reports & Analytics</h1>
-        <Button data-testid="button-export-all">
+        <Button data-testid="button-export-all" onClick={handleExportAll}>
           <Download className="h-4 w-4 mr-2" />
           Export All Reports
         </Button>
@@ -156,11 +214,21 @@ export default function Reports() {
                     </div>
                   </div>
                   <div className="flex space-x-2">
-                    <Button variant="outline" size="sm" data-testid={`button-view-${survey.id}`}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      data-testid={`button-view-${survey.id}`}
+                      onClick={() => handleViewReport(survey)}
+                    >
                       <FileText className="h-4 w-4 mr-2" />
                       View
                     </Button>
-                    <Button variant="outline" size="sm" data-testid={`button-download-${survey.id}`}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      data-testid={`button-download-${survey.id}`}
+                      onClick={() => handleDownloadReport(survey)}
+                    >
                       <Download className="h-4 w-4 mr-2" />
                       Download
                     </Button>

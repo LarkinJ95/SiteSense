@@ -6,6 +6,8 @@ import {
   airMonitoringJobs,
   airSamples,
   airMonitoringEquipment,
+  fieldToolsEquipment,
+  userProfiles,
   dailyWeatherLogs,
   type Survey, 
   type InsertSurvey,
@@ -21,6 +23,10 @@ import {
   type InsertAirSample,
   type AirMonitoringEquipment,
   type InsertAirMonitoringEquipment,
+  type FieldToolsEquipment,
+  type InsertFieldToolsEquipment,
+  type UserProfile,
+  type InsertUserProfile,
   type DailyWeatherLog,
   type InsertDailyWeatherLog
 } from "@shared/schema";
@@ -86,9 +92,77 @@ export interface IStorage {
   createAirMonitoringEquipment(equipment: InsertAirMonitoringEquipment): Promise<AirMonitoringEquipment>;
   updateAirMonitoringEquipment(id: string, equipment: Partial<InsertAirMonitoringEquipment>): Promise<AirMonitoringEquipment | undefined>;
   deleteAirMonitoringEquipment(id: string): Promise<boolean>;
+
+  // Field tools equipment methods
+  getFieldToolsEquipment(userId: string): Promise<FieldToolsEquipment[]>;
+  replaceFieldToolsEquipment(userId: string, items: InsertFieldToolsEquipment[]): Promise<FieldToolsEquipment[]>;
+
+  // User profile methods
+  getUserProfile(userId: string): Promise<UserProfile | undefined>;
+  upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
+
+  // Area management
+  getHomogeneousAreas(surveyId: string): Promise<HomogeneousArea[]>;
+  createHomogeneousArea(surveyId: string, data: { title?: string; description?: string | null }): Promise<HomogeneousArea>;
+  deleteHomogeneousArea(surveyId: string, id: string): Promise<boolean>;
+  getFunctionalAreas(surveyId: string): Promise<FunctionalArea[]>;
+  createFunctionalArea(surveyId: string, data: { 
+    title: string; 
+    description?: string | null;
+    length?: number | null;
+    width?: number | null;
+    height?: number | null;
+    wallCount?: number | null;
+    doorCount?: number | null;
+    windowCount?: number | null;
+    sqft?: number | null;
+    wallSqft?: number | null;
+    photoUrl?: string | null;
+  }): Promise<FunctionalArea>;
+  updateFunctionalArea(surveyId: string, id: string, data: Partial<{
+    title: string;
+    description?: string | null;
+    length?: number | null;
+    width?: number | null;
+    height?: number | null;
+    wallCount?: number | null;
+    doorCount?: number | null;
+    windowCount?: number | null;
+    sqft?: number | null;
+    wallSqft?: number | null;
+    photoUrl?: string | null;
+  }>): Promise<FunctionalArea | undefined>;
+  deleteFunctionalArea(surveyId: string, id: string): Promise<boolean>;
+}
+
+export interface HomogeneousArea {
+  id: string;
+  surveyId: string;
+  title: string;
+  description?: string | null;
+  createdAt: Date;
+}
+
+export interface FunctionalArea {
+  id: string;
+  surveyId: string;
+  title: string;
+  description?: string | null;
+  length?: number | null;
+  width?: number | null;
+  height?: number | null;
+  wallCount?: number | null;
+  doorCount?: number | null;
+  windowCount?: number | null;
+  sqft?: number | null;
+  wallSqft?: number | null;
+  photoUrl?: string | null;
+  createdAt: Date;
 }
 
 export class DatabaseStorage implements IStorage {
+  private homogeneousAreas: HomogeneousArea[] = [];
+  private functionalAreas: FunctionalArea[] = [];
   async getSurveys(): Promise<Survey[]> {
     return await db.select().from(surveys).orderBy(desc(surveys.updatedAt));
   }
@@ -345,6 +419,42 @@ export class DatabaseStorage implements IStorage {
     return result.rowCount !== null && result.rowCount > 0;
   }
 
+  // Field tools equipment methods
+  async getFieldToolsEquipment(userId: string): Promise<FieldToolsEquipment[]> {
+    return await db.select().from(fieldToolsEquipment).where(eq(fieldToolsEquipment.userId, userId));
+  }
+
+  async replaceFieldToolsEquipment(userId: string, items: InsertFieldToolsEquipment[]): Promise<FieldToolsEquipment[]> {
+    await db.delete(fieldToolsEquipment).where(eq(fieldToolsEquipment.userId, userId));
+    if (!items.length) return [];
+    const payload = items.map((item) => ({
+      ...item,
+      userId,
+    }));
+    const inserted = await db.insert(fieldToolsEquipment).values(payload).returning();
+    return inserted;
+  }
+
+  // User profile methods
+  async getUserProfile(userId: string): Promise<UserProfile | undefined> {
+    const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId));
+    return profile;
+  }
+
+  async upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile> {
+    const existing = await this.getUserProfile(profile.userId);
+    if (existing) {
+      const [updated] = await db
+        .update(userProfiles)
+        .set({ ...profile, updatedAt: new Date() })
+        .where(eq(userProfiles.userId, profile.userId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(userProfiles).values(profile).returning();
+    return created;
+  }
+
   // Daily Weather Log methods
   async getDailyWeatherLogs(jobId: string): Promise<DailyWeatherLog[]> {
     return await db
@@ -374,6 +484,99 @@ export class DatabaseStorage implements IStorage {
   async deleteDailyWeatherLog(id: string): Promise<boolean> {
     const result = await db.delete(dailyWeatherLogs).where(eq(dailyWeatherLogs.id, id));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async getHomogeneousAreas(surveyId: string): Promise<HomogeneousArea[]> {
+    return this.homogeneousAreas.filter(area => area.surveyId === surveyId);
+  }
+
+  async createHomogeneousArea(surveyId: string, data: { title?: string; description?: string | null }): Promise<HomogeneousArea> {
+    const existing = this.homogeneousAreas.filter(area => area.surveyId === surveyId);
+    const nextIndex = existing.length + 1;
+    const autoTitle = `HA-${String(nextIndex).padStart(2, "0")}`;
+    const area: HomogeneousArea = {
+      id: nanoid(),
+      surveyId,
+      title: data.title && data.title.trim() ? data.title : autoTitle,
+      description: data.description ?? null,
+      createdAt: new Date(),
+    };
+    this.homogeneousAreas.push(area);
+    return area;
+  }
+
+  async deleteHomogeneousArea(surveyId: string, id: string): Promise<boolean> {
+    const index = this.homogeneousAreas.findIndex(area => area.surveyId === surveyId && area.id === id);
+    if (index === -1) return false;
+    this.homogeneousAreas.splice(index, 1);
+    return true;
+  }
+
+  async getFunctionalAreas(surveyId: string): Promise<FunctionalArea[]> {
+    return this.functionalAreas.filter(area => area.surveyId === surveyId);
+  }
+
+  async createFunctionalArea(surveyId: string, data: { 
+    title: string; 
+    description?: string | null;
+    length?: number | null;
+    width?: number | null;
+    height?: number | null;
+    wallCount?: number | null;
+    doorCount?: number | null;
+    windowCount?: number | null;
+    sqft?: number | null;
+    wallSqft?: number | null;
+    photoUrl?: string | null;
+  }): Promise<FunctionalArea> {
+    const area: FunctionalArea = {
+      id: nanoid(),
+      surveyId,
+      title: data.title,
+      description: data.description ?? null,
+      length: data.length ?? null,
+      width: data.width ?? null,
+      height: data.height ?? null,
+      wallCount: data.wallCount ?? null,
+      doorCount: data.doorCount ?? null,
+      windowCount: data.windowCount ?? null,
+      sqft: data.sqft ?? null,
+      wallSqft: data.wallSqft ?? null,
+      photoUrl: data.photoUrl ?? null,
+      createdAt: new Date(),
+    };
+    this.functionalAreas.push(area);
+    return area;
+  }
+
+  async updateFunctionalArea(surveyId: string, id: string, data: Partial<{
+    title: string;
+    description?: string | null;
+    length?: number | null;
+    width?: number | null;
+    height?: number | null;
+    wallCount?: number | null;
+    doorCount?: number | null;
+    windowCount?: number | null;
+    sqft?: number | null;
+    wallSqft?: number | null;
+    photoUrl?: string | null;
+  }>): Promise<FunctionalArea | undefined> {
+    const index = this.functionalAreas.findIndex(area => area.surveyId === surveyId && area.id === id);
+    if (index === -1) return undefined;
+    const updated: FunctionalArea = {
+      ...this.functionalAreas[index],
+      ...data,
+    };
+    this.functionalAreas[index] = updated;
+    return updated;
+  }
+
+  async deleteFunctionalArea(surveyId: string, id: string): Promise<boolean> {
+    const index = this.functionalAreas.findIndex(area => area.surveyId === surveyId && area.id === id);
+    if (index === -1) return false;
+    this.functionalAreas.splice(index, 1);
+    return true;
   }
 
   // New features storage methods - In-memory implementations

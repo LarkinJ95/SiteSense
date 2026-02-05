@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,7 @@ interface UserProfile {
 export default function UserProfile() {
   const [isEditing, setIsEditing] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { theme, setTheme } = useTheme();
@@ -54,7 +55,10 @@ export default function UserProfile() {
   useEffect(() => {
     if (!profile) return;
     setFormData(profile);
-  }, [profile]);
+    if (profile.preferences?.darkMode !== undefined) {
+      setTheme(profile.preferences.darkMode ? "dark" : "light");
+    }
+  }, [profile, setTheme]);
 
   // Update profile mutation
   const updateProfileMutation = useMutation({
@@ -74,6 +78,32 @@ export default function UserProfile() {
       toast({
         title: "Error",
         description: error?.message || "Failed to update profile.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const uploadAvatarMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("avatar", file);
+      const response = await apiRequest("POST", "/api/user/avatar", formData);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["/api/user/profile"], (current: UserProfile | undefined) => {
+        if (!current) return current;
+        return { ...current, avatar: data?.avatar || current.avatar };
+      });
+      toast({
+        title: "Avatar Updated",
+        description: "Your profile image has been updated.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Upload failed",
+        description: error?.message || "Unable to upload profile image.",
         variant: "destructive",
       });
     },
@@ -129,6 +159,37 @@ export default function UserProfile() {
     setIsEditing(false);
   };
 
+  const handleAvatarClick = () => {
+    avatarInputRef.current?.click();
+  };
+
+  const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    uploadAvatarMutation.mutate(file);
+    event.target.value = "";
+  };
+
+  const handleThemeToggle = (checked: boolean) => {
+    const nextTheme = checked ? "dark" : "light";
+    setTheme(nextTheme);
+    setFormData((prev) => ({
+      ...prev,
+      preferences: {
+        ...(prev.preferences || profile.preferences),
+        darkMode: checked,
+      },
+    }));
+    if (!isEditing) {
+      updateProfileMutation.mutate({
+        preferences: {
+          ...(profile.preferences || {}),
+          darkMode: checked,
+        },
+      });
+    }
+  };
+
   if (isLoading) {
     return <div>Loading profile...</div>;
   }
@@ -177,10 +238,19 @@ export default function UserProfile() {
                   size="sm"
                   variant="outline"
                   className="absolute bottom-0 right-0 rounded-full h-8 w-8 p-0"
+                  onClick={handleAvatarClick}
+                  disabled={uploadAvatarMutation.isPending}
                 >
                   <Camera className="h-4 w-4" />
                 </Button>
               )}
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarChange}
+              />
             </div>
             <div className="flex-1">
               <h2 className="text-2xl font-bold">{profile.firstName} {profile.lastName}</h2>
@@ -316,7 +386,16 @@ export default function UserProfile() {
                 </div>
                 <Switch 
                   id="email-notifications" 
-                  defaultChecked={profile.preferences.emailNotifications}
+                  checked={formData.preferences?.emailNotifications ?? profile.preferences.emailNotifications}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      preferences: {
+                        ...(prev.preferences || profile.preferences),
+                        emailNotifications: checked,
+                      },
+                    }))
+                  }
                 />
               </div>
 
@@ -327,7 +406,16 @@ export default function UserProfile() {
                 </div>
                 <Switch 
                   id="sms-notifications" 
-                  defaultChecked={profile.preferences.smsNotifications}
+                  checked={formData.preferences?.smsNotifications ?? profile.preferences.smsNotifications}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      preferences: {
+                        ...(prev.preferences || profile.preferences),
+                        smsNotifications: checked,
+                      },
+                    }))
+                  }
                 />
               </div>
 
@@ -338,7 +426,16 @@ export default function UserProfile() {
                 </div>
                 <Switch 
                   id="weekly-reports" 
-                  defaultChecked={profile.preferences.weeklyReports}
+                  checked={formData.preferences?.weeklyReports ?? profile.preferences.weeklyReports}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      preferences: {
+                        ...(prev.preferences || profile.preferences),
+                        weeklyReports: checked,
+                      },
+                    }))
+                  }
                 />
               </div>
 
@@ -350,7 +447,7 @@ export default function UserProfile() {
                 <Switch 
                   id="dark-mode" 
                   checked={theme === "dark"}
-                  onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
+                  onCheckedChange={handleThemeToggle}
                 />
               </div>
             </CardContent>

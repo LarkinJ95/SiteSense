@@ -22,6 +22,7 @@ import AirMonitoring from "@/pages/air-monitoring-new";
 import AdvancedAirMonitoring from "@/pages/air-monitoring-advanced";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
+import ForgotPassword from "@/pages/forgot-password";
 import AdminDashboard from "@/pages/admin";
 import UserProfile from "@/pages/user-profile";
 import WhiteLabelDashboard from "@/pages/white-label";
@@ -53,6 +54,7 @@ function Router() {
     <Switch>
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
+      <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/account/:pathname*">
         <Protected>
           <Account />
@@ -123,6 +125,11 @@ function Router() {
           <AirMonitoring />
         </Protected>
       </Route>
+      <Route path="/air-monitoring/:id">
+        <Protected>
+          <AirMonitoring />
+        </Protected>
+      </Route>
       <Route path="/air-monitoring-advanced">
         <Protected>
           <AdvancedAirMonitoring />
@@ -143,7 +150,7 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
+      <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <div className="min-h-screen bg-background flex flex-col">
             <AppHeader onCreateSurvey={() => setShowCreateModal(true)} />

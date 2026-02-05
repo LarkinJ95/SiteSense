@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { Observation } from "@shared/schema";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
@@ -62,9 +62,20 @@ interface AddObservationModalProps {
   onOpenChange: (open: boolean) => void;
   surveyId: string;
   editingObservation?: Observation | null;
+  homogeneousAreas?: string[];
+  functionalAreas?: string[];
+  observations?: Observation[];
 }
 
-export function AddObservationModal({ open, onOpenChange, surveyId, editingObservation }: AddObservationModalProps) {
+export function AddObservationModal({
+  open,
+  onOpenChange,
+  surveyId,
+  editingObservation,
+  homogeneousAreas = [],
+  functionalAreas = [],
+  observations = [],
+}: AddObservationModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -119,6 +130,31 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
       notes: "",
     },
   });
+
+  const computeNextSampleId = (homogeneousArea: string) => {
+    const match = homogeneousArea.match(/HA-(\d+)/i);
+    const haIndex = match ? parseInt(match[1], 10) : null;
+    if (!haIndex) return "";
+    const existing = observations.filter((obs) => obs.homogeneousArea === homogeneousArea && obs.sampleId);
+    const nextSample = existing.length + 1;
+    return `${haIndex}-${nextSample}`;
+  };
+
+  const sampleCollected = useWatch({ control: form.control, name: "sampleCollected" });
+  const homogeneousArea = useWatch({ control: form.control, name: "homogeneousArea" });
+
+  useEffect(() => {
+    if (editingObservation) return;
+    if (!sampleCollected) {
+      form.setValue("sampleId", "");
+      return;
+    }
+    if (!homogeneousArea) return;
+    const nextId = computeNextSampleId(homogeneousArea);
+    if (nextId) {
+      form.setValue("sampleId", nextId);
+    }
+  }, [sampleCollected, homogeneousArea, observations, editingObservation, form]);
 
   // Reset form when editing observation changes
   useEffect(() => {
@@ -328,13 +364,21 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
                   name="area"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Area/Location *</FormLabel>
+                      <FormLabel>Functional Area *</FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="e.g., Room 101, Basement, Exterior Wall"
-                          {...field}
-                          data-testid="input-area"
-                        />
+                        <>
+                          <Input
+                            placeholder="e.g., Room 101, Basement, Exterior Wall"
+                            list="functional-areas-list"
+                            {...field}
+                            data-testid="input-area"
+                          />
+                          <datalist id="functional-areas-list">
+                            {functionalAreas.map((area) => (
+                              <option key={area} value={area} />
+                            ))}
+                          </datalist>
+                        </>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -345,13 +389,21 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
                   name="homogeneousArea"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Homogeneous Area ID</FormLabel>
+                      <FormLabel>Homogeneous Area</FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="e.g., HA-001"
-                          {...field}
-                          data-testid="input-homogeneous-area"
-                        />
+                        <>
+                          <Input
+                            placeholder="e.g., HA-001"
+                            list="homogeneous-areas-list"
+                            {...field}
+                            data-testid="input-homogeneous-area"
+                          />
+                          <datalist id="homogeneous-areas-list">
+                            {homogeneousAreas.map((area) => (
+                              <option key={area} value={area} />
+                            ))}
+                          </datalist>
+                        </>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -540,6 +592,7 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
                             <Input
                               placeholder="e.g., AS-2024-001"
                               {...field}
+                              readOnly={!editingObservation && !!sampleCollected && !!homogeneousArea}
                               data-testid="input-sample-id"
                             />
                           </FormControl>

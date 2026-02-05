@@ -93,7 +93,7 @@ export function CreateAirSampleModal({ open, onOpenChange, personnel }: CreateAi
   });
 
   const createSampleMutation = useMutation({
-    mutationFn: (data: CreateAirSampleFormData) => apiRequest("/api/air-samples", "POST", {
+    mutationFn: (data: CreateAirSampleFormData) => apiRequest("POST", "/api/air-samples", {
         ...data,
         startTime: new Date(data.startTime).toISOString(),
         endTime: data.endTime ? new Date(data.endTime).toISOString() : null,

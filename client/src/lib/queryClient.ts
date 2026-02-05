@@ -10,9 +10,19 @@ async function throwIfResNotOk(res: Response) {
 
 export async function apiRequest(
   method: string,
-  url: string,
+  url?: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  // Backward compatibility: allow apiRequest(url, method, data)
+  if (typeof url === "string" && (method.startsWith("/") || method.startsWith("http"))) {
+    const swappedMethod = url;
+    const swappedUrl = method;
+    method = swappedMethod;
+    url = swappedUrl;
+  }
+  if (!url) {
+    throw new Error("apiRequest requires a URL");
+  }
   const isFormData = typeof FormData !== "undefined" && data instanceof FormData;
   const token = await authApi.getJWTToken();
   const headers: Record<string, string> = {};

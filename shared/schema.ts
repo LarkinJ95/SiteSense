@@ -299,8 +299,9 @@ export const airSamples = pgTable('air_samples', {
   surveyId: varchar('survey_id').references(() => surveys.id),
   personnelId: text('personnel_id').references(() => personnelProfiles.id),
   sampleType: text('sample_type', { 
-    enum: ['personal', 'area', 'background', 'outdoor'] 
+    enum: ['area', 'blank', 'personal', 'excursion', 'clearance', 'other'] 
   }).notNull(),
+  customSampleType: text('custom_sample_type'),
   analyte: text('analyte', {
     enum: ['asbestos', 'lead', 'cadmium', 'hexavalent_chromium', 'silica', 'heavy_metals', 'benzene', 'toluene', 'other']
   }).notNull(),
@@ -358,6 +359,8 @@ export const airSamples = pgTable('air_samples', {
   reportedBy: text('reported_by'),
   reviewedBy: text('reviewed_by'),
   reportNotes: text('report_notes'),
+  labReportFilename: text('lab_report_filename'),
+  labReportUploadedAt: timestamp('lab_report_uploaded_at'),
   
   // Quality control
   blankCorrection: boolean('blank_correction').default(false),
@@ -391,6 +394,38 @@ export const airMonitoringEquipment = pgTable('air_monitoring_equipment', {
   isActive: boolean('is_active').default(true),
   notes: text('notes'),
   createdAt: timestamp('created_at').default(sql`now()`),
+});
+
+// Field tools equipment tracking
+export const fieldToolsEquipment = pgTable('field_tools_equipment', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  userId: text('user_id').notNull(),
+  name: text('name').notNull(),
+  serialNumber: text('serial_number'),
+  calibrationDate: text('calibration_date'),
+  nextCalibration: text('next_calibration'),
+  status: text('status'), // calibrated, due, overdue
+  createdAt: timestamp('created_at').default(sql`now()`),
+  updatedAt: timestamp('updated_at').default(sql`now()`),
+});
+
+// User profile settings (linked to auth user id)
+export const userProfiles = pgTable('user_profiles', {
+  userId: text('user_id').primaryKey(),
+  firstName: text('first_name'),
+  lastName: text('last_name'),
+  email: text('email'),
+  phone: text('phone'),
+  organization: text('organization'),
+  jobTitle: text('job_title'),
+  department: text('department'),
+  address: text('address'),
+  role: text('role'),
+  status: text('status'),
+  avatar: text('avatar'),
+  preferences: text('preferences'), // JSON string
+  createdAt: timestamp('created_at').default(sql`now()`),
+  updatedAt: timestamp('updated_at').default(sql`now()`),
 });
 
 // Define relations for air monitoring
@@ -448,6 +483,30 @@ export const insertAirMonitoringJobSchema = createInsertSchema(airMonitoringJobs
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  startDate: z.preprocess((value) => {
+    if (value instanceof Date) return value;
+    if (typeof value === "string" && value.trim()) return new Date(value);
+    return value;
+  }, z.date()),
+  endDate: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return null;
+    if (value instanceof Date) return value;
+    if (typeof value === "string" && value.trim()) return new Date(value);
+    return value;
+  }, z.date().nullable().optional()),
+  actualStartDate: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return undefined;
+    if (value instanceof Date) return value;
+    if (typeof value === "string" && value.trim()) return new Date(value);
+    return value;
+  }, z.date().optional()),
+  actualEndDate: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return undefined;
+    if (value instanceof Date) return value;
+    if (typeof value === "string" && value.trim()) return new Date(value);
+    return value;
+  }, z.date().optional()),
 });
 
 export const insertAirSampleSchema = createInsertSchema(airSamples).omit({
@@ -476,6 +535,18 @@ export const insertAirMonitoringEquipmentSchema = createInsertSchema(airMonitori
   createdAt: true,
 });
 
+export const insertFieldToolsEquipmentSchema = createInsertSchema(fieldToolsEquipment).omit({
+  id: true,
+  userId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertDailyWeatherLogSchema = createInsertSchema(dailyWeatherLogs).omit({
   id: true,
   createdAt: true,
@@ -496,6 +567,10 @@ export type AirSample = typeof airSamples.$inferSelect;
 export type InsertAirSample = z.infer<typeof insertAirSampleSchema>;
 export type AirMonitoringEquipment = typeof airMonitoringEquipment.$inferSelect;
 export type InsertAirMonitoringEquipment = z.infer<typeof insertAirMonitoringEquipmentSchema>;
+export type FieldToolsEquipment = typeof fieldToolsEquipment.$inferSelect;
+export type InsertFieldToolsEquipment = z.infer<typeof insertFieldToolsEquipmentSchema>;
+export type UserProfile = typeof userProfiles.$inferSelect;
+export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
 export type DailyWeatherLog = typeof dailyWeatherLogs.$inferSelect;
 export type InsertDailyWeatherLog = z.infer<typeof insertDailyWeatherLogSchema>;
 
