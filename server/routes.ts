@@ -24,6 +24,26 @@ const upload = multer({
   },
 });
 
+const documentUpload = multer({
+  dest: "uploads/",
+  limits: {
+    fileSize: 25 * 1024 * 1024, // 25MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+    ];
+    if (file.mimetype.startsWith("image/") || allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Unsupported document type"));
+    }
+  },
+});
+
 // Report generation function
 function generateSurveyReport(
   survey: Survey,
@@ -170,9 +190,10 @@ function generateSurveyReport(
     .filter(entry => entry.photos.length > 0)
     .map(entry => {
       const photoCells = entry.photos.map(photo => {
-        const photoSrc = photo.dataUrl || (baseUrl
-          ? `${baseUrl}/uploads/${photo.filename}`
-          : `/uploads/${photo.filename}`);
+      const safeFilename = path.basename(photo.filename);
+      const photoSrc = photo.dataUrl || (baseUrl
+          ? `${baseUrl}/uploads/${safeFilename}`
+          : `/uploads/${safeFilename}`);
         return `<img src="${photoSrc}" alt="${photo.originalName}" class="photo-thumb" />`;
       }).join("");
       return `
@@ -989,6 +1010,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const numWidth = width !== undefined && width !== null ? Number(width) : null;
       const numHeight = height !== undefined && height !== null ? Number(height) : null;
       const numWalls = wallCount !== undefined && wallCount !== null ? Number(wallCount) : null;
+      const numDoors = doorCount !== undefined && doorCount !== null ? Number(doorCount) : null;
+      const numWindows = windowCount !== undefined && windowCount !== null ? Number(windowCount) : null;
 
       const sqft = numLength && numWidth ? numLength * numWidth : null;
       const wallSqft = numWidth && numHeight && numWalls ? numWidth * numHeight * numWalls : null;
@@ -999,9 +1022,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         length: Number.isFinite(numLength) ? numLength : null,
         width: Number.isFinite(numWidth) ? numWidth : null,
         height: Number.isFinite(numHeight) ? numHeight : null,
-        wallCount: Number.isFinite(numWalls) ? numWalls : null,
-        doorCount: doorCount !== undefined && doorCount !== null ? Number(doorCount) : null,
-        windowCount: windowCount !== undefined && windowCount !== null ? Number(windowCount) : null,
+        wallCount: Number.isFinite(numWalls) ? Math.round(numWalls) : null,
+        doorCount: Number.isFinite(numDoors) ? Math.round(numDoors) : null,
+        windowCount: Number.isFinite(numWindows) ? Math.round(numWindows) : null,
         sqft: Number.isFinite(sqft as number) ? (sqft as number) : null,
         wallSqft: Number.isFinite(wallSqft as number) ? (wallSqft as number) : null,
       });
@@ -1029,6 +1052,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const numWidth = width !== undefined && width !== null ? Number(width) : null;
       const numHeight = height !== undefined && height !== null ? Number(height) : null;
       const numWalls = wallCount !== undefined && wallCount !== null ? Number(wallCount) : null;
+      const numDoors = doorCount !== undefined && doorCount !== null ? Number(doorCount) : null;
+      const numWindows = windowCount !== undefined && windowCount !== null ? Number(windowCount) : null;
 
       const sqft = numLength && numWidth ? numLength * numWidth : null;
       const wallSqft = numWidth && numHeight && numWalls ? numWidth * numHeight * numWalls : null;
@@ -1039,9 +1064,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         length: Number.isFinite(numLength) ? numLength : null,
         width: Number.isFinite(numWidth) ? numWidth : null,
         height: Number.isFinite(numHeight) ? numHeight : null,
-        wallCount: Number.isFinite(numWalls) ? numWalls : null,
-        doorCount: doorCount !== undefined && doorCount !== null ? Number(doorCount) : null,
-        windowCount: windowCount !== undefined && windowCount !== null ? Number(windowCount) : null,
+        wallCount: Number.isFinite(numWalls) ? Math.round(numWalls) : null,
+        doorCount: Number.isFinite(numDoors) ? Math.round(numDoors) : null,
+        windowCount: Number.isFinite(numWindows) ? Math.round(numWindows) : null,
         sqft: Number.isFinite(sqft as number) ? (sqft as number) : null,
         wallSqft: Number.isFinite(wallSqft as number) ? (wallSqft as number) : null,
         photoUrl,
@@ -1063,13 +1088,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No file provided" });
       }
       const photoUrl = `/uploads/${req.file.filename}`;
-      const areas = await storage.getFunctionalAreas(req.params.surveyId);
-      const area = areas.find(item => item.id === req.params.id);
-      if (!area) {
+      const updated = await storage.updateFunctionalArea(req.params.surveyId, req.params.id, { photoUrl });
+      if (!updated) {
         return res.status(404).json({ message: "Functional area not found" });
       }
-      area.photoUrl = photoUrl;
-      res.json({ photoUrl });
+      res.json({ photoUrl: updated.photoUrl });
     } catch (error) {
       res.status(500).json({ message: "Failed to upload functional area photo", error: error instanceof Error ? error.message : "Unknown error" });
     }
@@ -1590,6 +1613,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(samples);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch job samples", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  // Air monitoring documents
+  app.get("/api/air-monitoring-jobs/:jobId/documents", async (req, res) => {
+    try {
+      const documents = await storage.getAirMonitoringDocuments(req.params.jobId);
+      res.json(documents);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch documents", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.post("/api/air-monitoring-jobs/:jobId/documents", documentUpload.single("document"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file provided" });
+      }
+      const uploadedBy = getUserDisplayName(req.user);
+      const doc = await storage.createAirMonitoringDocument({
+        jobId: req.params.jobId,
+        documentType: req.body?.documentType || null,
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        uploadedBy: uploadedBy || null,
+      });
+      res.status(201).json(doc);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to upload document", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.delete("/api/air-monitoring-documents/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteAirMonitoringDocument(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete document", error: error instanceof Error ? error.message : "Unknown error" });
     }
   });
 

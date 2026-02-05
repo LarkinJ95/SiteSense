@@ -16,7 +16,7 @@ import { CreateAirJobModal } from "@/components/create-air-job-modal";
 import { CreatePersonnelModal } from "@/components/create-personnel-modal";
 import { DailyWeatherLog } from "@/components/daily-weather-log";
 import { apiRequest } from "@/lib/queryClient";
-import { AirSample, PersonnelProfile, AirMonitoringJob, FieldToolsEquipment, insertAirSampleSchema, type InsertAirSample } from "@shared/schema";
+import { AirSample, PersonnelProfile, AirMonitoringJob, FieldToolsEquipment, AirMonitoringDocument, insertAirSampleSchema, type InsertAirSample } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -80,6 +80,8 @@ export default function AirMonitoringPage() {
   const [editingSample, setEditingSample] = useState<AirSample | null>(null);
   const [editingJob, setEditingJob] = useState<AirMonitoringJob | null>(null);
   const [selectedJob, setSelectedJob] = useState<AirMonitoringJob | null>(null);
+  const [documentType, setDocumentType] = useState("Air Sample Log");
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [jobDetailsTab, setJobDetailsTab] = useState("overview");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -96,6 +98,11 @@ export default function AirMonitoringPage() {
 
   const { data: equipmentList = [] } = useQuery<FieldToolsEquipment[]>({
     queryKey: ["/api/field-tools/equipment"],
+  });
+
+  const { data: documents = [] } = useQuery<AirMonitoringDocument[]>({
+    queryKey: ["/api/air-monitoring-jobs", selectedJob?.id, "documents"],
+    enabled: !!selectedJob?.id,
   });
 
   // Fetch air samples for selected job
@@ -156,7 +163,17 @@ export default function AirMonitoringPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error('Failed to create sample');
+      if (!response.ok) {
+        const errorText = await response.text();
+        let message = 'Failed to create sample';
+        try {
+          const parsed = JSON.parse(errorText);
+          message = parsed.message || parsed.error || message;
+        } catch {
+          if (errorText) message = errorText;
+        }
+        throw new Error(message);
+      }
       const created = await response.json();
       if (file && created?.id) {
         const formData = new FormData();
@@ -185,7 +202,17 @@ export default function AirMonitoringPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error('Failed to update sample');
+      if (!response.ok) {
+        const errorText = await response.text();
+        let message = 'Failed to update sample';
+        try {
+          const parsed = JSON.parse(errorText);
+          message = parsed.message || parsed.error || message;
+        } catch {
+          if (errorText) message = errorText;
+        }
+        throw new Error(message);
+      }
       const updated = await response.json();
       if (file) {
         const formData = new FormData();
@@ -225,6 +252,43 @@ export default function AirMonitoringPage() {
         description: error.message || "Failed to delete air sample" 
       });
     }
+  });
+
+  const uploadDocumentMutation = useMutation({
+    mutationFn: async (payload: { jobId: string; file: File; documentType: string }) => {
+      const formData = new FormData();
+      formData.append("document", payload.file);
+      formData.append("documentType", payload.documentType);
+      const response = await apiRequest("POST", `/api/air-monitoring-jobs/${payload.jobId}/documents`, formData);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/air-monitoring-jobs", selectedJob?.id, "documents"] });
+      setDocumentFile(null);
+      toast({ description: "Document uploaded successfully" });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        description: error.message || "Failed to upload document",
+      });
+    },
+  });
+
+  const deleteDocumentMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/air-monitoring-documents/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/air-monitoring-jobs", selectedJob?.id, "documents"] });
+      toast({ description: "Document deleted" });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        description: error.message || "Failed to delete document",
+      });
+    },
   });
 
   const updateJobMutation = useMutation({
@@ -613,7 +677,7 @@ export default function AirMonitoringPage() {
                     <CloudSun className="mr-2 h-4 w-4" />
                     Weather Logs
                   </TabsTrigger>
-                  <TabsTrigger value="conditions">Conditions</TabsTrigger>
+                  <TabsTrigger value="documents">Documents</TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="overview" className="space-y-4">
@@ -757,39 +821,70 @@ export default function AirMonitoringPage() {
                   <DailyWeatherLog jobId={selectedJob.id} />
                 </TabsContent>
                 
-                <TabsContent value="conditions" className="space-y-4">
-                  {selectedJob.weatherConditions && (
-                    <div>
-                      <h4 className="font-semibold">Weather Conditions</h4>
-                      <p>{selectedJob.weatherConditions}</p>
+                <TabsContent value="documents" className="space-y-4">
+                  <div className="flex flex-col md:flex-row gap-3">
+                    <Select value={documentType} onValueChange={setDocumentType}>
+                      <SelectTrigger className="w-full md:w-[240px]">
+                        <SelectValue placeholder="Document type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Air Sample Log">Air Sample Log</SelectItem>
+                        <SelectItem value="Lab Report">Lab Report</SelectItem>
+                        <SelectItem value="Field Notes">Field Notes</SelectItem>
+                        <SelectItem value="Calibration Record">Calibration Record</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="file"
+                      onChange={(e) => setDocumentFile(e.target.files?.[0] || null)}
+                    />
+                    <Button
+                      onClick={() => {
+                        if (!selectedJob || !documentFile) return;
+                        uploadDocumentMutation.mutate({
+                          jobId: selectedJob.id,
+                          file: documentFile,
+                          documentType,
+                        });
+                      }}
+                      disabled={!documentFile || uploadDocumentMutation.isPending}
+                    >
+                      {uploadDocumentMutation.isPending ? "Uploading..." : "Upload"}
+                    </Button>
+                  </div>
+
+                  {documents.length === 0 ? (
+                    <div className="text-sm text-gray-500">No documents uploaded yet.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {documents.map((doc) => (
+                        <div key={doc.id} className="flex items-center justify-between border rounded-lg px-3 py-2">
+                          <div>
+                            <div className="text-sm font-medium">{doc.originalName}</div>
+                            <div className="text-xs text-gray-500">
+                              {doc.documentType || "Document"} • {new Date(doc.uploadedAt || "").toLocaleString()}
+                              {doc.uploadedBy ? ` • ${doc.uploadedBy}` : ""}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" asChild>
+                              <a href={`/uploads/${doc.filename}`} target="_blank" rel="noreferrer">
+                                View
+                              </a>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteDocumentMutation.mutate(doc.id)}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-600" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
-                  <div className="grid grid-cols-2 gap-4">
-                    {selectedJob.temperature && (
-                      <div>
-                        <h5 className="font-medium">Temperature</h5>
-                        <p>{selectedJob.temperature}°C</p>
-                      </div>
-                    )}
-                    {selectedJob.humidity && (
-                      <div>
-                        <h5 className="font-medium">Humidity</h5>
-                        <p>{selectedJob.humidity}%</p>
-                      </div>
-                    )}
-                    {selectedJob.barometricPressure && (
-                      <div>
-                        <h5 className="font-medium">Pressure</h5>
-                        <p>{selectedJob.barometricPressure} kPa</p>
-                      </div>
-                    )}
-                    {selectedJob.windSpeed && (
-                      <div>
-                        <h5 className="font-medium">Wind Speed</h5>
-                        <p>{selectedJob.windSpeed} m/s {selectedJob.windDirection}</p>
-                      </div>
-                    )}
-                  </div>
                 </TabsContent>
               </Tabs>
             </div>
@@ -1122,6 +1217,16 @@ function AirSampleForm({ jobId, personnel, equipmentList, onSuccess, onSubmit, i
     onSubmit(submitData, labReportFile);
   };
 
+  const monitorLockedTypes = ["area", "blank", "clearance"];
+  const sampleTypeValue = form.watch("sampleType");
+  const monitorLocked = monitorLockedTypes.includes(sampleTypeValue);
+
+  useEffect(() => {
+    if (monitorLocked) {
+      form.setValue("monitorWornBy", "N/A");
+    }
+  }, [monitorLocked, form]);
+
   const getDefaultUnitForAnalyte = (analyte: string) => {
     switch (analyte) {
       case "asbestos":
@@ -1284,20 +1389,22 @@ function AirSampleForm({ jobId, personnel, equipmentList, onSuccess, onSubmit, i
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Monitor Worn By</FormLabel>
-                <Input
-                  placeholder="Search personnel..."
-                  value={personnelQuery}
-                  onChange={(e) => setPersonnelQuery(e.target.value)}
-                  className="mb-2"
-                />
-                <Select onValueChange={field.onChange} value={field.value || ''}>
+                {!monitorLocked && (
+                  <Input
+                    placeholder="Search personnel..."
+                    value={personnelQuery}
+                    onChange={(e) => setPersonnelQuery(e.target.value)}
+                    className="mb-2"
+                  />
+                )}
+                <Select onValueChange={field.onChange} value={field.value || ''} disabled={monitorLocked}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select person wearing monitor" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="N/A">Not applicable (area/background sample)</SelectItem>
+                    <SelectItem value="N/A">Not applicable (area/blank/clearance)</SelectItem>
                     {filteredPersonnel.map((person) => (
                       <SelectItem key={person.id} value={`${person.firstName} ${person.lastName}`}>
                         {person.firstName} {person.lastName} - {person.stateAccreditationNumber}

@@ -106,6 +106,33 @@ export const observations = pgTable("observations", {
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });
 
+export const homogeneousAreas = pgTable("homogeneous_areas", {
+  id: text("id").primaryKey().$defaultFn(() => nanoid()),
+  surveyId: varchar("survey_id").notNull().references(() => surveys.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+export const functionalAreas = pgTable("functional_areas", {
+  id: text("id").primaryKey().$defaultFn(() => nanoid()),
+  surveyId: varchar("survey_id").notNull().references(() => surveys.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  length: decimal("length"),
+  width: decimal("width"),
+  height: decimal("height"),
+  wallCount: integer("wall_count"),
+  doorCount: integer("door_count"),
+  windowCount: integer("window_count"),
+  sqft: decimal("sqft"),
+  wallSqft: decimal("wall_sqft"),
+  photoUrl: text("photo_url"),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
 export const observationPhotos = pgTable("observation_photos", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   observationId: varchar("observation_id").notNull().references(() => observations.id, { onDelete: 'cascade' }),
@@ -379,6 +406,18 @@ export const airSamples = pgTable('air_samples', {
   updatedAt: timestamp('updated_at').default(sql`now()`),
 });
 
+export const airMonitoringDocuments = pgTable("air_monitoring_documents", {
+  id: text("id").primaryKey().$defaultFn(() => nanoid()),
+  jobId: text("job_id").references(() => airMonitoringJobs.id, { onDelete: "cascade" }).notNull(),
+  documentType: text("document_type"),
+  filename: text("filename").notNull(),
+  originalName: text("original_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  size: integer("size").notNull(),
+  uploadedBy: text("uploaded_by"),
+  uploadedAt: timestamp("uploaded_at").default(sql`now()`),
+});
+
 // Air monitoring equipment
 export const airMonitoringEquipment = pgTable('air_monitoring_equipment', {
   id: text('id').primaryKey().$defaultFn(() => nanoid()),
@@ -451,6 +490,7 @@ export const airSampleRelations = relations(airSamples, ({ one }) => ({
 export const airMonitoringJobRelations = relations(airMonitoringJobs, ({ many, one }) => ({
   airSamples: many(airSamples),
   dailyWeatherLogs: many(dailyWeatherLogs),
+  documents: many(airMonitoringDocuments),
   survey: one(surveys, {
     fields: [airMonitoringJobs.surveyId],
     references: [surveys.id],
@@ -468,6 +508,8 @@ export const dailyWeatherLogRelations = relations(dailyWeatherLogs, ({ one }) =>
 export const surveyRelations = relations(surveys, ({ many }) => ({
   observations: many(observations),
   airSamples: many(airSamples),
+  homogeneousAreas: many(homogeneousAreas),
+  functionalAreas: many(functionalAreas),
 }));
 
 // Create Zod schemas
@@ -530,6 +572,23 @@ export const insertAirSampleSchema = createInsertSchema(airSamples).omit({
   reportNotes: z.string().optional(),
 });
 
+export const insertHomogeneousAreaSchema = createInsertSchema(homogeneousAreas).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertFunctionalAreaSchema = createInsertSchema(functionalAreas).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAirMonitoringDocumentSchema = createInsertSchema(airMonitoringDocuments).omit({
+  id: true,
+  uploadedAt: true,
+});
+
 export const insertAirMonitoringEquipmentSchema = createInsertSchema(airMonitoringEquipment).omit({
   id: true,
   createdAt: true,
@@ -560,11 +619,15 @@ export type Observation = typeof observations.$inferSelect;
 export type InsertObservationPhoto = z.infer<typeof insertObservationPhotoSchema>;
 export type ObservationPhoto = typeof observationPhotos.$inferSelect;
 export type PersonnelProfile = typeof personnelProfiles.$inferSelect;
+export type HomogeneousArea = typeof homogeneousAreas.$inferSelect;
+export type FunctionalArea = typeof functionalAreas.$inferSelect;
 export type InsertPersonnelProfile = z.infer<typeof insertPersonnelProfileSchema>;
 export type AirMonitoringJob = typeof airMonitoringJobs.$inferSelect;
 export type InsertAirMonitoringJob = z.infer<typeof insertAirMonitoringJobSchema>;
 export type AirSample = typeof airSamples.$inferSelect;
 export type InsertAirSample = z.infer<typeof insertAirSampleSchema>;
+export type AirMonitoringDocument = typeof airMonitoringDocuments.$inferSelect;
+export type InsertAirMonitoringDocument = z.infer<typeof insertAirMonitoringDocumentSchema>;
 export type AirMonitoringEquipment = typeof airMonitoringEquipment.$inferSelect;
 export type InsertAirMonitoringEquipment = z.infer<typeof insertAirMonitoringEquipmentSchema>;
 export type FieldToolsEquipment = typeof fieldToolsEquipment.$inferSelect;

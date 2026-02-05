@@ -6,6 +6,9 @@ import {
   airMonitoringJobs,
   airSamples,
   airMonitoringEquipment,
+  airMonitoringDocuments,
+  homogeneousAreas,
+  functionalAreas,
   fieldToolsEquipment,
   userProfiles,
   dailyWeatherLogs,
@@ -23,6 +26,10 @@ import {
   type InsertAirSample,
   type AirMonitoringEquipment,
   type InsertAirMonitoringEquipment,
+  type AirMonitoringDocument,
+  type InsertAirMonitoringDocument,
+  type HomogeneousArea,
+  type FunctionalArea,
   type FieldToolsEquipment,
   type InsertFieldToolsEquipment,
   type UserProfile,
@@ -31,7 +38,7 @@ import {
   type InsertDailyWeatherLog
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, ilike, or, and } from "drizzle-orm";
+import { eq, desc, ilike, or, and, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 export interface IStorage {
@@ -101,6 +108,11 @@ export interface IStorage {
   getUserProfile(userId: string): Promise<UserProfile | undefined>;
   upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
 
+  // Air monitoring documents
+  getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]>;
+  createAirMonitoringDocument(doc: InsertAirMonitoringDocument): Promise<AirMonitoringDocument>;
+  deleteAirMonitoringDocument(id: string): Promise<boolean>;
+
   // Area management
   getHomogeneousAreas(surveyId: string): Promise<HomogeneousArea[]>;
   createHomogeneousArea(surveyId: string, data: { title?: string; description?: string | null }): Promise<HomogeneousArea>;
@@ -135,34 +147,7 @@ export interface IStorage {
   deleteFunctionalArea(surveyId: string, id: string): Promise<boolean>;
 }
 
-export interface HomogeneousArea {
-  id: string;
-  surveyId: string;
-  title: string;
-  description?: string | null;
-  createdAt: Date;
-}
-
-export interface FunctionalArea {
-  id: string;
-  surveyId: string;
-  title: string;
-  description?: string | null;
-  length?: number | null;
-  width?: number | null;
-  height?: number | null;
-  wallCount?: number | null;
-  doorCount?: number | null;
-  windowCount?: number | null;
-  sqft?: number | null;
-  wallSqft?: number | null;
-  photoUrl?: string | null;
-  createdAt: Date;
-}
-
 export class DatabaseStorage implements IStorage {
-  private homogeneousAreas: HomogeneousArea[] = [];
-  private functionalAreas: FunctionalArea[] = [];
   async getSurveys(): Promise<Survey[]> {
     return await db.select().from(surveys).orderBy(desc(surveys.updatedAt));
   }
@@ -455,6 +440,24 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  async getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]> {
+    return await db
+      .select()
+      .from(airMonitoringDocuments)
+      .where(eq(airMonitoringDocuments.jobId, jobId))
+      .orderBy(desc(airMonitoringDocuments.uploadedAt));
+  }
+
+  async createAirMonitoringDocument(doc: InsertAirMonitoringDocument): Promise<AirMonitoringDocument> {
+    const [created] = await db.insert(airMonitoringDocuments).values(doc).returning();
+    return created;
+  }
+
+  async deleteAirMonitoringDocument(id: string): Promise<boolean> {
+    const result = await db.delete(airMonitoringDocuments).where(eq(airMonitoringDocuments.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
   // Daily Weather Log methods
   async getDailyWeatherLogs(jobId: string): Promise<DailyWeatherLog[]> {
     return await db
@@ -487,33 +490,45 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getHomogeneousAreas(surveyId: string): Promise<HomogeneousArea[]> {
-    return this.homogeneousAreas.filter(area => area.surveyId === surveyId);
+    return await db
+      .select()
+      .from(homogeneousAreas)
+      .where(eq(homogeneousAreas.surveyId, surveyId))
+      .orderBy(desc(homogeneousAreas.createdAt));
   }
 
   async createHomogeneousArea(surveyId: string, data: { title?: string; description?: string | null }): Promise<HomogeneousArea> {
-    const existing = this.homogeneousAreas.filter(area => area.surveyId === surveyId);
-    const nextIndex = existing.length + 1;
+    const existingCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(homogeneousAreas)
+      .where(eq(homogeneousAreas.surveyId, surveyId));
+    const nextIndex = (existingCount[0]?.count ?? 0) + 1;
     const autoTitle = `HA-${String(nextIndex).padStart(2, "0")}`;
-    const area: HomogeneousArea = {
-      id: nanoid(),
-      surveyId,
-      title: data.title && data.title.trim() ? data.title : autoTitle,
-      description: data.description ?? null,
-      createdAt: new Date(),
-    };
-    this.homogeneousAreas.push(area);
+    const [area] = await db
+      .insert(homogeneousAreas)
+      .values({
+        id: nanoid(),
+        surveyId,
+        title: data.title && data.title.trim() ? data.title : autoTitle,
+        description: data.description ?? null,
+      })
+      .returning();
     return area;
   }
 
   async deleteHomogeneousArea(surveyId: string, id: string): Promise<boolean> {
-    const index = this.homogeneousAreas.findIndex(area => area.surveyId === surveyId && area.id === id);
-    if (index === -1) return false;
-    this.homogeneousAreas.splice(index, 1);
-    return true;
+    const result = await db
+      .delete(homogeneousAreas)
+      .where(and(eq(homogeneousAreas.surveyId, surveyId), eq(homogeneousAreas.id, id)));
+    return (result.rowCount ?? 0) > 0;
   }
 
   async getFunctionalAreas(surveyId: string): Promise<FunctionalArea[]> {
-    return this.functionalAreas.filter(area => area.surveyId === surveyId);
+    return await db
+      .select()
+      .from(functionalAreas)
+      .where(eq(functionalAreas.surveyId, surveyId))
+      .orderBy(desc(functionalAreas.createdAt));
   }
 
   async createFunctionalArea(surveyId: string, data: { 
@@ -529,23 +544,24 @@ export class DatabaseStorage implements IStorage {
     wallSqft?: number | null;
     photoUrl?: string | null;
   }): Promise<FunctionalArea> {
-    const area: FunctionalArea = {
-      id: nanoid(),
-      surveyId,
-      title: data.title,
-      description: data.description ?? null,
-      length: data.length ?? null,
-      width: data.width ?? null,
-      height: data.height ?? null,
-      wallCount: data.wallCount ?? null,
-      doorCount: data.doorCount ?? null,
-      windowCount: data.windowCount ?? null,
-      sqft: data.sqft ?? null,
-      wallSqft: data.wallSqft ?? null,
-      photoUrl: data.photoUrl ?? null,
-      createdAt: new Date(),
-    };
-    this.functionalAreas.push(area);
+    const [area] = await db
+      .insert(functionalAreas)
+      .values({
+        id: nanoid(),
+        surveyId,
+        title: data.title,
+        description: data.description ?? null,
+        length: data.length ?? null,
+        width: data.width ?? null,
+        height: data.height ?? null,
+        wallCount: data.wallCount ?? null,
+        doorCount: data.doorCount ?? null,
+        windowCount: data.windowCount ?? null,
+        sqft: data.sqft ?? null,
+        wallSqft: data.wallSqft ?? null,
+        photoUrl: data.photoUrl ?? null,
+      })
+      .returning();
     return area;
   }
 
@@ -562,21 +578,19 @@ export class DatabaseStorage implements IStorage {
     wallSqft?: number | null;
     photoUrl?: string | null;
   }>): Promise<FunctionalArea | undefined> {
-    const index = this.functionalAreas.findIndex(area => area.surveyId === surveyId && area.id === id);
-    if (index === -1) return undefined;
-    const updated: FunctionalArea = {
-      ...this.functionalAreas[index],
-      ...data,
-    };
-    this.functionalAreas[index] = updated;
-    return updated;
+    const [updated] = await db
+      .update(functionalAreas)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(functionalAreas.surveyId, surveyId), eq(functionalAreas.id, id)))
+      .returning();
+    return updated || undefined;
   }
 
   async deleteFunctionalArea(surveyId: string, id: string): Promise<boolean> {
-    const index = this.functionalAreas.findIndex(area => area.surveyId === surveyId && area.id === id);
-    if (index === -1) return false;
-    this.functionalAreas.splice(index, 1);
-    return true;
+    const result = await db
+      .delete(functionalAreas)
+      .where(and(eq(functionalAreas.surveyId, surveyId), eq(functionalAreas.id, id)));
+    return (result.rowCount ?? 0) > 0;
   }
 
   // New features storage methods - In-memory implementations

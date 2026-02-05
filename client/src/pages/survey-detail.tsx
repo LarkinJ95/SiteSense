@@ -630,6 +630,8 @@ export default function SurveyDetail() {
             <Input
               placeholder="# Walls"
               type="number"
+              step="1"
+              min="0"
               value={functionalAreaForm.wallCount}
               onChange={(e) => setFunctionalAreaForm(prev => ({ ...prev, wallCount: e.target.value }))}
               data-testid="input-functional-area-walls"
@@ -637,6 +639,8 @@ export default function SurveyDetail() {
             <Input
               placeholder="# Doors"
               type="number"
+              step="1"
+              min="0"
               value={functionalAreaForm.doorCount}
               onChange={(e) => setFunctionalAreaForm(prev => ({ ...prev, doorCount: e.target.value }))}
               data-testid="input-functional-area-doors"
@@ -644,6 +648,8 @@ export default function SurveyDetail() {
             <Input
               placeholder="# Windows"
               type="number"
+              step="1"
+              min="0"
               value={functionalAreaForm.windowCount}
               onChange={(e) => setFunctionalAreaForm(prev => ({ ...prev, windowCount: e.target.value }))}
               data-testid="input-functional-area-windows"

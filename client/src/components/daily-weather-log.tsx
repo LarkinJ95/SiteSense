@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -64,6 +64,26 @@ export function DailyWeatherLog({ jobId }: DailyWeatherLogProps) {
       coordinates: '',
     },
   });
+
+  const { data: profileData } = useQuery({
+    queryKey: ["/api/user/profile"],
+    queryFn: async () => (await apiRequest("GET", "/api/user/profile")).json(),
+  });
+
+  const getLoggedByName = () => {
+    const firstName = profileData?.firstName || "";
+    const lastName = profileData?.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim();
+    if (fullName) return fullName;
+    return profileData?.email || "";
+  };
+
+  useEffect(() => {
+    const name = getLoggedByName();
+    if (name && !form.getValues("loggedBy")) {
+      form.setValue("loggedBy", name);
+    }
+  }, [profileData]);
 
   // Fetch weather logs for the job
   const { data: weatherLogs = [], isLoading } = useQuery({
@@ -191,7 +211,7 @@ export function DailyWeatherLog({ jobId }: DailyWeatherLogProps) {
 
     setIsGettingWeather(true);
     try {
-      const [lat, lon] = coordinates.split(', ').map(coord => parseFloat(coord.trim()));
+      const [lat, lon] = coordinates.split(',').map(coord => parseFloat(coord.trim()));
       
       if (isNaN(lat) || isNaN(lon)) {
         throw new Error("Invalid coordinates format");
@@ -315,6 +335,7 @@ export function DailyWeatherLog({ jobId }: DailyWeatherLogProps) {
 
   const resetForm = () => {
     setEditingLog(null);
+    const loggedByDefault = getLoggedByName();
     form.reset({
       logDate: format(new Date(), 'yyyy-MM-dd'),
       logTime: format(new Date(), 'HH:mm'),
@@ -327,7 +348,7 @@ export function DailyWeatherLog({ jobId }: DailyWeatherLogProps) {
       precipitation: '',
       visibility: '',
       notes: '',
-      loggedBy: '',
+      loggedBy: loggedByDefault,
       coordinates: '',
     });
   };
