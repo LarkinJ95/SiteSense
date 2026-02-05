@@ -11,6 +11,8 @@ import {
   functionalAreas,
   fieldToolsEquipment,
   userProfiles,
+  organizations,
+  organizationMembers,
   dailyWeatherLogs,
   type Survey, 
   type InsertSurvey,
@@ -34,6 +36,10 @@ import {
   type InsertFieldToolsEquipment,
   type UserProfile,
   type InsertUserProfile,
+  type Organization,
+  type InsertOrganization,
+  type OrganizationMember,
+  type InsertOrganizationMember,
   type DailyWeatherLog,
   type InsertDailyWeatherLog
 } from "@shared/schema";
@@ -107,6 +113,17 @@ export interface IStorage {
   // User profile methods
   getUserProfile(userId: string): Promise<UserProfile | undefined>;
   upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
+
+  // Organization methods
+  getOrganizations(): Promise<Organization[]>;
+  getOrganization(id: string): Promise<Organization | undefined>;
+  createOrganization(org: InsertOrganization): Promise<Organization>;
+  updateOrganization(id: string, org: Partial<InsertOrganization>): Promise<Organization | undefined>;
+  deleteOrganization(id: string): Promise<boolean>;
+  getOrganizationMembers(organizationId: string): Promise<OrganizationMember[]>;
+  addOrganizationMember(member: InsertOrganizationMember): Promise<OrganizationMember>;
+  updateOrganizationMember(id: string, member: Partial<InsertOrganizationMember>): Promise<OrganizationMember | undefined>;
+  removeOrganizationMember(id: string): Promise<boolean>;
 
   // Air monitoring documents
   getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]>;

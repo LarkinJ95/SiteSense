@@ -7,7 +7,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
 import { nanoid } from "nanoid";
-import { getUserDisplayName } from "./auth";
+import { getUserDisplayName, requireAdmin } from "./auth";
 
 let heicConvert: any | null = null;
 
@@ -644,7 +644,7 @@ const parsePreferences = (raw?: string | null) => {
   }
 };
 
-const getAuthUserId = (req: any) => req.user?.sub || req.user?.email || "local-user";
+const getAuthUserId = (req: any) => req.user?.sub || req.user?.email;
 
 function generateAirMonitoringReport(
   job: AirMonitoringJob,
@@ -2068,58 +2068,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ success: true, message: "Account deleted successfully" });
   });
 
-  // Authentication Routes
-  app.post("/api/auth/login", (req, res) => {
-    const { email, password } = req.body;
-    
-    if (email === "admin@sitesense.com" && password === "admin123") {
-      res.json({
-        token: "mock-jwt-token",
-        user: {
-          id: "user-1",
-          email: email,
-          role: "admin",
-          firstName: "John",
-          lastName: "Inspector"
-        }
-      });
-    } else if (email && password) {
-      res.json({
-        token: "mock-jwt-token",
-        user: {
-          id: "user-2", 
-          email: email,
-          role: "user",
-          firstName: "Demo",
-          lastName: "User"
-        }
-      });
-    } else {
-      res.status(401).json({ message: "Invalid email or password" });
-    }
-  });
-
-  app.post("/api/auth/register", (req, res) => {
-    const { firstName, lastName, email, password, organization, jobTitle, role } = req.body;
-    
-    const newUser = {
-      id: `user-${Date.now()}`,
-      firstName,
-      lastName, 
-      email,
-      organization,
-      jobTitle,
-      role: role || "user",
-      status: "active",
-      createdAt: new Date().toISOString()
-    };
-    
-    res.status(201).json({
-      message: "Account created successfully",
-      user: newUser
-    });
-  });
-
   app.get("/api/me", (req, res) => {
     const user = req.user;
     if (!user) {
@@ -2134,15 +2082,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin Routes
-  app.get("/api/admin/stats", (req, res) => {
+  app.get("/api/admin/stats", requireAdmin, (req, res) => {
     res.json(mockSystemStats);
   });
 
-  app.get("/api/admin/users", (req, res) => {
+  app.get("/api/admin/users", requireAdmin, (req, res) => {
     res.json(mockUsers);
   });
 
-  app.post("/api/admin/users", (req, res) => {
+  app.post("/api/admin/users", requireAdmin, (req, res) => {
     const { firstName, lastName, email, password, organization, jobTitle, role, status } = req.body;
     
     if (!password || password.length < 6) {
@@ -2168,7 +2116,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(201).json(newUser);
   });
 
-  app.put("/api/admin/users/:id", (req, res) => {
+  app.put("/api/admin/users/:id", requireAdmin, (req, res) => {
     const { id } = req.params;
     const { firstName, lastName, email, organization, jobTitle, role, status } = req.body;
     
@@ -2192,7 +2140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(mockUsers[userIndex]);
   });
 
-  app.delete("/api/admin/users/:id", (req, res) => {
+  app.delete("/api/admin/users/:id", requireAdmin, (req, res) => {
     const { id } = req.params;
     const userIndex = mockUsers.findIndex(user => user.id === id);
     
@@ -2219,17 +2167,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     showPoweredBy: true,
   };
 
-  app.get("/api/admin/brand-settings", (req, res) => {
+  app.get("/api/admin/brand-settings", requireAdmin, (req, res) => {
     res.json(brandSettings);
   });
 
-  app.put("/api/admin/brand-settings", (req, res) => {
+  app.put("/api/admin/brand-settings", requireAdmin, (req, res) => {
     brandSettings = { ...brandSettings, ...req.body };
     res.json(brandSettings);
   });
 
   // Data management endpoints
-  app.get("/api/admin/data-management", (req, res) => {
+  app.get("/api/admin/data-management", requireAdmin, (req, res) => {
     res.json({
       totalSurveys: surveys.length,
       totalUsers: mockUsers.length,
@@ -2242,7 +2190,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  app.post("/api/admin/backup", (req, res) => {
+  app.post("/api/admin/backup", requireAdmin, (req, res) => {
     // Simulate backup process
     setTimeout(() => {
       res.json({ 
@@ -2253,7 +2201,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }, 2000);
   });
 
-  app.post("/api/admin/export-all", (req, res) => {
+  app.post("/api/admin/export-all", requireAdmin, (req, res) => {
     // Simulate export process
     res.json({ 
       success: true, 
@@ -2262,7 +2210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  app.post("/api/admin/purge-data", (req, res) => {
+  app.post("/api/admin/purge-data", requireAdmin, (req, res) => {
     const { olderThan } = req.body;
     // Simulate data purging based on age
     res.json({ 
@@ -2273,7 +2221,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Object storage endpoints for logo uploads
-  app.post("/api/objects/upload", async (req, res) => {
+  app.post("/api/objects/upload", requireAdmin, async (req, res) => {
     try {
       const { ObjectStorageService } = await import("./objectStorage");
       const objectStorageService = new ObjectStorageService();
@@ -2285,18 +2233,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/admin/users/:id", (req, res) => {
+  app.put("/api/admin/users/:id", requireAdmin, (req, res) => {
     const userId = req.params.id;
     const updatedUser = { ...req.body, id: userId };
     res.json(updatedUser);
   });
 
-  app.delete("/api/admin/users/:id", (req, res) => {
+  app.delete("/api/admin/users/:id", requireAdmin, (req, res) => {
     const userId = req.params.id;
     res.json({ success: true, message: `User ${userId} deleted successfully` });
   });
 
-  app.post("/api/admin/export", (req, res) => {
+  app.post("/api/admin/export", requireAdmin, (req, res) => {
     res.json({ success: true, message: "Export initiated successfully" });
   });
 

@@ -147,21 +147,32 @@ function Router() {
 
 function App() {
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [location] = useLocation();
+  const isAuthRoute =
+    location === "/login" ||
+    location === "/register" ||
+    location === "/forgot-password" ||
+    location.startsWith("/account") ||
+    location.startsWith("/auth");
 
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <div className="min-h-screen bg-background flex flex-col">
-            <AppHeader onCreateSurvey={() => setShowCreateModal(true)} />
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1">
+            {!isAuthRoute && (
+              <AppHeader onCreateSurvey={() => setShowCreateModal(true)} />
+            )}
+            <main className={`${isAuthRoute ? "" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"} flex-1`}>
               <Router />
             </main>
-            <AppFooter />
-            <CreateSurveyModal
-              open={showCreateModal}
-              onOpenChange={setShowCreateModal}
-            />
+            {!isAuthRoute && <AppFooter />}
+            {!isAuthRoute && (
+              <CreateSurveyModal
+                open={showCreateModal}
+                onOpenChange={setShowCreateModal}
+              />
+            )}
           </div>
           <Toaster />
         </TooltipProvider>

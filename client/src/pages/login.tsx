@@ -16,6 +16,7 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
+  const [debugError, setDebugError] = useState("");
   const { toast } = useToast();
 
   const [formData, setFormData] = useState({
@@ -27,6 +28,7 @@ export default function Login() {
     e.preventDefault();
     setIsLoading(true);
     setError("");
+    setDebugError("");
 
     try {
       const { error: signInError } = await authClient.signIn.email({
@@ -37,6 +39,9 @@ export default function Login() {
 
       if (signInError) {
         setError(signInError.message || "Login failed. Please check your credentials.");
+        if (import.meta.env.DEV) {
+          setDebugError(JSON.stringify(signInError, null, 2));
+        }
         return;
       }
 
@@ -49,6 +54,12 @@ export default function Login() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Network error. Please try again.";
       setError(message);
+      if (import.meta.env.DEV) {
+        const details = err && typeof err === "object"
+          ? JSON.stringify(err, Object.getOwnPropertyNames(err), 2)
+          : String(err);
+        setDebugError(details);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -76,6 +87,11 @@ export default function Login() {
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
+            )}
+            {import.meta.env.DEV && debugError && (
+              <pre className="text-xs bg-gray-100 text-gray-700 p-3 rounded-md overflow-auto max-h-40">
+                {debugError}
+              </pre>
             )}
 
             <div className="space-y-2">

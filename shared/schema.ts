@@ -468,6 +468,25 @@ export const userProfiles = pgTable('user_profiles', {
   updatedAt: timestamp('updated_at').default(sql`now()`),
 });
 
+// Organizations
+export const organizations = pgTable('organizations', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  name: text('name').notNull(),
+  domain: text('domain'),
+  status: text('status').default('active'),
+  createdAt: timestamp('created_at').default(sql`now()`),
+  updatedAt: timestamp('updated_at').default(sql`now()`),
+});
+
+export const organizationMembers = pgTable('organization_members', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  organizationId: text('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  role: text('role').default('member'),
+  status: text('status').default('active'),
+  createdAt: timestamp('created_at').default(sql`now()`),
+});
+
 // Define relations for air monitoring
 export const personnelRelations = relations(personnelProfiles, ({ many }) => ({
   airSamples: many(airSamples),
@@ -502,6 +521,17 @@ export const dailyWeatherLogRelations = relations(dailyWeatherLogs, ({ one }) =>
   job: one(airMonitoringJobs, {
     fields: [dailyWeatherLogs.jobId],
     references: [airMonitoringJobs.id],
+  }),
+}));
+
+export const organizationRelations = relations(organizations, ({ many }) => ({
+  members: many(organizationMembers),
+}));
+
+export const organizationMemberRelations = relations(organizationMembers, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [organizationMembers.organizationId],
+    references: [organizations.id],
   }),
 }));
 
@@ -607,6 +637,17 @@ export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
   updatedAt: true,
 });
 
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertOrganizationMemberSchema = createInsertSchema(organizationMembers).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertDailyWeatherLogSchema = createInsertSchema(dailyWeatherLogs).omit({
   id: true,
   createdAt: true,
@@ -635,6 +676,10 @@ export type FieldToolsEquipment = typeof fieldToolsEquipment.$inferSelect;
 export type InsertFieldToolsEquipment = z.infer<typeof insertFieldToolsEquipmentSchema>;
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
+export type Organization = typeof organizations.$inferSelect;
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+export type OrganizationMember = typeof organizationMembers.$inferSelect;
+export type InsertOrganizationMember = z.infer<typeof insertOrganizationMemberSchema>;
 export type DailyWeatherLog = typeof dailyWeatherLogs.$inferSelect;
 export type InsertDailyWeatherLog = z.infer<typeof insertDailyWeatherLogSchema>;
 
