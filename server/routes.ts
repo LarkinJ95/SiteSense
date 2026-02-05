@@ -25,41 +25,114 @@ const upload = multer({
 
 // Report generation function
 function generateSurveyReport(survey: Survey, observations: Observation[], baseUrl?: string): string {
+  const materialTypeLabels: Record<string, string> = {
+    "ceiling-tiles": "Ceiling Tiles",
+    "floor-tiles-9x9": '9"x9" Floor Tiles',
+    "floor-tiles-12x12": '12"x12" Floor Tiles',
+    "pipe-insulation": "Pipe Insulation",
+    "duct-insulation": "Duct Insulation",
+    "boiler-insulation": "Boiler Insulation",
+    "drywall": "Drywall/Joint Compound",
+    "paint": "Paint/Coatings",
+    "roofing": "Roofing Material",
+    "siding": "Siding Material",
+    "window-glazing": "Window Glazing",
+    "plaster": "Plaster",
+    "masonry": "Masonry/Mortar",
+    "vinyl-tiles": "Vinyl Floor Tiles",
+    "carpet-mastic": "Carpet Mastic",
+    "electrical-materials": "Electrical Materials",
+    "other": "Other",
+  };
+  const formatMaterialType = (value: string) =>
+    materialTypeLabels[value] ||
+    value
+      .split("-")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  const formatNumber = (value: number) => {
+    if (Number.isInteger(value)) return value.toString();
+    return parseFloat(value.toFixed(6)).toString();
+  };
+  const formatStatus = (value: string | null | undefined) => {
+    const raw = value || "";
+    return raw
+      .split("-")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  };
+  const formatDateLong = (value: string | Date) =>
+    new Date(value).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  const parseQuantity = (rawQuantity: string | null) => {
+    if (!rawQuantity) return null;
+    const raw = rawQuantity.trim();
+    const match = raw.match(/^(-?\d+(?:\.\d+)?)/);
+    if (!match) return null;
+    const amount = parseFloat(match[1]);
+    if (Number.isNaN(amount)) return null;
+    const rawUnit = raw.slice(match[0].length).trim();
+    let unit = rawUnit;
+    if (/^(sq\s*ft|sqft|sf)$/i.test(rawUnit)) unit = "SqFt";
+    if (/^(lf|linear\s*ft|linear\s*feet)$/i.test(rawUnit)) unit = "LF";
+    return { amount, unit };
+  };
+  const addByUnit = (totals: Record<string, number>, unit: string, amount: number) => {
+    const key = unit || "";
+    totals[key] = (totals[key] || 0) + amount;
+  };
+  const formatByUnit = (totals: Record<string, number>) => {
+    const entries = Object.entries(totals);
+    if (!entries.length) return "0";
+    return entries
+      .map(([unit, amount]) => `${formatNumber(amount)}${unit ? ` ${unit}` : ""}`)
+      .join(" + ");
+  };
+
   const highRiskObservations = observations.filter(obs => obs.riskLevel === "high");
   const mediumRiskObservations = observations.filter(obs => obs.riskLevel === "medium");
   const samplesCollected = observations.filter(obs => obs.sampleCollected);
   
   // Calculate quantities by hazardous areas (HA)
   const hazardousAreas = observations.filter(obs => obs.riskLevel === "high" || obs.riskLevel === "medium");
-  const totalHAQuantity = hazardousAreas.reduce((total, obs) => {
-    const quantity = parseFloat(obs.quantity || "0");
-    return total + (isNaN(quantity) ? 0 : quantity);
-  }, 0);
+  const totalHAByUnit = hazardousAreas.reduce((totals, obs) => {
+    const parsed = parseQuantity(obs.quantity);
+    if (parsed && parsed.amount > 0) {
+      addByUnit(totals, parsed.unit, parsed.amount);
+    }
+    return totals;
+  }, {} as Record<string, number>);
   
   // Calculate quantities by sample
-  const totalSampleQuantity = samplesCollected.reduce((total, obs) => {
-    const quantity = parseFloat(obs.quantity || "0");
-    return total + (isNaN(quantity) ? 0 : quantity);
-  }, 0);
+  const totalSampleByUnit = samplesCollected.reduce((totals, obs) => {
+    const parsed = parseQuantity(obs.quantity);
+    if (parsed && parsed.amount > 0) {
+      addByUnit(totals, parsed.unit, parsed.amount);
+    }
+    return totals;
+  }, {} as Record<string, number>);
   
   // Group quantities by material type for detailed breakdown
   const quantityByMaterial = observations.reduce((acc, obs) => {
     const material = obs.materialType;
-    const quantity = parseFloat(obs.quantity || "0");
-    if (!isNaN(quantity) && quantity > 0) {
+    const parsed = parseQuantity(obs.quantity);
+    if (parsed && parsed.amount > 0) {
       if (!acc[material]) {
-        acc[material] = { total: 0, hazardous: 0, sampled: 0 };
+        acc[material] = { total: {}, hazardous: {}, sampled: {} };
       }
-      acc[material].total += quantity;
+      addByUnit(acc[material].total, parsed.unit, parsed.amount);
       if (obs.riskLevel === "high" || obs.riskLevel === "medium") {
-        acc[material].hazardous += quantity;
+        addByUnit(acc[material].hazardous, parsed.unit, parsed.amount);
       }
       if (obs.sampleCollected) {
-        acc[material].sampled += quantity;
+        addByUnit(acc[material].sampled, parsed.unit, parsed.amount);
       }
     }
     return acc;
-  }, {} as Record<string, { total: number, hazardous: number, sampled: number }>);
+  }, {} as Record<string, { total: Record<string, number>, hazardous: Record<string, number>, sampled: Record<string, number> }>);
   
   const sitePhotoSrc = survey.sitePhotoUrl
     ? (survey.sitePhotoUrl.startsWith("http://") || survey.sitePhotoUrl.startsWith("https://")
@@ -180,8 +253,8 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
         <p><strong>Address:</strong> ${survey.address || 'Not specified'}</p>
         <p><strong>Survey Type:</strong> ${survey.surveyType}</p>
         <p><strong>Inspector:</strong> ${survey.inspector}</p>
-        <p><strong>Survey Date:</strong> ${new Date(survey.surveyDate).toLocaleDateString()}</p>
-        <p><strong>Status:</strong> ${survey.status}</p>
+        <p><strong>Survey Date:</strong> ${formatDateLong(survey.surveyDate)}</p>
+        <p><strong>Status:</strong> ${formatStatus(survey.status)}</p>
         <p><strong>Report Generated:</strong> ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
     </div>
 
@@ -218,11 +291,11 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
         <h3>📊 Quantity Analysis</h3>
         <div class="stats">
             <div class="stat-card">
-                <div class="stat-number">${totalHAQuantity.toFixed(2)}</div>
+                <div class="stat-number">${formatByUnit(totalHAByUnit)}</div>
                 <div>Total Quantity in Hazardous Areas (HA)</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number">${totalSampleQuantity.toFixed(2)}</div>
+                <div class="stat-number">${formatByUnit(totalSampleByUnit)}</div>
                 <div>Total Quantity by Sample</div>
             </div>
             <div class="stat-card">
@@ -240,17 +313,15 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
                     <th>Total Quantity</th>
                     <th>Hazardous Quantity</th>
                     <th>Sampled Quantity</th>
-                    <th>% Hazardous</th>
                 </tr>
             </thead>
             <tbody>
                 ${Object.entries(quantityByMaterial).map(([material, quantities]) => `
                 <tr>
-                    <td><strong>${material}</strong></td>
-                    <td>${quantities.total.toFixed(2)} units</td>
-                    <td>${quantities.hazardous.toFixed(2)} units</td>
-                    <td>${quantities.sampled.toFixed(2)} units</td>
-                    <td>${quantities.total > 0 ? ((quantities.hazardous / quantities.total) * 100).toFixed(1) : '0.0'}%</td>
+                    <td><strong>${formatMaterialType(material)}</strong></td>
+                    <td>${formatByUnit(quantities.total)}</td>
+                    <td>${formatByUnit(quantities.hazardous)}</td>
+                    <td>${formatByUnit(quantities.sampled)}</td>
                 </tr>
                 `).join('')}
             </tbody>
@@ -264,7 +335,7 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
         ${highRiskObservations.map(obs => `
         <div class="observation risk-high">
             <h4>${obs.area}</h4>
-            <p><strong>Material Type:</strong> ${obs.materialType}</p>
+            <p><strong>Material Type:</strong> ${formatMaterialType(obs.materialType)}</p>
             <p><strong>Condition:</strong> ${obs.condition}</p>
             ${obs.quantity ? `<p><strong>Quantity:</strong> ${obs.quantity}</p>` : ''}
             ${obs.sampleCollected ? `<p><strong>Sample ID:</strong> ${obs.sampleId || 'Not specified'}</p>` : ''}
@@ -291,7 +362,7 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
                 ${observations.map(obs => `
                 <tr>
                     <td>${obs.area}</td>
-                    <td>${obs.materialType}</td>
+                    <td>${formatMaterialType(obs.materialType)}</td>
                     <td>${obs.condition}</td>
                     <td>${obs.riskLevel || 'Not assessed'}</td>
                     <td>${obs.sampleCollected ? 'Yes' : 'No'}</td>
@@ -320,7 +391,7 @@ function generateSurveyReport(survey: Survey, observations: Observation[], baseU
                 <tr>
                     <td>${obs.sampleId || 'Not specified'}</td>
                     <td>${obs.area}</td>
-                    <td>${obs.materialType}</td>
+                    <td>${formatMaterialType(obs.materialType)}</td>
                     <td>${obs.collectionMethod || 'Not specified'}</td>
                     <td>${obs.sampleNotes || '-'}</td>
                 </tr>

@@ -40,6 +40,8 @@ const createObservationSchema = z.object({
   materialType: z.string().min(1, "Material type is required"),
   condition: z.string().min(1, "Material condition is required"),
   quantity: z.string().optional(),
+  quantityUnit: z.string().optional(),
+  quantityOtherUnit: z.string().optional(),
   riskLevel: z.string().optional(),
   sampleCollected: z.boolean().default(false),
   sampleId: z.string().optional(),
@@ -68,6 +70,31 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
 
+  const parseStoredQuantity = (storedQuantity?: string | null) => {
+    if (!storedQuantity) return { value: "", unit: "sqft", otherUnit: "" };
+    const trimmed = storedQuantity.trim();
+    const match = trimmed.match(/^(-?\d+(?:\.\d+)?)(?:\s+(.*))?$/);
+    if (!match) return { value: trimmed, unit: "sqft", otherUnit: "" };
+    const value = match[1] ?? "";
+    const rawUnit = (match[2] ?? "").trim();
+    if (!rawUnit) return { value, unit: "sqft", otherUnit: "" };
+    if (/^(sq\s*ft|sqft|sf)$/i.test(rawUnit)) return { value, unit: "sqft", otherUnit: "" };
+    if (/^(lf|linear\s*ft|linear\s*feet)$/i.test(rawUnit)) return { value, unit: "lf", otherUnit: "" };
+    if (/^qty$/i.test(rawUnit)) return { value, unit: "qty", otherUnit: "" };
+    return { value, unit: "other", otherUnit: rawUnit };
+  };
+
+  const buildStoredQuantity = (value?: string, unit?: string, otherUnit?: string) => {
+    const trimmedValue = value?.trim();
+    if (!trimmedValue) return undefined;
+    let unitLabel = "";
+    if (unit === "sqft") unitLabel = "SqFt";
+    if (unit === "lf") unitLabel = "LF";
+    if (unit === "qty") unitLabel = "Qty";
+    if (unit === "other") unitLabel = otherUnit?.trim() || "";
+    return `${trimmedValue}${unitLabel ? ` ${unitLabel}` : ""}`;
+  };
+
   const form = useForm<CreateObservationFormData>({
     resolver: zodResolver(createObservationSchema),
     defaultValues: {
@@ -76,6 +103,8 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
       materialType: "",
       condition: "",
       quantity: "",
+      quantityUnit: "sqft",
+      quantityOtherUnit: "",
       riskLevel: "",
       sampleCollected: false,
       sampleId: "",
@@ -94,12 +123,15 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
   // Reset form when editing observation changes
   useEffect(() => {
     if (editingObservation) {
+      const parsedQuantity = parseStoredQuantity(editingObservation.quantity);
       form.reset({
         area: editingObservation.area,
         homogeneousArea: editingObservation.homogeneousArea || "",
         materialType: editingObservation.materialType,
         condition: editingObservation.condition,
-        quantity: editingObservation.quantity || "",
+        quantity: parsedQuantity.value,
+        quantityUnit: parsedQuantity.unit,
+        quantityOtherUnit: parsedQuantity.otherUnit,
         riskLevel: editingObservation.riskLevel || "",
         sampleCollected: editingObservation.sampleCollected ?? false,
         sampleId: editingObservation.sampleId || "",
@@ -120,6 +152,8 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
         materialType: "",
         condition: "",
         quantity: "",
+        quantityUnit: "sqft",
+        quantityOtherUnit: "",
         riskLevel: "",
         sampleCollected: false,
         sampleId: "",
@@ -138,9 +172,11 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
 
   const createObservationMutation = useMutation({
     mutationFn: async (data: CreateObservationFormData) => {
+      const { quantityUnit, quantityOtherUnit, quantity, ...rest } = data;
       const observationData = {
-        ...data,
+        ...rest,
         surveyId,
+        quantity: buildStoredQuantity(quantity, quantityUnit, quantityOtherUnit),
         latitude: data.latitude ? parseFloat(data.latitude) : undefined,
         longitude: data.longitude ? parseFloat(data.longitude) : undefined,
         // Calculate percentages for lead and cadmium
@@ -342,7 +378,8 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="ceiling-tiles">Ceiling Tiles</SelectItem>
-                          <SelectItem value="floor-tiles">Floor Tiles</SelectItem>
+                          <SelectItem value="floor-tiles-9x9">9"x9" Floor Tiles</SelectItem>
+                          <SelectItem value="floor-tiles-12x12">12"x12" Floor Tiles</SelectItem>
                           <SelectItem value="pipe-insulation">Pipe Insulation</SelectItem>
                           <SelectItem value="duct-insulation">Duct Insulation</SelectItem>
                           <SelectItem value="boiler-insulation">Boiler Insulation</SelectItem>
@@ -393,13 +430,53 @@ export function AddObservationModal({ open, onOpenChange, surveyId, editingObser
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Estimated Quantity</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="e.g., 500 sq ft, 20 linear ft"
-                          {...field}
-                          data-testid="input-quantity"
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., 81"
+                            {...field}
+                            data-testid="input-quantity"
+                          />
+                        </FormControl>
+                        <FormField
+                          control={form.control}
+                          name="quantityUnit"
+                          render={({ field: unitField }) => (
+                            <FormItem>
+                              <Select onValueChange={unitField.onChange} value={unitField.value}>
+                                <FormControl>
+                                  <SelectTrigger data-testid="select-quantity-unit">
+                                    <SelectValue placeholder="Select unit" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="sqft">SqFt</SelectItem>
+                                  <SelectItem value="lf">LF</SelectItem>
+                                  <SelectItem value="qty">Qty</SelectItem>
+                                  <SelectItem value="other">Other (fill in)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </FormItem>
+                          )}
                         />
-                      </FormControl>
+                      </div>
+                      {form.watch("quantityUnit") === "other" && (
+                        <FormField
+                          control={form.control}
+                          name="quantityOtherUnit"
+                          render={({ field: otherUnitField }) => (
+                            <FormItem className="mt-2">
+                              <FormControl>
+                                <Input
+                                  placeholder="Enter custom unit"
+                                  {...otherUnitField}
+                                  data-testid="input-quantity-other-unit"
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}

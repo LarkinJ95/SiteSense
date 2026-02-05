@@ -48,6 +48,8 @@ export interface CreateObservationFormData {
   materialType: string;
   condition: string;
   quantity?: string;
+  quantityUnit?: string;
+  quantityOtherUnit?: string;
   riskLevel?: string;
   sampleCollected?: boolean;
   sampleId?: string;
