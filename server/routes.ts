@@ -10,59 +10,18 @@ import { nanoid } from "nanoid";
 import { getUserDisplayName, requireAdmin } from "./auth";
 import { z } from "zod";
 
-let heicConvert: any | null = null;
-
-async function convertHeicToJpegIfNeeded(file: Express.Multer.File) {
-  const ext = path.extname(file.originalname).toLowerCase();
-  const isHeic =
-    file.mimetype === "image/heic" ||
-    file.mimetype === "image/heif" ||
-    ext === ".heic" ||
-    ext === ".heif";
-
-  if (!isHeic) return file;
-
-  try {
-    if (!heicConvert) {
-      const mod = await import("heic-convert");
-      heicConvert = mod.default || mod;
-    }
-    const inputBuffer = await fs.readFile(file.path);
-    const outputBuffer: Buffer = await heicConvert({
-      buffer: inputBuffer,
-      format: "JPEG",
-      quality: 0.9,
-    });
-    const newFilename = `${nanoid()}.jpg`;
-    const newPath = path.join("uploads", newFilename);
-    await fs.writeFile(newPath, outputBuffer);
-    await fs.unlink(file.path).catch(() => undefined);
-
-    return {
-      ...file,
-      filename: newFilename,
-      originalname: file.originalname.replace(/\.(heic|heif)$/i, ".jpg"),
-      mimetype: "image/jpeg",
-      size: outputBuffer.length,
-      path: newPath,
-    };
-  } catch (error) {
-    console.warn("HEIC conversion failed, storing original file:", error);
-    return file;
-  }
-}
-
 // Configure multer for file uploads
 const upload = multer({
   dest: 'uploads/',
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
+  fileFilter: (_req, file, cb) => {
+    const allowed = new Set(["image/jpeg", "image/png"]);
+    if (allowed.has(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'));
+      cb(new Error("Only JPEG and PNG images are allowed"));
     }
   },
 });
@@ -72,7 +31,7 @@ const documentUpload = multer({
   limits: {
     fileSize: 25 * 1024 * 1024, // 25MB limit
   },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (_req, file, cb) => {
     const allowed = [
       "application/pdf",
       "application/msword",
@@ -821,18 +780,6 @@ async function toImageDataUrl(filename: string, originalName?: string | null) {
     const filePath = path.join('uploads', safeName);
     const buffer = await fs.readFile(filePath);
     const ext = (originalName ? path.extname(originalName) : path.extname(safeName)).toLowerCase();
-    if (ext === ".heic" || ext === ".heif") {
-      if (!heicConvert) {
-        const mod = await import("heic-convert");
-        heicConvert = mod.default || mod;
-      }
-      const outputBuffer: Buffer = await heicConvert({
-        buffer,
-        format: "JPEG",
-        quality: 0.9,
-      });
-      return `data:image/jpeg;base64,${outputBuffer.toString("base64")}`;
-    }
     const mime =
       ext === ".png" ? "image/png" :
       ext === ".gif" ? "image/gif" :
@@ -1916,13 +1863,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const uploadedPhotos = [];
       
       for (const file of files) {
-        const normalized = await convertHeicToJpegIfNeeded(file);
         const photo = await storage.createObservationPhoto({
           observationId,
-          filename: normalized.filename,
-          originalName: normalized.originalname,
-          mimeType: normalized.mimetype,
-          size: normalized.size,
+          filename: file.filename,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
         });
         uploadedPhotos.push(photo);
       }
@@ -1955,12 +1901,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const uploaded = [];
       for (const file of files) {
-        const normalized = await convertHeicToJpegIfNeeded(file);
-        const url = `/uploads/${normalized.filename}`;
+        const url = `/uploads/${file.filename}`;
         const photo = await storage.createAsbestosSamplePhoto({
           sampleId,
           url,
-          filename: normalized.filename,
+          filename: file.filename,
         });
         uploaded.push(photo);
       }
@@ -2009,12 +1954,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const uploaded = [];
       for (const file of files) {
-        const normalized = await convertHeicToJpegIfNeeded(file);
-        const url = `/uploads/${normalized.filename}`;
+        const url = `/uploads/${file.filename}`;
         const photo = await storage.createPaintSamplePhoto({
           sampleId,
           url,
-          filename: normalized.filename,
+          filename: file.filename,
         });
         uploaded.push(photo);
       }
@@ -2980,6 +2924,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       name: getUserDisplayName(user),
       user,
     });
+  });
+
+  app.get("/api/users/lookup", requireAdmin, async (req, res) => {
+    try {
+      const email = typeof req.query.email === "string" ? req.query.email.trim() : "";
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      const profile = await storage.getUserProfileByEmail(email);
+      if (!profile) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      res.json({
+        userId: profile.userId,
+        email: profile.email,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to lookup user", error: error instanceof Error ? error.message : "Unknown error" });
+    }
   });
 
   // Organization routes

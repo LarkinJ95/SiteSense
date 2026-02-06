@@ -123,7 +123,7 @@ export default function AdminDashboard() {
   });
 
   const [newMemberData, setNewMemberData] = useState({
-    userId: "",
+    email: "",
     role: "member",
     status: "active",
   });
@@ -326,19 +326,37 @@ export default function AdminDashboard() {
   });
 
   const addOrganizationMemberMutation = useMutation({
-    mutationFn: async (payload: typeof newMemberData) => {
+    mutationFn: async (payload: { userId: string; role: string; status: string }) => {
       if (!selectedOrganization?.id) throw new Error("No organization selected");
       return await apiRequest("POST", `/api/organizations/${selectedOrganization.id}/members`, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/organizations", selectedOrganization?.id, "members"] });
       toast({ title: "Member Added", description: "Organization member added successfully." });
-      setNewMemberData({ userId: "", role: "member", status: "active" });
+      setNewMemberData({ email: "", role: "member", status: "active" });
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to add organization member.", variant: "destructive" });
     },
   });
+
+  const handleAddMember = async () => {
+    if (!newMemberData.email.trim()) {
+      toast({ title: "Email required", variant: "destructive" });
+      return;
+    }
+    try {
+      const response = await apiRequest("GET", `/api/users/lookup?email=${encodeURIComponent(newMemberData.email.trim())}`);
+      const user = await response.json();
+      await addOrganizationMemberMutation.mutateAsync({
+        userId: user.userId,
+        role: newMemberData.role,
+        status: newMemberData.status,
+      });
+    } catch (error: any) {
+      toast({ title: "User not found", description: error.message || "No user found for that email.", variant: "destructive" });
+    }
+  };
 
   const removeOrganizationMemberMutation = useMutation({
     mutationFn: async (memberId: string) => {
@@ -694,9 +712,9 @@ export default function AdminDashboard() {
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                         <Input
-                          placeholder="User ID"
-                          value={newMemberData.userId}
-                          onChange={(e) => setNewMemberData((prev) => ({ ...prev, userId: e.target.value }))}
+                          placeholder="User email"
+                          value={newMemberData.email}
+                          onChange={(e) => setNewMemberData((prev) => ({ ...prev, email: e.target.value }))}
                         />
                         <Select
                           value={newMemberData.role}
@@ -725,8 +743,8 @@ export default function AdminDashboard() {
                           </SelectContent>
                         </Select>
                         <Button
-                          onClick={() => addOrganizationMemberMutation.mutate(newMemberData)}
-                          disabled={!newMemberData.userId}
+                          onClick={handleAddMember}
+                          disabled={!newMemberData.email}
                         >
                           Add Member
                         </Button>

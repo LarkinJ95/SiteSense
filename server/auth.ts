@@ -24,6 +24,10 @@ const jwksUrl = process.env.NEON_JWKS_URL;
 const jwks = jwksUrl ? createRemoteJWKSet(new URL(jwksUrl)) : null;
 const jwtIssuer = process.env.NEON_JWT_ISSUER?.trim() || undefined;
 const jwtAudience = process.env.NEON_JWT_AUDIENCE?.trim() || undefined;
+const adminEmails = (process.env.ADMIN_EMAILS || "")
+  .split(",")
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
 
 export function getUserDisplayName(user?: AuthUser) {
   if (!user) return undefined;
@@ -89,7 +93,10 @@ function extractRoles(user?: AuthUser) {
 }
 
 export function isAdminUser(user?: AuthUser) {
-  return extractRoles(user).includes("admin");
+  if (!user) return false;
+  if (extractRoles(user).includes("admin")) return true;
+  const email = typeof user.email === "string" ? user.email.toLowerCase() : "";
+  return Boolean(email && adminEmails.includes(email));
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {

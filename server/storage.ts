@@ -150,6 +150,7 @@ export interface IStorage {
 
   // User profile methods
   getUserProfile(userId: string): Promise<UserProfile | undefined>;
+  getUserProfileByEmail(email: string): Promise<UserProfile | undefined>;
   upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
 
   // Organization methods
@@ -624,6 +625,14 @@ export class DatabaseStorage implements IStorage {
   // User profile methods
   async getUserProfile(userId: string): Promise<UserProfile | undefined> {
     const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId));
+    return profile;
+  }
+
+  async getUserProfileByEmail(email: string): Promise<UserProfile | undefined> {
+    const [profile] = await db
+      .select()
+      .from(userProfiles)
+      .where(ilike(userProfiles.email, email));
     return profile;
   }
 
