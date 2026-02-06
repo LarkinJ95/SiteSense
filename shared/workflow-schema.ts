@@ -1,43 +1,46 @@
-import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean, integer } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { surveys, observations } from "./schema";
 
+const timestamp = (name: string) => integer(name, { mode: "timestamp_ms" });
+const bool = (name: string) => integer(name, { mode: "boolean" });
+
 // Workflow Templates
-export const workflowTemplates = pgTable("workflow_templates", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+export const workflowTemplates = sqliteTable("workflow_templates", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text("name").notNull(),
   description: text("description"),
   surveyType: text("survey_type").notNull(),
-  steps: text("steps").array(), // JSON array of step definitions
+  steps: text("steps", { mode: "json" }), // JSON array of step definitions
   estimatedDuration: integer("estimated_duration"), // in hours
-  requiredRoles: text("required_roles").array(),
-  isActive: boolean("is_active").default(true),
+  requiredRoles: text("required_roles", { mode: "json" }),
+  isActive: bool("is_active").default(true),
   createdBy: text("created_by").notNull(),
-  createdAt: timestamp("created_at").default(sql`now()`),
-  updatedAt: timestamp("updated_at").default(sql`now()`),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Workflow Instances
-export const workflowInstances = pgTable("workflow_instances", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  surveyId: varchar("survey_id").notNull().references(() => surveys.id, { onDelete: 'cascade' }),
-  templateId: varchar("template_id").references(() => workflowTemplates.id),
+export const workflowInstances = sqliteTable("workflow_instances", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  surveyId: text("survey_id").notNull().references(() => surveys.id, { onDelete: 'cascade' }),
+  templateId: text("template_id").references(() => workflowTemplates.id),
   status: text("status").notNull().default("active"), // active, completed, cancelled, paused
   currentStep: integer("current_step").default(0),
   progress: integer("progress").default(0), // percentage
   assignedTo: text("assigned_to"),
-  startDate: timestamp("start_date").default(sql`now()`),
+  startDate: timestamp("start_date").defaultNow(),
   dueDate: timestamp("due_date"),
   completedDate: timestamp("completed_date"),
   notes: text("notes"),
-  createdAt: timestamp("created_at").default(sql`now()`),
-  updatedAt: timestamp("updated_at").default(sql`now()`),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Workflow Steps
-export const workflowSteps = pgTable("workflow_steps", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  workflowInstanceId: varchar("workflow_instance_id").notNull().references(() => workflowInstances.id, { onDelete: 'cascade' }),
+export const workflowSteps = sqliteTable("workflow_steps", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  workflowInstanceId: text("workflow_instance_id").notNull().references(() => workflowInstances.id, { onDelete: 'cascade' }),
   stepNumber: integer("step_number").notNull(),
   name: text("name").notNull(),
   description: text("description"),
@@ -48,18 +51,18 @@ export const workflowSteps = pgTable("workflow_steps", {
   startDate: timestamp("start_date"),
   completedDate: timestamp("completed_date"),
   notes: text("notes"),
-  createdAt: timestamp("created_at").default(sql`now()`),
-  updatedAt: timestamp("updated_at").default(sql`now()`),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Task Management
-export const tasks = pgTable("tasks", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+export const tasks = sqliteTable("tasks", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   title: text("title").notNull(),
   description: text("description"),
-  surveyId: varchar("survey_id").references(() => surveys.id, { onDelete: 'cascade' }),
-  observationId: varchar("observation_id").references(() => observations.id, { onDelete: 'cascade' }),
-  workflowStepId: varchar("workflow_step_id").references(() => workflowSteps.id, { onDelete: 'cascade' }),
+  surveyId: text("survey_id").references(() => surveys.id, { onDelete: 'cascade' }),
+  observationId: text("observation_id").references(() => observations.id, { onDelete: 'cascade' }),
+  workflowStepId: text("workflow_step_id").references(() => workflowSteps.id, { onDelete: 'cascade' }),
   type: text("type").notNull().default("general"), // general, follow-up, qa-check, sample-collection, lab-submission
   priority: text("priority").default("medium"), // low, medium, high, urgent
   status: text("status").default("open"), // open, in-progress, completed, cancelled
@@ -69,29 +72,29 @@ export const tasks = pgTable("tasks", {
   completedDate: timestamp("completed_date"),
   estimatedEffort: integer("estimated_effort"), // in hours
   actualEffort: integer("actual_effort"), // in hours
-  tags: text("tags").array(),
-  createdAt: timestamp("created_at").default(sql`now()`),
-  updatedAt: timestamp("updated_at").default(sql`now()`),
+  tags: text("tags", { mode: "json" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Audit Trail
-export const auditLog = pgTable("audit_log", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+export const auditLog = sqliteTable("audit_log", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   entityType: text("entity_type").notNull(), // survey, observation, workflow, task
-  entityId: varchar("entity_id").notNull(),
+  entityId: text("entity_id").notNull(),
   action: text("action").notNull(), // created, updated, deleted, assigned, completed
   oldValues: text("old_values"), // JSON string
   newValues: text("new_values"), // JSON string
   userId: text("user_id").notNull(),
   userAgent: text("user_agent"),
   ipAddress: text("ip_address"),
-  timestamp: timestamp("timestamp").default(sql`now()`),
+  timestamp: timestamp("timestamp").defaultNow(),
 });
 
 // Data Export Logs
-export const exportLogs = pgTable("export_logs", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  surveyId: varchar("survey_id").references(() => surveys.id, { onDelete: 'cascade' }),
+export const exportLogs = sqliteTable("export_logs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  surveyId: text("survey_id").references(() => surveys.id, { onDelete: 'cascade' }),
   exportType: text("export_type").notNull(), // pdf, excel, csv, json
   format: text("format"), // detailed format specification
   requestedBy: text("requested_by").notNull(),
@@ -102,7 +105,7 @@ export const exportLogs = pgTable("export_logs", {
   downloadCount: integer("download_count").default(0),
   lastDownloaded: timestamp("last_downloaded"),
   expiresAt: timestamp("expires_at"),
-  createdAt: timestamp("created_at").default(sql`now()`),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Relations

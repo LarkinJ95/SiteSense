@@ -57,10 +57,22 @@ import {
   type InsertDailyWeatherLog
 } from "@shared/schema";
 import { getDb } from "./db";
-import { eq, desc, ilike, or, and, sql } from "drizzle-orm";
+import { eq, desc, or, and, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 const db = () => getDb();
+
+const didAffectRows = (result: any) => {
+  const count =
+    typeof result?.rowCount === "number"
+      ? result.rowCount
+      : typeof result?.rowsAffected === "number"
+        ? result.rowsAffected
+        : typeof result?.changes === "number"
+          ? result.changes
+          : 0;
+  return count > 0;
+};
 
 export interface IStorage {
   // Survey methods
@@ -255,20 +267,21 @@ export class DatabaseStorage implements IStorage {
 
   async deleteSurvey(id: string): Promise<boolean> {
     const result = await db().delete(surveys).where(eq(surveys.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   async searchSurveys(query: string): Promise<Survey[]> {
+    const lowered = query.toLowerCase();
     return await db()
       .select()
       .from(surveys)
       .where(
         or(
-          ilike(surveys.siteName, `%${query}%`),
-          ilike(surveys.address, `%${query}%`),
-          ilike(surveys.jobNumber, `%${query}%`),
-          ilike(surveys.inspector, `%${query}%`),
-          ilike(surveys.surveyType, `%${query}%`)
+          sql`lower(${surveys.siteName}) like ${`%${lowered}%`}`,
+          sql`lower(${surveys.address}) like ${`%${lowered}%`}`,
+          sql`lower(${surveys.jobNumber}) like ${`%${lowered}%`}`,
+          sql`lower(${surveys.inspector}) like ${`%${lowered}%`}`,
+          sql`lower(${surveys.surveyType}) like ${`%${lowered}%`}`
         )
       )
       .orderBy(desc(surveys.updatedAt));
@@ -306,7 +319,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteObservation(id: string): Promise<boolean> {
     const result = await db().delete(observations).where(eq(observations.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   async getObservationPhotos(observationId: string): Promise<ObservationPhoto[]> {
@@ -331,7 +344,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteObservationPhoto(id: string): Promise<boolean> {
     const result = await db().delete(observationPhotos).where(eq(observationPhotos.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   async getAsbestosSamples(surveyId: string): Promise<AsbestosSample[]> {
@@ -363,7 +376,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAsbestosSample(id: string): Promise<boolean> {
     const result = await db().delete(asbestosSamples).where(eq(asbestosSamples.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   async getAsbestosSampleLayers(sampleId: string): Promise<AsbestosSampleLayer[]> {
@@ -403,7 +416,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAsbestosSamplePhoto(id: string): Promise<boolean> {
     const result = await db().delete(asbestosSamplePhotos).where(eq(asbestosSamplePhotos.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   async getPaintSamples(surveyId: string): Promise<PaintSample[]> {
@@ -435,7 +448,7 @@ export class DatabaseStorage implements IStorage {
 
   async deletePaintSample(id: string): Promise<boolean> {
     const result = await db().delete(paintSamples).where(eq(paintSamples.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   async getPaintSamplePhotos(sampleId: string): Promise<PaintSamplePhoto[]> {
@@ -458,7 +471,7 @@ export class DatabaseStorage implements IStorage {
 
   async deletePaintSamplePhoto(id: string): Promise<boolean> {
     const result = await db().delete(paintSamplePhotos).where(eq(paintSamplePhotos.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   async getSurveyStats(): Promise<{
@@ -507,7 +520,7 @@ export class DatabaseStorage implements IStorage {
 
   async deletePersonnelProfile(id: string): Promise<boolean> {
     const result = await db().delete(personnelProfiles).where(eq(personnelProfiles.id, id));
-    return result.rowCount !== null && result.rowCount > 0;
+    return didAffectRows(result);
   }
 
   // Air monitoring job methods
@@ -542,7 +555,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAirMonitoringJob(id: string): Promise<boolean> {
     const result = await db().delete(airMonitoringJobs).where(eq(airMonitoringJobs.id, id));
-    return result.rowCount !== null && result.rowCount > 0;
+    return didAffectRows(result);
   }
 
   async getAirMonitoringJobSamples(jobId: string): Promise<AirSample[]> {
@@ -579,7 +592,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAirSample(id: string): Promise<boolean> {
     const result = await db().delete(airSamples).where(eq(airSamples.id, id));
-    return result.rowCount !== null && result.rowCount > 0;
+    return didAffectRows(result);
   }
 
   // Air monitoring equipment methods
@@ -608,7 +621,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAirMonitoringEquipment(id: string): Promise<boolean> {
     const result = await db().delete(airMonitoringEquipment).where(eq(airMonitoringEquipment.id, id));
-    return result.rowCount !== null && result.rowCount > 0;
+    return didAffectRows(result);
   }
 
   // Field tools equipment methods
@@ -641,7 +654,7 @@ export class DatabaseStorage implements IStorage {
     const [profile] = await db()
       .select()
       .from(userProfiles)
-      .where(ilike(userProfiles.email, email));
+      .where(sql`lower(${userProfiles.email}) = ${email.toLowerCase()}`);
     return profile;
   }
 
@@ -670,7 +683,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteUserProfile(userId: string): Promise<boolean> {
     const result = await db().delete(userProfiles).where(eq(userProfiles.userId, userId));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   // Organization methods
@@ -699,7 +712,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteOrganization(id: string): Promise<boolean> {
     const result = await db().delete(organizations).where(eq(organizations.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   async getOrganizationMembers(organizationId: string): Promise<OrganizationMember[]> {
@@ -726,7 +739,7 @@ export class DatabaseStorage implements IStorage {
 
   async removeOrganizationMember(id: string): Promise<boolean> {
     const result = await db().delete(organizationMembers).where(eq(organizationMembers.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   async getOrganizationIdsForUser(userId: string): Promise<string[]> {
@@ -757,7 +770,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAirMonitoringDocument(id: string): Promise<boolean> {
     const result = await db().delete(airMonitoringDocuments).where(eq(airMonitoringDocuments.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   // Daily Weather Log methods
@@ -793,7 +806,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteDailyWeatherLog(id: string): Promise<boolean> {
     const result = await db().delete(dailyWeatherLogs).where(eq(dailyWeatherLogs.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   async getHomogeneousAreas(surveyId: string): Promise<HomogeneousArea[]> {
@@ -828,7 +841,7 @@ export class DatabaseStorage implements IStorage {
     const result = await db()
       .delete(homogeneousAreas)
       .where(and(eq(homogeneousAreas.surveyId, surveyId), eq(homogeneousAreas.id, id)));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   async getFunctionalAreas(surveyId: string): Promise<FunctionalArea[]> {
@@ -898,7 +911,7 @@ export class DatabaseStorage implements IStorage {
     const result = await db()
       .delete(functionalAreas)
       .where(and(eq(functionalAreas.surveyId, surveyId), eq(functionalAreas.id, id)));
-    return (result.rowCount ?? 0) > 0;
+    return didAffectRows(result);
   }
 
   // New features storage methods - In-memory implementations

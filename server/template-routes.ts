@@ -56,8 +56,9 @@ export async function getSurveyTemplates(req: Request, res: Response) {
     }
 
     if (search) {
+      const lowered = String(search).toLowerCase();
       whereConditions.push(
-        sql`${surveyTemplates.name} ILIKE ${`%${search}%`} OR ${surveyTemplates.description} ILIKE ${`%${search}%`}`
+        sql`lower(${surveyTemplates.name}) like ${`%${lowered}%`} OR lower(${surveyTemplates.description}) like ${`%${lowered}%`}`
       );
     }
 
@@ -146,7 +147,7 @@ export async function updateSurveyTemplate(req: Request, res: Response) {
     
     const [template] = await db()
       .update(surveyTemplates)
-      .set({ ...data, updatedAt: sql`now()` })
+      .set({ ...data, updatedAt: new Date() })
       .where(eq(surveyTemplates.id, id))
       .returning();
 
@@ -314,7 +315,7 @@ export async function saveChecklistResponse(req: Request, res: Response) {
           response,
           isCompleted,
           notes,
-          completedAt: isCompleted ? sql`now()` : null,
+          completedAt: isCompleted ? new Date() : null,
         })
         .where(eq(checklistResponses.id, existingResponse.id))
         .returning();
@@ -330,7 +331,7 @@ export async function saveChecklistResponse(req: Request, res: Response) {
           isCompleted,
           notes,
           completedBy: "current-user", // Would come from auth
-          completedAt: isCompleted ? sql`now()` : null,
+          completedAt: isCompleted ? new Date() : null,
         })
         .returning();
     }
@@ -349,7 +350,7 @@ export async function incrementTemplateUsage(templateId: string) {
       .update(surveyTemplates)
       .set({ 
         usageCount: sql`${surveyTemplates.usageCount} + 1`,
-        lastUsed: sql`now()`,
+        lastUsed: new Date(),
       })
       .where(eq(surveyTemplates.id, templateId));
   } catch (error) {

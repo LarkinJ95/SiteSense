@@ -16,6 +16,11 @@ ADMIN_EMAILS = "larkinjason@icloud.com,jlarkin@bierlein.com"
 binding = "ABATEIQ_UPLOADS"
 bucket_name = "abateiq-uploads"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "abateiq"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
 [observability.logs]
 enabled = false
 invocation_logs = true

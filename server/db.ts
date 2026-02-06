@@ -1,27 +1,23 @@
-import { neon, neonConfig } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-serverless";
+import { drizzle } from "drizzle-orm/d1";
 import * as schema from "@shared/schema";
 
-neonConfig.fetchConnectionCache = true;
+type D1Database = any;
 
 let cachedDb: ReturnType<typeof drizzle> | null = null;
 
-const getDatabaseUrl = () => {
-  const globalUrl = (globalThis as { DATABASE_URL?: string }).DATABASE_URL;
-  if (globalUrl) return globalUrl;
-  if (typeof process !== "undefined") {
-    return process.env?.DATABASE_URL;
-  }
-  return undefined;
+const getD1 = () => (globalThis as { D1_DATABASE?: D1Database }).D1_DATABASE;
+
+export const setD1Database = (db: D1Database) => {
+  (globalThis as { D1_DATABASE?: D1Database }).D1_DATABASE = db;
+  cachedDb = null;
 };
 
 export const getDb = () => {
   if (cachedDb) return cachedDb;
-  const databaseUrl = getDatabaseUrl();
-  if (!databaseUrl) {
-    throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
+  const d1 = getD1();
+  if (!d1) {
+    throw new Error("D1 database is not configured. Did you bind it in wrangler.toml?");
   }
-  const sql = neon(databaseUrl);
-  cachedDb = drizzle(sql, { schema });
+  cachedDb = drizzle(d1, { schema });
   return cachedDb;
 };

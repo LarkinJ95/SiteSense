@@ -175,17 +175,19 @@ GET    /api/chain-of-custody     # Chain of custody records
 
 ### Environment Variables
 
-Create a `.env` file with the following variables:
+For Cloudflare Workers + D1, database configuration lives in `wrangler.toml`.
+Create a D1 database and update the binding:
+
+```bash
+npx wrangler d1 create abateiq
+# copy the database_id into wrangler.toml [[d1_databases]]
+```
+
+Optional local dev vars go in `.dev.vars`:
 
 ```env
-# Database Configuration
-DATABASE_URL=postgresql://user:password@localhost:5432/sitesense
-
 # Weather API
-WEATHERAPI_KEY=your_weatherapi_key
-
-# Application Settings
-NODE_ENV=production
+OPENWEATHER_API_KEY=your_openweather_key
 
 # Neon Auth JWT Verification
 NEON_JWKS_URL=https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech/neondb/auth/.well-known/jwks.json
@@ -198,14 +200,14 @@ NEON_JWT_AUDIENCE=https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.ne
 Set these in Cloudflare (Workers/Pages → Settings → Variables):
 
 ```env
-DATABASE_URL=postgresql://user:password@host/db
-WEATHERAPI_KEY=your_weatherapi_key
+OPENWEATHER_API_KEY=your_openweather_key
 NEON_JWKS_URL=https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech/neondb/auth/.well-known/jwks.json
 NEON_JWT_ISSUER=https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech
 NEON_JWT_AUDIENCE=https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech
 ```
 
 Create an R2 bucket named `abateiq-uploads` and bind it as `ABATEIQ_UPLOADS`.
+Create a D1 database named `abateiq` and bind it as `DB`.
 
 ## Cloudflare Deployment
 

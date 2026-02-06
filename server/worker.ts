@@ -30,8 +30,10 @@ import type {
   PaintSamplePhoto,
 } from "@shared/schema";
 import { storage } from "./storage";
-import { getDb } from "./db";
+import { getDb, setD1Database } from "./db";
 import { sql } from "drizzle-orm";
+
+type D1Database = any;
 
 type Env = {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
@@ -40,7 +42,7 @@ type Env = {
   NEON_JWT_ISSUER?: string;
   NEON_JWT_AUDIENCE?: string;
   ADMIN_EMAILS?: string;
-  DATABASE_URL?: string;
+  DB: D1Database;
   OPENWEATHER_API_KEY?: string;
   ABATEIQ_UPLOADS: R2Bucket;
 };
@@ -603,8 +605,8 @@ function generateSurveyReport(
 }
 
 app.use("/api/*", async (c, next) => {
-  if (c.env.DATABASE_URL && !(globalThis as { DATABASE_URL?: string }).DATABASE_URL) {
-    (globalThis as { DATABASE_URL?: string }).DATABASE_URL = c.env.DATABASE_URL;
+  if (c.env.DB && !(globalThis as { D1_DATABASE?: D1Database }).D1_DATABASE) {
+    setD1Database(c.env.DB);
   }
   if (c.req.path.startsWith("/api/auth/")) return next();
   if (c.req.path === "/api/health") return next();
@@ -649,7 +651,7 @@ app.get("/api/health/db", async (c) => {
     const db = getDb();
     const result = await db.execute(sql`select 1 as ok`);
     const tableCheck = await db.execute(
-      sql`select to_regclass('public.user_profiles') as user_profiles_table`
+      sql`select name from sqlite_master where type='table' and name='user_profiles'`
     );
     return c.json({
       ok: true,
@@ -995,8 +997,15 @@ app.get("/api/admin/stats", async (c) => {
     .where(sql`lower(coalesce(${userProfiles.status}, '')) = 'active'`);
   const [totalSurveysResult] = await db.select({ count: sql<number>`count(*)` }).from(surveysTable);
   const [totalAirSamplesResult] = await db.select({ count: sql<number>`count(*)` }).from(airSamplesTable);
-  const dbSizeResult = await db.execute(sql`select pg_database_size(current_database()) as size`);
-  const databaseSizeBytes = Number((dbSizeResult as any)?.rows?.[0]?.size ?? 0);
+  let databaseSizeBytes = 0;
+  try {
+    const sizeResult = await db.execute(
+      sql`select (page_count * page_size) as size from pragma_page_count, pragma_page_size`
+    );
+    databaseSizeBytes = Number((sizeResult as any)?.rows?.[0]?.size ?? 0);
+  } catch {
+    databaseSizeBytes = 0;
+  }
   return c.json({
     totalUsers: Number(totalUsersResult?.count ?? 0),
     activeUsers: Number(activeUsersResult?.count ?? 0),

@@ -2,6 +2,8 @@
 
 This guide provides comprehensive instructions for deploying AbateIQ on your own infrastructure for maximum security, control, and compliance.
 
+> Note: The current production path uses Cloudflare Workers + D1. The on‑prem/Postgres instructions below are legacy and may need adjustments if you continue with D1.
+
 ## Table of Contents
 
 1. [On-Premise Server Setup](#on-premise-server-setup)
