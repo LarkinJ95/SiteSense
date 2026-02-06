@@ -10,6 +10,7 @@ NEON_AUTH_URL = "https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neo
 NEON_JWKS_URL = "https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech/neondb/auth/.well-known/jwks.json"
 NEON_JWT_ISSUER = "https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech"
 NEON_JWT_AUDIENCE = "https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech"
+ADMIN_EMAILS = "larkinjason@icloud.com,jlarkin@bierlein.com"
 
 [[r2_buckets]]
 binding = "ABATEIQ_UPLOADS"
