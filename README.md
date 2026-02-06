@@ -5,6 +5,8 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-13%2B-blue.svg)](https://www.postgresql.org/)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-orange.svg)](https://developers.cloudflare.com/workers/)
 
+Build trigger: 2026-02-06
+
 ## Overview
 
 AbateIQ is a comprehensive full-stack web application designed for environmental health and safety professionals to manage site surveys, environmental assessments, and regulatory compliance. The platform streamlines field data collection, documentation, and reporting for asbestos, lead, cadmium, and air monitoring surveys.
