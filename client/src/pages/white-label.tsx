@@ -65,13 +65,13 @@ export default function WhiteLabelDashboard() {
 
   // Brand settings state
   const [brandSettings, setBrandSettings] = useState<BrandSettings>({
-    appName: "SiteSense",
+    appName: "AbateIQ",
     primaryColor: "#3b82f6",
     secondaryColor: "#64748b",
     accentColor: "#10b981",
     backgroundColor: "#ffffff",
     textColor: "#1f2937",
-    footerText: `© ${new Date().getFullYear()} SiteSense.`,
+    footerText: `© ${new Date().getFullYear()} AbateIQ.`,
     welcomeMessage: "Welcome to your environmental survey management platform",
     contactEmail: "support@sitesense.com",
     enableCustomBranding: true,
@@ -180,13 +180,13 @@ export default function WhiteLabelDashboard() {
 
   const resetBrandSettings = () => {
     setBrandSettings({
-      appName: "SiteSense",
+      appName: "AbateIQ",
       primaryColor: "#3b82f6",
       secondaryColor: "#64748b",
       accentColor: "#10b981",
       backgroundColor: "#ffffff",
       textColor: "#1f2937",
-      footerText: `© ${new Date().getFullYear()} SiteSense.`,
+      footerText: `© ${new Date().getFullYear()} AbateIQ.`,
       welcomeMessage: "Welcome to your environmental survey management platform",
       contactEmail: "support@sitesense.com",
       enableCustomBranding: true,
@@ -502,7 +502,7 @@ export default function WhiteLabelDashboard() {
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label htmlFor="powered-by">Show "Powered by SiteSense"</Label>
+                  <Label htmlFor="powered-by">Show "Powered by AbateIQ"</Label>
                   <p className="text-sm text-gray-500">Display attribution in footer</p>
                 </div>
                 <Switch

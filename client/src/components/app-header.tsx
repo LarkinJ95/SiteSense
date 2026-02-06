@@ -88,7 +88,7 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
             <div className="flex items-center space-x-2">
               <ClipboardList className="text-primary text-2xl" data-testid="app-logo" />
               <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100" data-testid="app-title">
-                SiteSense
+                AbateIQ
               </h1>
             </div>
             <div className="flex items-center space-x-2">
@@ -113,7 +113,7 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
             <div className="flex items-center space-x-2">
               <ClipboardList className="text-primary text-2xl" data-testid="app-logo" />
               <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100" data-testid="app-title">
-                SiteSense
+                AbateIQ
               </h1>
             </div>
             <nav className="hidden md:flex space-x-8">

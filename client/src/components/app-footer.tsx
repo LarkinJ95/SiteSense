@@ -16,7 +16,7 @@ export function AppFooter() {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-6">
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              © {new Date().getFullYear()} SiteSense.
+              © {new Date().getFullYear()} AbateIQ.
             </p>
           </div>
           

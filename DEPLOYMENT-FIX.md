@@ -143,7 +143,7 @@ Save this as `/opt/sitesense/check-deployment.sh` and run it:
 
 ```bash
 #!/bin/bash
-echo "=== SiteSense Deployment Check ==="
+echo "=== AbateIQ Deployment Check ==="
 
 # Check if we're in the right place
 if [ ! -f "/opt/sitesense/app/package.json" ]; then
@@ -194,4 +194,4 @@ The key issues are usually:
 3. **Incorrect permissions** - Files owned by wrong user
 4. **Wrong npm command** - Use `--omit=dev` instead of `--production`
 
-Follow the steps above to fix your deployment and get SiteSense running properly.
+Follow the steps above to fix your deployment and get AbateIQ running properly.

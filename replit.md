@@ -2,7 +2,7 @@
 
 ## Overview
 
-SiteSense is a comprehensive full-stack web application for managing site surveys and environmental assessments. The application allows users to create surveys, record observations, upload photos, and track the progress of site inspections. It's designed for professionals conducting environmental or structural assessments who need to systematically document findings and manage survey data.
+AbateIQ is a comprehensive full-stack web application for managing site surveys and environmental assessments. The application allows users to create surveys, record observations, upload photos, and track the progress of site inspections. It's designed for professionals conducting environmental or structural assessments who need to systematically document findings and manage survey data.
 
 ## Recent Updates (January 2025)
 - **Authentication System**: Created complete user authentication with login, registration, and user profile management pages with role-based access control
@@ -39,7 +39,7 @@ SiteSense is a comprehensive full-stack web application for managing site survey
 - Fixed dark mode text contrast issues across dashboard buttons and status badges
 - Added edit buttons on both dashboard and surveys page for quick access
 - Enhanced site photo upload feature with full integration across all views
-- Changed application name from "SiteSurvey Pro" to "SiteSense" 
+- Changed application name from "SiteSurvey Pro" to "AbateIQ" 
 - Updated branding throughout application interface and documentation
 - **NEW ADVANCED FEATURES EXPANSION (January 13, 2025)**: Complete implementation of 7 major new features:
   - **Custom Report Builder**: Full report template creation system with drag-and-drop sections, field selection, layout customization, chart/photo/map inclusion, and automated report generation with PDF output

@@ -1,4 +1,4 @@
-# SiteSense - Environmental Health & Safety Survey Management Platform
+# AbateIQ - Environmental Health & Safety Survey Management Platform
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
@@ -6,7 +6,7 @@
 
 ## Overview
 
-SiteSense is a comprehensive full-stack web application designed for environmental health and safety professionals to manage site surveys, environmental assessments, and regulatory compliance. The platform streamlines field data collection, documentation, and reporting for asbestos, lead, cadmium, and air monitoring surveys.
+AbateIQ is a comprehensive full-stack web application designed for environmental health and safety professionals to manage site surveys, environmental assessments, and regulatory compliance. The platform streamlines field data collection, documentation, and reporting for asbestos, lead, cadmium, and air monitoring surveys.
 
 ### Key Features
 

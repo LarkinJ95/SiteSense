@@ -517,7 +517,7 @@ export default function SystemSettings() {
                 <Label htmlFor="company-name">Company Name</Label>
                 <Input 
                   id="company-name"
-                  defaultValue="SiteSense"
+                  defaultValue="AbateIQ"
                   placeholder="Your company name"
                 />
               </div>
@@ -552,7 +552,7 @@ export default function SystemSettings() {
               <div className="flex items-center justify-between">
                 <div>
                   <Label className="text-base font-medium">Anonymous Analytics</Label>
-                  <p className="text-sm text-gray-600">Help improve SiteSense with usage analytics</p>
+                  <p className="text-sm text-gray-600">Help improve AbateIQ with usage analytics</p>
                 </div>
                 <Switch />
               </div>

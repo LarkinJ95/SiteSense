@@ -91,7 +91,7 @@ export default function Register() {
           </div>
           <CardTitle className="text-2xl font-bold">Create Your Account</CardTitle>
           <CardDescription>
-            Join SiteSense to manage environmental surveys and assessments
+            Join AbateIQ to manage environmental surveys and assessments
           </CardDescription>
         </CardHeader>
 

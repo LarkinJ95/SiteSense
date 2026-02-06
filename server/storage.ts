@@ -79,6 +79,7 @@ export interface IStorage {
   
   // Photo methods
   getObservationPhotos(observationId: string): Promise<ObservationPhoto[]>;
+  getObservationPhoto(id: string): Promise<ObservationPhoto | undefined>;
   createObservationPhoto(photo: InsertObservationPhoto): Promise<ObservationPhoto>;
   deleteObservationPhoto(id: string): Promise<boolean>;
 
@@ -91,6 +92,7 @@ export interface IStorage {
   getAsbestosSampleLayers(sampleId: string): Promise<AsbestosSampleLayer[]>;
   replaceAsbestosSampleLayers(sampleId: string, layers: InsertAsbestosSampleLayer[]): Promise<AsbestosSampleLayer[]>;
   getAsbestosSamplePhotos(sampleId: string): Promise<AsbestosSamplePhoto[]>;
+  getAsbestosSamplePhoto(id: string): Promise<AsbestosSamplePhoto | undefined>;
   createAsbestosSamplePhoto(photo: { sampleId: string; url: string; filename?: string | null }): Promise<AsbestosSamplePhoto>;
   deleteAsbestosSamplePhoto(id: string): Promise<boolean>;
 
@@ -101,6 +103,7 @@ export interface IStorage {
   updatePaintSample(id: string, sample: Partial<InsertPaintSample>): Promise<PaintSample | undefined>;
   deletePaintSample(id: string): Promise<boolean>;
   getPaintSamplePhotos(sampleId: string): Promise<PaintSamplePhoto[]>;
+  getPaintSamplePhoto(id: string): Promise<PaintSamplePhoto | undefined>;
   createPaintSamplePhoto(photo: { sampleId: string; url: string; filename?: string | null }): Promise<PaintSamplePhoto>;
   deletePaintSamplePhoto(id: string): Promise<boolean>;
   
@@ -163,8 +166,16 @@ export interface IStorage {
 
   // Air monitoring documents
   getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]>;
+  getAirMonitoringDocument(id: string): Promise<AirMonitoringDocument | undefined>;
   createAirMonitoringDocument(doc: InsertAirMonitoringDocument): Promise<AirMonitoringDocument>;
   deleteAirMonitoringDocument(id: string): Promise<boolean>;
+
+  // Daily Weather Log methods
+  getDailyWeatherLogs(jobId: string): Promise<DailyWeatherLog[]>;
+  getDailyWeatherLog(id: string): Promise<DailyWeatherLog | undefined>;
+  createDailyWeatherLog(log: InsertDailyWeatherLog): Promise<DailyWeatherLog>;
+  updateDailyWeatherLog(id: string, log: Partial<InsertDailyWeatherLog>): Promise<DailyWeatherLog | undefined>;
+  deleteDailyWeatherLog(id: string): Promise<boolean>;
 
   // Area management
   getHomogeneousAreas(surveyId: string): Promise<HomogeneousArea[]>;
@@ -299,6 +310,11 @@ export class DatabaseStorage implements IStorage {
       .where(eq(observationPhotos.observationId, observationId));
   }
 
+  async getObservationPhoto(id: string): Promise<ObservationPhoto | undefined> {
+    const [photo] = await db.select().from(observationPhotos).where(eq(observationPhotos.id, id));
+    return photo || undefined;
+  }
+
   async createObservationPhoto(insertPhoto: InsertObservationPhoto): Promise<ObservationPhoto> {
     const [photo] = await db
       .insert(observationPhotos)
@@ -369,6 +385,11 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(asbestosSamplePhotos.uploadedAt));
   }
 
+  async getAsbestosSamplePhoto(id: string): Promise<AsbestosSamplePhoto | undefined> {
+    const [photo] = await db.select().from(asbestosSamplePhotos).where(eq(asbestosSamplePhotos.id, id));
+    return photo || undefined;
+  }
+
   async createAsbestosSamplePhoto(photo: { sampleId: string; url: string; filename?: string | null }): Promise<AsbestosSamplePhoto> {
     const [created] = await db.insert(asbestosSamplePhotos).values(photo).returning();
     return created;
@@ -417,6 +438,11 @@ export class DatabaseStorage implements IStorage {
       .from(paintSamplePhotos)
       .where(eq(paintSamplePhotos.sampleId, sampleId))
       .orderBy(desc(paintSamplePhotos.uploadedAt));
+  }
+
+  async getPaintSamplePhoto(id: string): Promise<PaintSamplePhoto | undefined> {
+    const [photo] = await db.select().from(paintSamplePhotos).where(eq(paintSamplePhotos.id, id));
+    return photo || undefined;
   }
 
   async createPaintSamplePhoto(photo: { sampleId: string; url: string; filename?: string | null }): Promise<PaintSamplePhoto> {
@@ -481,6 +507,11 @@ export class DatabaseStorage implements IStorage {
   // Air monitoring job methods
   async getAirMonitoringJobs(): Promise<AirMonitoringJob[]> {
     return await db.select().from(airMonitoringJobs).orderBy(desc(airMonitoringJobs.createdAt));
+  }
+
+  async getAirMonitoringJob(id: string): Promise<AirMonitoringJob | undefined> {
+    const [job] = await db.select().from(airMonitoringJobs).where(eq(airMonitoringJobs.id, id));
+    return job || undefined;
   }
 
   async getAirMonitoringJobById(id: string): Promise<AirMonitoringJob> {
@@ -682,6 +713,11 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(airMonitoringDocuments.uploadedAt));
   }
 
+  async getAirMonitoringDocument(id: string): Promise<AirMonitoringDocument | undefined> {
+    const [doc] = await db.select().from(airMonitoringDocuments).where(eq(airMonitoringDocuments.id, id));
+    return doc || undefined;
+  }
+
   async createAirMonitoringDocument(doc: InsertAirMonitoringDocument): Promise<AirMonitoringDocument> {
     const [created] = await db.insert(airMonitoringDocuments).values(doc).returning();
     return created;
@@ -699,6 +735,11 @@ export class DatabaseStorage implements IStorage {
       .from(dailyWeatherLogs)
       .where(eq(dailyWeatherLogs.jobId, jobId))
       .orderBy(desc(dailyWeatherLogs.logDate));
+  }
+
+  async getDailyWeatherLog(id: string): Promise<DailyWeatherLog | undefined> {
+    const [log] = await db.select().from(dailyWeatherLogs).where(eq(dailyWeatherLogs.id, id));
+    return log || undefined;
   }
 
   async createDailyWeatherLog(insertLog: InsertDailyWeatherLog): Promise<DailyWeatherLog> {

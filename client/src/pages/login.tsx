@@ -81,7 +81,7 @@ export default function Login() {
               <Shield className="h-8 w-8 text-primary" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold">Welcome to SiteSense</CardTitle>
+          <CardTitle className="text-2xl font-bold">Welcome to AbateIQ</CardTitle>
           <CardDescription>
             Sign in to your account to access environmental survey tools
           </CardDescription>

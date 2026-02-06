@@ -1,6 +1,6 @@
-# SiteSense On-Site Server Deployment Guide
+# AbateIQ On-Site Server Deployment Guide
 
-This guide provides comprehensive instructions for deploying SiteSense on your own infrastructure for maximum security, control, and compliance.
+This guide provides comprehensive instructions for deploying AbateIQ on your own infrastructure for maximum security, control, and compliance.
 
 ## Table of Contents
 
@@ -870,7 +870,7 @@ Create `/opt/sitesense/verify-deployment.sh`:
 ```bash
 #!/bin/bash
 
-echo "=== SiteSense Deployment Verification ==="
+echo "=== AbateIQ Deployment Verification ==="
 
 # Check directory structure
 echo "1. Checking directory structure..."
@@ -1058,4 +1058,4 @@ pm2 status >> /tmp/maintenance_report.txt
 cat /tmp/maintenance_report.txt
 ```
 
-This comprehensive deployment guide covers all aspects of setting up SiteSense on your own infrastructure, from basic installation to advanced monitoring and maintenance procedures.
+This comprehensive deployment guide covers all aspects of setting up AbateIQ on your own infrastructure, from basic installation to advanced monitoring and maintenance procedures.

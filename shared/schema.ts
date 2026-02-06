@@ -234,6 +234,7 @@ export const observationPhotoRelations = relations(observationPhotos, ({ one }) 
 }));
 
 export const insertSurveySchema = z.object({
+  organizationId: z.string().optional(),
   siteName: z.string().min(1),
   address: z.string().optional(),
   surveyType: z.string().min(1),
