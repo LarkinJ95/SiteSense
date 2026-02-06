@@ -9,10 +9,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { ClipboardList, Plus, User, Settings, LogOut, UserCircle, Shield, Cloud, Sun, CloudRain, Wind } from "lucide-react";
+import { ClipboardList, Plus, User, Settings, LogOut, UserCircle, Shield, Cloud, Sun, CloudRain, Wind, Droplets, Thermometer } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
+import { useWeather } from "@/hooks/use-weather";
 
 interface AppHeaderProps {
   onCreateSurvey: () => void;
@@ -22,11 +23,7 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
   const { data: session, isPending } = authClient.useSession();
-  const [weatherPreview, setWeatherPreview] = useState<{
-    conditions: string;
-    high: number | null;
-    low: number | null;
-  } | null>(null);
+  const { weather, getCurrentWeather } = useWeather();
   const [now, setNow] = useState(() => new Date());
   const { data: profile } = useQuery({
     queryKey: ["/api/user/profile"],
@@ -94,67 +91,20 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
   }, []);
 
   useEffect(() => {
-    let isActive = true;
-
-    const getCoords = async () => {
-      const stored = localStorage.getItem("last-weather-coords");
-      if (stored) {
-        try {
-          return JSON.parse(stored) as { lat: number; lon: number };
-        } catch {
-          // ignore parse errors
-        }
-      }
-      if (!navigator.geolocation) return null;
+    const stored = localStorage.getItem("last-weather-coords");
+    if (stored) {
       try {
-        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            maximumAge: 5 * 60 * 1000,
-            timeout: 8000,
-          });
-        });
-        return { lat: position.coords.latitude, lon: position.coords.longitude };
-      } catch {
-        return null;
-      }
-    };
-
-    const loadWeatherPreview = async () => {
-      const coords = await getCoords();
-      if (!coords) return;
-      try {
-        const [currentResponse, forecastResponse] = await Promise.all([
-          fetch(`/api/weather/current?lat=${encodeURIComponent(coords.lat)}&lon=${encodeURIComponent(coords.lon)}`),
-          fetch(`/api/weather/forecast?lat=${encodeURIComponent(coords.lat)}&lon=${encodeURIComponent(coords.lon)}`),
-        ]);
-        if (!currentResponse.ok || !forecastResponse.ok) return;
-        const current = await currentResponse.json();
-        const forecast = await forecastResponse.json();
-        const todayKey = new Date().toDateString();
-        const temps = Array.isArray(forecast?.list)
-          ? forecast.list
-              .filter((item: any) => new Date(item.dt * 1000).toDateString() === todayKey)
-              .map((item: any) => Number(item?.main?.temp))
-              .filter((value: number) => Number.isFinite(value))
-          : [];
-        const high = temps.length ? Math.round(Math.max(...temps)) : null;
-        const low = temps.length ? Math.round(Math.min(...temps)) : null;
-        const conditions = current?.weather?.[0]?.main || "Unknown";
-        if (isActive) {
-          setWeatherPreview({ conditions, high, low });
+        const coords = JSON.parse(stored) as { lat: number; lon: number };
+        if (typeof coords?.lat === "number" && typeof coords?.lon === "number") {
+          getCurrentWeather(coords.lat, coords.lon);
+          return;
         }
       } catch {
-        // ignore weather errors in header preview
+        // ignore parse errors
       }
-    };
-
-    loadWeatherPreview();
-    const interval = window.setInterval(loadWeatherPreview, 30 * 60 * 1000);
-    return () => {
-      isActive = false;
-      window.clearInterval(interval);
-    };
-  }, []);
+    }
+    getCurrentWeather();
+  }, [getCurrentWeather]);
 
   const getWeatherIcon = (conditions: string) => {
     const normalized = conditions.toLowerCase();
@@ -207,24 +157,35 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
               </h1>
             </div>
             <div className="hidden md:flex items-center space-x-6 text-xs text-gray-600 dark:text-gray-300">
-              <div className="flex items-center gap-2">
-                {weatherPreview ? (
+              <div className="flex flex-col items-start gap-1">
+                <div className="flex items-center gap-2">
+                {weather ? (
                   <>
-                    {getWeatherIcon(weatherPreview.conditions)}
-                    <span className="font-medium">{weatherPreview.conditions}</span>
-                    <span>
-                      {weatherPreview.high ?? "--"}° / {weatherPreview.low ?? "--"}°
+                    {getWeatherIcon(weather.conditions)}
+                    <span className="font-medium">{weather.conditions}</span>
+                    <span className="flex items-center gap-1">
+                      <Thermometer className="h-3 w-3 text-red-400" />
+                      {weather.temperature}°F
+                    </span>
+                    <span className="flex items-center gap-1 text-gray-500">
+                      <Droplets className="h-3 w-3 text-blue-400" />
+                      {weather.humidity}%
+                    </span>
+                    <span className="flex items-center gap-1 text-gray-500">
+                      <Wind className="h-3 w-3 text-gray-400" />
+                      {weather.windSpeed} mph
                     </span>
                   </>
                 ) : (
                   <span className="text-gray-400">Weather unavailable</span>
                 )}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="font-medium">
-                  {now.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                </span>
-                <span>{now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">
+                    {now.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                  </span>
+                  <span>{now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</span>
+                </div>
               </div>
             </div>
             <nav className="hidden md:flex space-x-8">

@@ -5,6 +5,8 @@ export interface WeatherData {
   temperature: number; // Fahrenheit
   humidity: number; // Percentage
   windSpeed: number; // mph
+  windDeg?: number;
+  pressure?: number;
   description: string;
   location: string;
 }
@@ -67,6 +69,8 @@ export function useWeather() {
           temperature: Math.round(data?.main?.temp ?? 0),
           humidity: Math.round(data?.main?.humidity ?? 0),
           windSpeed: Math.round(data?.wind?.speed ?? 0),
+          windDeg: Number.isFinite(Number(data?.wind?.deg)) ? Number(data.wind.deg) : undefined,
+          pressure: Number.isFinite(Number(data?.main?.pressure)) ? Number(data.main.pressure) : undefined,
           description: data?.weather?.[0]?.description || "Weather data unavailable",
           location: data?.name
             ? `${data.name}${data?.sys?.country ? `, ${data.sys.country}` : ""}`
@@ -83,6 +87,8 @@ export function useWeather() {
           temperature: Math.round(Math.random() * 30 + 40), // 40-70°F
           humidity: Math.round(Math.random() * 40 + 40), // 40-80%
           windSpeed: Math.round(Math.random() * 20 + 5), // 5-25 mph
+          windDeg: Math.round(Math.random() * 360),
+          pressure: undefined,
           description: getWeatherDescription(),
           location: latitude && longitude
             ? `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`
@@ -98,6 +104,8 @@ export function useWeather() {
         temperature: Math.round(Math.random() * 30 + 40),
         humidity: Math.round(Math.random() * 40 + 40),
         windSpeed: Math.round(Math.random() * 20 + 5),
+        windDeg: Math.round(Math.random() * 360),
+        pressure: undefined,
         description: 'Weather data unavailable',
         location: fallbackCoords
           ? `${fallbackCoords.lat.toFixed(2)}, ${fallbackCoords.lon.toFixed(2)}`
