@@ -149,9 +149,12 @@ export interface IStorage {
   replaceFieldToolsEquipment(userId: string, items: InsertFieldToolsEquipment[]): Promise<FieldToolsEquipment[]>;
 
   // User profile methods
+  getUserProfiles(): Promise<UserProfile[]>;
   getUserProfile(userId: string): Promise<UserProfile | undefined>;
   getUserProfileByEmail(email: string): Promise<UserProfile | undefined>;
   upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
+  updateUserProfile(userId: string, profile: Partial<InsertUserProfile>): Promise<UserProfile | undefined>;
+  deleteUserProfile(userId: string): Promise<boolean>;
 
   // Organization methods
   getOrganizations(): Promise<Organization[]>;
@@ -623,6 +626,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // User profile methods
+  async getUserProfiles(): Promise<UserProfile[]> {
+    return await db.select().from(userProfiles).orderBy(desc(userProfiles.updatedAt));
+  }
+
   async getUserProfile(userId: string): Promise<UserProfile | undefined> {
     const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId));
     return profile;
@@ -648,6 +655,20 @@ export class DatabaseStorage implements IStorage {
     }
     const [created] = await db.insert(userProfiles).values(profile).returning();
     return created;
+  }
+
+  async updateUserProfile(userId: string, profile: Partial<InsertUserProfile>): Promise<UserProfile | undefined> {
+    const [updated] = await db
+      .update(userProfiles)
+      .set({ ...profile, updatedAt: new Date() })
+      .where(eq(userProfiles.userId, userId))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteUserProfile(userId: string): Promise<boolean> {
+    const result = await db.delete(userProfiles).where(eq(userProfiles.userId, userId));
+    return (result.rowCount ?? 0) > 0;
   }
 
   // Organization methods

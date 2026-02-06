@@ -1,0 +1,15 @@
+name = "abateiq"
+main = "server/worker.ts"
+compatibility_date = "2026-02-06"
+
+[assets]
+directory = "./dist/public"
+
+[vars]
+NEON_JWKS_URL = "https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech/neondb/auth/.well-known/jwks.json"
+NEON_JWT_ISSUER = "https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech"
+NEON_JWT_AUDIENCE = "https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech"
+
+[[r2_buckets]]
+binding = "ABATEIQ_UPLOADS"
+bucket_name = "abateiq-uploads"

@@ -1,13 +1,15 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertSurveySchema, insertObservationSchema, insertAirMonitoringJobSchema, insertDailyWeatherLogSchema, insertPersonnelProfileSchema, insertFieldToolsEquipmentSchema, insertUserProfileSchema, insertAsbestosSampleSchema, insertPaintSampleSchema, insertOrganizationSchema, insertOrganizationMemberSchema } from "@shared/schema";
+import { insertSurveySchema, insertObservationSchema, insertAirMonitoringJobSchema, insertDailyWeatherLogSchema, insertPersonnelProfileSchema, insertFieldToolsEquipmentSchema, insertUserProfileSchema, insertAsbestosSampleSchema, insertPaintSampleSchema, insertOrganizationSchema, insertOrganizationMemberSchema, surveys as surveysTable, airSamples as airSamplesTable, observations as observationsTable, userProfiles as userProfilesTable } from "@shared/schema";
 import type { Survey, Observation, ObservationPhoto, AirMonitoringJob, AirSample, DailyWeatherLog, AsbestosSample, PaintSample, AsbestosSampleLayer, AsbestosSamplePhoto, PaintSamplePhoto } from "@shared/schema";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
 import { nanoid } from "nanoid";
-import { getUserDisplayName, requireAdmin } from "./auth";
+import { getUserDisplayName, requireAdmin, requireAuth } from "./auth";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 // Configure multer for file uploads
@@ -2763,56 +2765,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
 
-  // Mock system stats for admin dashboard
-  const mockSystemStats = {
-    totalUsers: 25,
-    activeUsers: 18,
-    totalSurveys: 150,
-    totalAirSamples: 89,
-    databaseSize: "2.4 GB",
-    systemUptime: "15 days, 8 hours",
-    lastBackup: "2025-01-13T02:00:00Z"
+  const formatBytes = (bytes: number) => {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 MB";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let size = bytes;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex += 1;
+    }
+    return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
   };
 
-  // Mock users data for admin dashboard
-  const mockUsers = [
-    {
-      id: "user-1",
-      firstName: "John",
-      lastName: "Inspector",
-      email: "john.inspector@company.com",
-      role: "admin",
-      status: "active",
-      organization: "Environmental Solutions Inc.",
-      jobTitle: "Senior Environmental Consultant",
-      lastLogin: "2025-01-13T14:30:00Z",
-      createdAt: "2024-01-15T10:00:00Z"
-    },
-    {
-      id: "user-2", 
-      firstName: "Sarah",
-      lastName: "Johnson",
-      email: "sarah.johnson@company.com",
-      role: "manager",
-      status: "active",
-      organization: "Environmental Solutions Inc.",
-      jobTitle: "Project Manager",
-      lastLogin: "2025-01-13T09:15:00Z",
-      createdAt: "2024-02-20T14:00:00Z"
-    },
-    {
-      id: "user-3",
-      firstName: "Mike",
-      lastName: "Chen",
-      email: "mike.chen@company.com", 
-      role: "user",
-      status: "active",
-      organization: "Environmental Solutions Inc.",
-      jobTitle: "Field Technician",
-      lastLogin: "2025-01-12T16:45:00Z",
-      createdAt: "2024-03-10T11:30:00Z"
+  const formatDuration = (seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds <= 0) return "0 minutes";
+    const totalMinutes = Math.floor(seconds / 60);
+    const days = Math.floor(totalMinutes / (60 * 24));
+    const hours = Math.floor((totalMinutes - days * 60 * 24) / 60);
+    const minutes = totalMinutes % 60;
+    const parts = [];
+    if (days) parts.push(`${days} day${days === 1 ? "" : "s"}`);
+    if (hours) parts.push(`${hours} hour${hours === 1 ? "" : "s"}`);
+    if (!parts.length && minutes) parts.push(`${minutes} minute${minutes === 1 ? "" : "s"}`);
+    return parts.join(", ") || "0 minutes";
+  };
+
+  const getUploadsStats = async () => {
+    const uploadsRoot = path.join(process.cwd(), "uploads");
+    let totalBytes = 0;
+    let fileCount = 0;
+    const walk = async (dir: string) => {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(fullPath);
+        } else if (entry.isFile()) {
+          const stat = await fs.stat(fullPath);
+          totalBytes += stat.size;
+          fileCount += 1;
+        }
+      }
+    };
+    try {
+      await walk(uploadsRoot);
+    } catch {
+      return { totalBytes: 0, fileCount: 0 };
     }
-  ];
+    return { totalBytes, fileCount };
+  };
+
 
   // User Profile Routes (DB-backed)
   app.get("/api/user/profile", async (req, res) => {
@@ -2923,6 +2925,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       email: user.email,
       name: getUserDisplayName(user),
       user,
+    });
+  });
+
+  app.get("/api/auth/claims", requireAuth, (req, res) => {
+    const user = req.user || {};
+    res.json({
+      iss: (user as any).iss,
+      aud: (user as any).aud,
+      sub: (user as any).sub,
+      email: (user as any).email,
     });
   });
 
@@ -3052,74 +3064,138 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin Routes
-  app.get("/api/admin/stats", requireAdmin, (req, res) => {
-    res.json(mockSystemStats);
-  });
+  app.get("/api/admin/stats", requireAdmin, async (_req, res) => {
+    let dbConnected = true;
+    try {
+      const [
+        totalUsersResult,
+        activeUsersResult,
+        totalSurveysResult,
+        totalAirSamplesResult,
+        dbSizeResult,
+      ] = await Promise.all([
+        db.select({ count: sql<number>`count(*)` }).from(userProfilesTable),
+        db.select({ count: sql<number>`count(*)` })
+          .from(userProfilesTable)
+          .where(sql`lower(coalesce(${userProfilesTable.status}, '')) = 'active'`),
+        db.select({ count: sql<number>`count(*)` }).from(surveysTable),
+        db.select({ count: sql<number>`count(*)` }).from(airSamplesTable),
+        db.execute(sql`select pg_database_size(current_database()) as size`),
+      ]);
 
-  app.get("/api/admin/users", requireAdmin, (req, res) => {
-    res.json(mockUsers);
-  });
+      const totalUsers = Number(totalUsersResult?.[0]?.count ?? 0);
+      const activeUsers = Number(activeUsersResult?.[0]?.count ?? 0);
+      const totalSurveys = Number(totalSurveysResult?.[0]?.count ?? 0);
+      const totalAirSamples = Number(totalAirSamplesResult?.[0]?.count ?? 0);
+      const databaseSizeBytes = Number((dbSizeResult as any)?.rows?.[0]?.size ?? 0);
 
-  app.post("/api/admin/users", requireAdmin, (req, res) => {
-    const { firstName, lastName, email, password, organization, jobTitle, role, status } = req.body;
-    
-    if (!password || password.length < 6) {
-      return res.status(400).json({ error: "Password must be at least 6 characters long" });
+      const uploads = await getUploadsStats();
+      res.json({
+        totalUsers,
+        activeUsers,
+        totalSurveys,
+        totalAirSamples,
+        databaseSize: formatBytes(databaseSizeBytes),
+        databaseSizeBytes,
+        uploadedFilesSize: formatBytes(uploads.totalBytes),
+        uploadedFilesSizeBytes: uploads.totalBytes,
+        uploadedFilesCount: uploads.fileCount,
+        systemUptime: formatDuration(process.uptime()),
+        lastBackup: null,
+        dbConnected,
+      });
+    } catch (error) {
+      dbConnected = false;
+      const uploads = await getUploadsStats();
+      res.json({
+        totalUsers: 0,
+        activeUsers: 0,
+        totalSurveys: 0,
+        totalAirSamples: 0,
+        databaseSize: "Unknown",
+        databaseSizeBytes: 0,
+        uploadedFilesSize: formatBytes(uploads.totalBytes),
+        uploadedFilesSizeBytes: uploads.totalBytes,
+        uploadedFilesCount: uploads.fileCount,
+        systemUptime: formatDuration(process.uptime()),
+        lastBackup: null,
+        dbConnected,
+      });
     }
-    
-    const newUser = {
-      id: `user-${Date.now()}`,
-      firstName,
-      lastName,
-      email,
-      organization,
-      jobTitle,
-      role: role || "user",
-      status: status || "active",
-      lastLogin: null,
-      createdAt: new Date().toISOString()
-    };
-    
-    // In real app, save to database with hashed password
-    mockUsers.push(newUser);
-    
-    res.status(201).json(newUser);
   });
 
-  app.put("/api/admin/users/:id", requireAdmin, (req, res) => {
-    const { id } = req.params;
-    const { firstName, lastName, email, organization, jobTitle, role, status } = req.body;
-    
-    const userIndex = mockUsers.findIndex(user => user.id === id);
-    if (userIndex === -1) {
-      return res.status(404).json({ error: "User not found" });
+  app.get("/api/admin/users", requireAdmin, async (_req, res) => {
+    try {
+      const profiles = await storage.getUserProfiles();
+      res.json(
+        profiles.map((profile) => ({
+          id: profile.userId,
+          firstName: profile.firstName || "",
+          lastName: profile.lastName || "",
+          email: profile.email || "",
+          role: (profile.role as "admin" | "manager" | "user") || "user",
+          status: (profile.status as "active" | "inactive" | "pending") || "active",
+          organization: profile.organization || "",
+          jobTitle: profile.jobTitle || "",
+          lastLogin: profile.updatedAt ? new Date(profile.updatedAt).toISOString() : null,
+          createdAt: profile.createdAt ? new Date(profile.createdAt).toISOString() : new Date().toISOString(),
+        }))
+      );
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch users", error: error instanceof Error ? error.message : "Unknown error" });
     }
-    
-    // Update user data
-    mockUsers[userIndex] = {
-      ...mockUsers[userIndex],
-      firstName,
-      lastName,
-      email,
-      organization,
-      jobTitle,
-      role,
-      status
-    };
-    
-    res.json(mockUsers[userIndex]);
   });
 
-  app.delete("/api/admin/users/:id", requireAdmin, (req, res) => {
-    const { id } = req.params;
-    const userIndex = mockUsers.findIndex(user => user.id === id);
-    
-    if (userIndex === -1) {
-      return res.status(404).json({ error: "User not found" });
+  app.post("/api/admin/users", requireAdmin, (_req, res) => {
+    res.status(400).json({
+      error: "Admin user creation is not supported yet. Use the registration flow to create auth users.",
+    });
+  });
+
+  app.put("/api/admin/users/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { firstName, lastName, email, organization, jobTitle, role, status } = req.body;
+      const updated = await storage.updateUserProfile(id, {
+        firstName,
+        lastName,
+        email,
+        organization,
+        jobTitle,
+        role,
+        status,
+      });
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json({
+        id: updated.userId,
+        firstName: updated.firstName || "",
+        lastName: updated.lastName || "",
+        email: updated.email || "",
+        role: (updated.role as "admin" | "manager" | "user") || "user",
+        status: (updated.status as "active" | "inactive" | "pending") || "active",
+        organization: updated.organization || "",
+        jobTitle: updated.jobTitle || "",
+        lastLogin: updated.updatedAt ? new Date(updated.updatedAt).toISOString() : null,
+        createdAt: updated.createdAt ? new Date(updated.createdAt).toISOString() : new Date().toISOString(),
+      });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to update user" });
     }
-    
-    mockUsers.splice(userIndex, 1);
-    res.json({ success: true, message: "User deleted successfully" });
+  });
+
+  app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteUserProfile(id);
+      if (!deleted) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json({ success: true, message: "User deleted successfully" });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to delete user" });
+    }
   });
 
   // White-label brand settings
@@ -3147,17 +3223,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Data management endpoints
-  app.get("/api/admin/data-management", requireAdmin, (req, res) => {
-    res.json({
-      totalSurveys: surveys.length,
-      totalUsers: mockUsers.length,
-      totalAirSamples: airSamples.length,
-      totalObservations: observations.length,
-      databaseSize: "45.2 MB",
-      lastBackup: "2025-01-12T10:30:00Z",
-      autoBackupEnabled: true,
-      retentionPeriod: 365
-    });
+  app.get("/api/admin/data-management", requireAdmin, async (_req, res) => {
+    try {
+      const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(userProfilesTable);
+      const [surveyCount] = await db.select({ count: sql<number>`count(*)` }).from(surveysTable);
+      const [airSampleCount] = await db.select({ count: sql<number>`count(*)` }).from(airSamplesTable);
+      const [observationCount] = await db.select({ count: sql<number>`count(*)` }).from(observationsTable);
+      res.json({
+        totalSurveys: Number(surveyCount?.count ?? 0),
+        totalUsers: Number(userCount?.count ?? 0),
+        totalAirSamples: Number(airSampleCount?.count ?? 0),
+        totalObservations: Number(observationCount?.count ?? 0),
+        databaseSize: "Unknown",
+        lastBackup: null,
+        autoBackupEnabled: true,
+        retentionPeriod: 365
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch data management stats", error: error instanceof Error ? error.message : "Unknown error" });
+    }
   });
 
   app.post("/api/admin/backup", requireAdmin, (req, res) => {

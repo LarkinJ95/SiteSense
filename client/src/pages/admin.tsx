@@ -53,8 +53,13 @@ interface SystemStats {
   totalSurveys: number;
   totalAirSamples: number;
   databaseSize: string;
+  databaseSizeBytes?: number;
+  uploadedFilesSize?: string;
+  uploadedFilesSizeBytes?: number;
+  uploadedFilesCount?: number;
   systemUptime: string;
-  lastBackup?: string;
+  lastBackup?: string | null;
+  dbConnected?: boolean;
 }
 
 interface Organization {
@@ -146,6 +151,13 @@ export default function AdminDashboard() {
     queryKey: ["/api/organizations", selectedOrganization?.id, "members"],
     enabled: !!selectedOrganization?.id,
   });
+
+  const databasePercent = systemStats?.databaseSizeBytes
+    ? Math.min(100, (systemStats.databaseSizeBytes / (1024 ** 3)) * 100)
+    : 0;
+  const uploadsPercent = systemStats?.uploadedFilesSizeBytes
+    ? Math.min(100, (systemStats.uploadedFilesSizeBytes / (1024 ** 3)) * 100)
+    : 0;
 
   // Filtered users based on search
   const filteredUsers = users.filter(user => 
@@ -893,9 +905,13 @@ export default function AdminDashboard() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Database Connection</span>
-                  <Badge className="bg-green-100 text-green-800">
-                    <CheckCircle className="h-3 w-3 mr-1" />
-                    Connected
+                  <Badge className={systemStats?.dbConnected ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
+                    {systemStats?.dbConnected ? (
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                    ) : (
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                    )}
+                    {systemStats?.dbConnected ? "Connected" : "Disconnected"}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
@@ -923,16 +939,16 @@ export default function AdminDashboard() {
                       <span>{systemStats?.databaseSize || "0 MB"}</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
-                      <div className="bg-blue-600 h-2 rounded-full" style={{ width: "25%" }}></div>
+                      <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${databasePercent}%` }}></div>
                     </div>
                   </div>
                   <div>
                     <div className="flex justify-between text-sm">
                       <span>Uploaded Files</span>
-                      <span>156 MB</span>
+                      <span>{systemStats?.uploadedFilesSize || "0 MB"}</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
-                      <div className="bg-green-600 h-2 rounded-full" style={{ width: "15%" }}></div>
+                      <div className="bg-green-600 h-2 rounded-full" style={{ width: `${uploadsPercent}%` }}></div>
                     </div>
                   </div>
                 </div>
