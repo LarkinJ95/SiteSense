@@ -3,6 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-13%2B-blue.svg)](https://www.postgresql.org/)
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-orange.svg)](https://developers.cloudflare.com/workers/)
 
 ## Overview
 
@@ -38,12 +39,12 @@ AbateIQ is a comprehensive full-stack web application designed for environmental
 
 ## Quick Start
 
-### Development Setup
+### Development Setup (Cloudflare Workers)
 
 ```bash
 # Clone the repository
 git clone https://github.com/LarkinJ95/sitesense.git
-cd sitesense
+cd SiteSense-main
 
 # Install dependencies
 npm install
@@ -59,11 +60,12 @@ npm run db:push
 npm run dev
 ```
 
-Visit `http://localhost:5000` to access the application.
+Visit `http://127.0.0.1:5050` to access the application.
 
-### Production Deployment
+### Production Deployment (Cloudflare-native)
 
 See [DEPLOYMENT.md](./DEPLOYMENT.md) for comprehensive deployment instructions including Docker, cloud providers, and on-premise setup.
+Cloudflare Workers and Pages are the supported production targets for this repo.
 
 ## Architecture
 
@@ -78,11 +80,11 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for comprehensive deployment instructions i
 - Wouter for routing
 
 **Backend**
-- Node.js with Express.js
+- Cloudflare Workers + Hono
 - TypeScript for type safety
 - Drizzle ORM for database operations
-- Multer for file uploads
-- Express session management
+- Neon serverless Postgres (fetch-based)
+- Cloudflare R2 for file uploads
 
 **Database**
 - PostgreSQL 13+ (primary)
@@ -90,8 +92,7 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for comprehensive deployment instructions i
 
 **External Services**
 - WeatherAPI.com for weather data
-- Replit Object Storage for file management
-- Google Cloud Storage (via Replit)
+- Cloudflare R2 for file storage
 
 ### Project Structure
 
@@ -103,14 +104,13 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for comprehensive deployment instructions i
 │   │   ├── hooks/          # Custom React hooks
 │   │   ├── lib/            # Utilities and configurations
 │   │   └── contexts/       # React contexts
-├── server/                 # Backend Express application
+├── server/                 # Cloudflare Worker API
 │   ├── db.ts              # Database configuration
 │   ├── routes.ts          # API route definitions
 │   ├── storage.ts         # Data access layer
-│   └── index.ts           # Server entry point
+│   └── worker.ts          # Worker entry point
 ├── shared/                 # Shared types and schemas
 │   └── schema.ts          # Database schema definitions
-├── uploads/               # File upload directory
 └── docs/                  # Documentation
 ```
 
@@ -143,7 +143,7 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for comprehensive deployment instructions i
 ## API Documentation
 
 ### Authentication
-All API endpoints require proper authentication. The system supports session-based authentication with role-based access control.
+All API endpoints require proper authentication. The system uses Neon Auth JWTs with role-based access control.
 
 ### Core Endpoints
 
@@ -178,27 +178,49 @@ Create a `.env` file with the following variables:
 ```env
 # Database Configuration
 DATABASE_URL=postgresql://user:password@localhost:5432/sitesense
-PGHOST=localhost
-PGPORT=5432
-PGUSER=sitesense
-PGPASSWORD=your_password
-PGDATABASE=sitesense
 
 # Weather API
 WEATHERAPI_KEY=your_weatherapi_key
 
-# Object Storage (Optional)
-DEFAULT_OBJECT_STORAGE_BUCKET_ID=your_bucket_id
-PUBLIC_OBJECT_SEARCH_PATHS=your_search_paths
-PRIVATE_OBJECT_DIR=your_private_dir
-
-# Session Configuration
-SESSION_SECRET=your_session_secret
-
 # Application Settings
 NODE_ENV=production
-PORT=5000
+
+# Neon Auth JWT Verification
+NEON_JWKS_URL=https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech/neondb/auth/.well-known/jwks.json
+NEON_JWT_ISSUER=https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech
+NEON_JWT_AUDIENCE=https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech
 ```
+
+### Cloudflare Variables
+
+Set these in Cloudflare (Workers/Pages → Settings → Variables):
+
+```env
+DATABASE_URL=postgresql://user:password@host/db
+WEATHERAPI_KEY=your_weatherapi_key
+NEON_JWKS_URL=https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech/neondb/auth/.well-known/jwks.json
+NEON_JWT_ISSUER=https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech
+NEON_JWT_AUDIENCE=https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech
+```
+
+Create an R2 bucket named `abateiq-uploads` and bind it as `ABATEIQ_UPLOADS`.
+
+## Cloudflare Deployment
+
+1. Build the client
+   ```bash
+   npm run build
+   ```
+2. Deploy Worker + assets
+   ```bash
+   npx wrangler deploy
+   ```
+
+## Breaking Changes (Cloudflare-native)
+
+- Express server has been replaced by a Cloudflare Worker.
+- Local file uploads are now stored in Cloudflare R2.
+- `npm run dev` now uses `wrangler dev` and runs on `http://127.0.0.1:5050`.
 
 ### Weather API Setup
 
@@ -245,15 +267,13 @@ GRANT ALL PRIVILEGES ON DATABASE sitesense TO sitesense;
 # Apply database schema
 npm run db:push
 
-# Reset database (development only)
-npm run db:reset
 ```
 
 ## Security Considerations
 
 - Always use HTTPS in production
 - Implement proper input validation
-- Use strong session secrets
+- Validate JWT `iss` and `aud` claims
 - Regularly update dependencies
 - Enable database connection encryption
 - Implement rate limiting for API endpoints
@@ -291,16 +311,16 @@ psql -h localhost -U sitesense -d sitesense
 - Check rate limits
 - Ensure internet connectivity
 
-**File Upload Issues**
-- Check directory permissions for uploads folder
-- Verify disk space availability
-- Check multer configuration
+**File Upload Issues (R2)**
+- Verify the R2 bucket exists and is bound as `ABATEIQ_UPLOADS`
+- Check R2 permissions in Cloudflare
+- Confirm uploads are being written to R2 in the Worker
 
 ### Logs and Monitoring
 
 Application logs are available in:
-- Development: Console output
-- Production: Check your process manager logs (PM2, systemd, etc.)
+- Development: `wrangler dev` console output
+- Production: Cloudflare Workers logs
 
 ## Contributing
 
