@@ -1,8 +1,10 @@
 import { Request, Response } from "express";
-import { db } from "./db";
+import { getDb } from "./db";
 import { surveyTemplates, checklistTemplates, checklistItems, observationTemplates, surveyInstances, checklistResponses } from "@shared/template-schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
+
+const db = () => getDb();
 
 // Template schemas
 const createSurveyTemplateSchema = z.object({
@@ -59,7 +61,7 @@ export async function getSurveyTemplates(req: Request, res: Response) {
       );
     }
 
-    const query = db.select().from(surveyTemplates).where(and(...whereConditions));
+    const query = db().select().from(surveyTemplates).where(and(...whereConditions));
 
     const templates = await query.orderBy(desc(surveyTemplates.usageCount));
 

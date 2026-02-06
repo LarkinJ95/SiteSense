@@ -10,7 +10,7 @@ import {
   observations as observationsTable,
 } from "@shared/schema";
 import { storage } from "./storage";
-import { db } from "./db";
+import { getDb } from "./db";
 import { sql } from "drizzle-orm";
 
 type Env = {
@@ -20,6 +20,7 @@ type Env = {
   NEON_JWT_ISSUER?: string;
   NEON_JWT_AUDIENCE?: string;
   ADMIN_EMAILS?: string;
+  DATABASE_URL?: string;
 };
 
 type AuthUser = {
@@ -72,6 +73,9 @@ const isAdminUser = (user: AuthUser | undefined, adminEmails: string[]) => {
 };
 
 app.use("/api/*", async (c, next) => {
+  if (c.env.DATABASE_URL && !(globalThis as { DATABASE_URL?: string }).DATABASE_URL) {
+    (globalThis as { DATABASE_URL?: string }).DATABASE_URL = c.env.DATABASE_URL;
+  }
   if (c.req.path.startsWith("/api/auth/")) return next();
   if (c.req.path === "/api/health") return next();
 
@@ -334,6 +338,7 @@ app.get("/api/admin/stats", async (c) => {
   if (!isAdminUser(user, adminEmails)) {
     return c.json({ message: "Admin access required" }, 403);
   }
+  const db = getDb();
   const [totalUsersResult] = await db.select({ count: sql<number>`count(*)` }).from(userProfiles);
   const [activeUsersResult] = await db
     .select({ count: sql<number>`count(*)` })
@@ -439,6 +444,7 @@ app.get("/api/admin/data-management", async (c) => {
   if (!isAdminUser(user, adminEmails)) {
     return c.json({ message: "Admin access required" }, 403);
   }
+  const db = getDb();
   const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(userProfiles);
   const [surveyCount] = await db.select({ count: sql<number>`count(*)` }).from(surveysTable);
   const [airSampleCount] = await db.select({ count: sql<number>`count(*)` }).from(airSamplesTable);

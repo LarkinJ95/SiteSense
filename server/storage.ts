@@ -56,9 +56,11 @@ import {
   type DailyWeatherLog,
   type InsertDailyWeatherLog
 } from "@shared/schema";
-import { db } from "./db";
+import { getDb } from "./db";
 import { eq, desc, ilike, or, and, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
+
+const db = () => getDb();
 
 export interface IStorage {
   // Survey methods
@@ -217,11 +219,11 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   async getSurveys(): Promise<Survey[]> {
-    return await db.select().from(surveys).orderBy(desc(surveys.updatedAt));
+    return await db().select().from(surveys).orderBy(desc(surveys.updatedAt));
   }
 
   async getSurvey(id: string): Promise<Survey | undefined> {
-    const [survey] = await db.select().from(surveys).where(eq(surveys.id, id));
+    const [survey] = await db().select().from(surveys).where(eq(surveys.id, id));
     return survey || undefined;
   }
 
@@ -252,7 +254,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteSurvey(id: string): Promise<boolean> {
-    const result = await db.delete(surveys).where(eq(surveys.id, id));
+    const result = await db().delete(surveys).where(eq(surveys.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -281,7 +283,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getObservation(id: string): Promise<Observation | undefined> {
-    const [observation] = await db.select().from(observations).where(eq(observations.id, id));
+    const [observation] = await db().select().from(observations).where(eq(observations.id, id));
     return observation || undefined;
   }
 
@@ -303,7 +305,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteObservation(id: string): Promise<boolean> {
-    const result = await db.delete(observations).where(eq(observations.id, id));
+    const result = await db().delete(observations).where(eq(observations.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -315,7 +317,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getObservationPhoto(id: string): Promise<ObservationPhoto | undefined> {
-    const [photo] = await db.select().from(observationPhotos).where(eq(observationPhotos.id, id));
+    const [photo] = await db().select().from(observationPhotos).where(eq(observationPhotos.id, id));
     return photo || undefined;
   }
 
@@ -328,7 +330,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteObservationPhoto(id: string): Promise<boolean> {
-    const result = await db.delete(observationPhotos).where(eq(observationPhotos.id, id));
+    const result = await db().delete(observationPhotos).where(eq(observationPhotos.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -341,12 +343,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAsbestosSample(id: string): Promise<AsbestosSample | undefined> {
-    const [sample] = await db.select().from(asbestosSamples).where(eq(asbestosSamples.id, id));
+    const [sample] = await db().select().from(asbestosSamples).where(eq(asbestosSamples.id, id));
     return sample || undefined;
   }
 
   async createAsbestosSample(sample: InsertAsbestosSample): Promise<AsbestosSample> {
-    const [created] = await db.insert(asbestosSamples).values(sample).returning();
+    const [created] = await db().insert(asbestosSamples).values(sample).returning();
     return created;
   }
 
@@ -360,7 +362,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteAsbestosSample(id: string): Promise<boolean> {
-    const result = await db.delete(asbestosSamples).where(eq(asbestosSamples.id, id));
+    const result = await db().delete(asbestosSamples).where(eq(asbestosSamples.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -373,7 +375,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async replaceAsbestosSampleLayers(sampleId: string, layers: InsertAsbestosSampleLayer[]): Promise<AsbestosSampleLayer[]> {
-    return await db.transaction(async (tx) => {
+    return await db().transaction(async (tx) => {
       await tx.delete(asbestosSampleLayers).where(eq(asbestosSampleLayers.sampleId, sampleId));
       if (!layers.length) return [];
       const created = await tx.insert(asbestosSampleLayers).values(layers).returning();
@@ -390,17 +392,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAsbestosSamplePhoto(id: string): Promise<AsbestosSamplePhoto | undefined> {
-    const [photo] = await db.select().from(asbestosSamplePhotos).where(eq(asbestosSamplePhotos.id, id));
+    const [photo] = await db().select().from(asbestosSamplePhotos).where(eq(asbestosSamplePhotos.id, id));
     return photo || undefined;
   }
 
   async createAsbestosSamplePhoto(photo: { sampleId: string; url: string; filename?: string | null }): Promise<AsbestosSamplePhoto> {
-    const [created] = await db.insert(asbestosSamplePhotos).values(photo).returning();
+    const [created] = await db().insert(asbestosSamplePhotos).values(photo).returning();
     return created;
   }
 
   async deleteAsbestosSamplePhoto(id: string): Promise<boolean> {
-    const result = await db.delete(asbestosSamplePhotos).where(eq(asbestosSamplePhotos.id, id));
+    const result = await db().delete(asbestosSamplePhotos).where(eq(asbestosSamplePhotos.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -413,12 +415,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPaintSample(id: string): Promise<PaintSample | undefined> {
-    const [sample] = await db.select().from(paintSamples).where(eq(paintSamples.id, id));
+    const [sample] = await db().select().from(paintSamples).where(eq(paintSamples.id, id));
     return sample || undefined;
   }
 
   async createPaintSample(sample: InsertPaintSample): Promise<PaintSample> {
-    const [created] = await db.insert(paintSamples).values(sample).returning();
+    const [created] = await db().insert(paintSamples).values(sample).returning();
     return created;
   }
 
@@ -432,7 +434,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deletePaintSample(id: string): Promise<boolean> {
-    const result = await db.delete(paintSamples).where(eq(paintSamples.id, id));
+    const result = await db().delete(paintSamples).where(eq(paintSamples.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -445,17 +447,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPaintSamplePhoto(id: string): Promise<PaintSamplePhoto | undefined> {
-    const [photo] = await db.select().from(paintSamplePhotos).where(eq(paintSamplePhotos.id, id));
+    const [photo] = await db().select().from(paintSamplePhotos).where(eq(paintSamplePhotos.id, id));
     return photo || undefined;
   }
 
   async createPaintSamplePhoto(photo: { sampleId: string; url: string; filename?: string | null }): Promise<PaintSamplePhoto> {
-    const [created] = await db.insert(paintSamplePhotos).values(photo).returning();
+    const [created] = await db().insert(paintSamplePhotos).values(photo).returning();
     return created;
   }
 
   async deletePaintSamplePhoto(id: string): Promise<boolean> {
-    const result = await db.delete(paintSamplePhotos).where(eq(paintSamplePhotos.id, id));
+    const result = await db().delete(paintSamplePhotos).where(eq(paintSamplePhotos.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -465,9 +467,9 @@ export class DatabaseStorage implements IStorage {
     samplesCollected: number;
     activeSites: number;
   }> {
-    const totalSurveys = await db.select().from(surveys);
-    const pendingReviews = await db.select().from(surveys).where(eq(surveys.status, 'in-progress'));
-    const allObservations = await db.select().from(observations);
+    const totalSurveys = await db().select().from(surveys);
+    const pendingReviews = await db().select().from(surveys).where(eq(surveys.status, 'in-progress'));
+    const allObservations = await db().select().from(observations);
     const samplesCollected = allObservations.filter(obs => obs.sampleCollected).length;
     const activeSites = new Set(totalSurveys.map(s => s.siteName)).size;
 
@@ -481,16 +483,16 @@ export class DatabaseStorage implements IStorage {
 
   // Personnel methods
   async getPersonnel(): Promise<PersonnelProfile[]> {
-    return await db.select().from(personnelProfiles).orderBy(desc(personnelProfiles.createdAt));
+    return await db().select().from(personnelProfiles).orderBy(desc(personnelProfiles.createdAt));
   }
 
   async getPersonnelProfile(id: string): Promise<PersonnelProfile | undefined> {
-    const [profile] = await db.select().from(personnelProfiles).where(eq(personnelProfiles.id, id));
+    const [profile] = await db().select().from(personnelProfiles).where(eq(personnelProfiles.id, id));
     return profile;
   }
 
   async createPersonnelProfile(profile: InsertPersonnelProfile): Promise<PersonnelProfile> {
-    const [newProfile] = await db.insert(personnelProfiles).values(profile).returning();
+    const [newProfile] = await db().insert(personnelProfiles).values(profile).returning();
     return newProfile;
   }
 
@@ -504,28 +506,28 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deletePersonnelProfile(id: string): Promise<boolean> {
-    const result = await db.delete(personnelProfiles).where(eq(personnelProfiles.id, id));
+    const result = await db().delete(personnelProfiles).where(eq(personnelProfiles.id, id));
     return result.rowCount !== null && result.rowCount > 0;
   }
 
   // Air monitoring job methods
   async getAirMonitoringJobs(): Promise<AirMonitoringJob[]> {
-    return await db.select().from(airMonitoringJobs).orderBy(desc(airMonitoringJobs.createdAt));
+    return await db().select().from(airMonitoringJobs).orderBy(desc(airMonitoringJobs.createdAt));
   }
 
   async getAirMonitoringJob(id: string): Promise<AirMonitoringJob | undefined> {
-    const [job] = await db.select().from(airMonitoringJobs).where(eq(airMonitoringJobs.id, id));
+    const [job] = await db().select().from(airMonitoringJobs).where(eq(airMonitoringJobs.id, id));
     return job || undefined;
   }
 
   async getAirMonitoringJobById(id: string): Promise<AirMonitoringJob> {
-    const [job] = await db.select().from(airMonitoringJobs).where(eq(airMonitoringJobs.id, id));
+    const [job] = await db().select().from(airMonitoringJobs).where(eq(airMonitoringJobs.id, id));
     if (!job) throw new Error('Air monitoring job not found');
     return job;
   }
 
   async createAirMonitoringJob(job: InsertAirMonitoringJob): Promise<AirMonitoringJob> {
-    const [newJob] = await db.insert(airMonitoringJobs).values(job).returning();
+    const [newJob] = await db().insert(airMonitoringJobs).values(job).returning();
     return newJob;
   }
 
@@ -539,32 +541,32 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteAirMonitoringJob(id: string): Promise<boolean> {
-    const result = await db.delete(airMonitoringJobs).where(eq(airMonitoringJobs.id, id));
+    const result = await db().delete(airMonitoringJobs).where(eq(airMonitoringJobs.id, id));
     return result.rowCount !== null && result.rowCount > 0;
   }
 
   async getAirMonitoringJobSamples(jobId: string): Promise<AirSample[]> {
-    return await db.select().from(airSamples).where(eq(airSamples.jobId, jobId)).orderBy(desc(airSamples.createdAt));
+    return await db().select().from(airSamples).where(eq(airSamples.jobId, jobId)).orderBy(desc(airSamples.createdAt));
   }
 
   // Air sample methods
   async getAirSamples(): Promise<AirSample[]> {
-    return await db.select().from(airSamples).orderBy(desc(airSamples.createdAt));
+    return await db().select().from(airSamples).orderBy(desc(airSamples.createdAt));
   }
 
   async getAirSample(id: string): Promise<AirSample | undefined> {
-    const [sample] = await db.select().from(airSamples).where(eq(airSamples.id, id));
+    const [sample] = await db().select().from(airSamples).where(eq(airSamples.id, id));
     return sample;
   }
 
   async createAirSample(sample: InsertAirSample): Promise<AirSample> {
-    const [newSample] = await db.insert(airSamples).values(sample).returning();
+    const [newSample] = await db().insert(airSamples).values(sample).returning();
     return newSample;
   }
 
   async updateAirSample(id: string, sample: Partial<InsertAirSample>): Promise<AirSample | undefined> {
     try {
-      const [updatedSample] = await db.update(airSamples)
+      const [updatedSample] = await db().update(airSamples)
         .set({ ...sample, updatedAt: new Date() })
         .where(eq(airSamples.id, id))
         .returning();
@@ -576,22 +578,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteAirSample(id: string): Promise<boolean> {
-    const result = await db.delete(airSamples).where(eq(airSamples.id, id));
+    const result = await db().delete(airSamples).where(eq(airSamples.id, id));
     return result.rowCount !== null && result.rowCount > 0;
   }
 
   // Air monitoring equipment methods
   async getAirMonitoringEquipment(): Promise<AirMonitoringEquipment[]> {
-    return await db.select().from(airMonitoringEquipment).orderBy(desc(airMonitoringEquipment.createdAt));
+    return await db().select().from(airMonitoringEquipment).orderBy(desc(airMonitoringEquipment.createdAt));
   }
 
   async getAirMonitoringEquipmentItem(id: string): Promise<AirMonitoringEquipment | undefined> {
-    const [equipment] = await db.select().from(airMonitoringEquipment).where(eq(airMonitoringEquipment.id, id));
+    const [equipment] = await db().select().from(airMonitoringEquipment).where(eq(airMonitoringEquipment.id, id));
     return equipment;
   }
 
   async createAirMonitoringEquipment(equipment: InsertAirMonitoringEquipment): Promise<AirMonitoringEquipment> {
-    const [newEquipment] = await db.insert(airMonitoringEquipment).values(equipment).returning();
+    const [newEquipment] = await db().insert(airMonitoringEquipment).values(equipment).returning();
     return newEquipment;
   }
 
@@ -605,33 +607,33 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteAirMonitoringEquipment(id: string): Promise<boolean> {
-    const result = await db.delete(airMonitoringEquipment).where(eq(airMonitoringEquipment.id, id));
+    const result = await db().delete(airMonitoringEquipment).where(eq(airMonitoringEquipment.id, id));
     return result.rowCount !== null && result.rowCount > 0;
   }
 
   // Field tools equipment methods
   async getFieldToolsEquipment(userId: string): Promise<FieldToolsEquipment[]> {
-    return await db.select().from(fieldToolsEquipment).where(eq(fieldToolsEquipment.userId, userId));
+    return await db().select().from(fieldToolsEquipment).where(eq(fieldToolsEquipment.userId, userId));
   }
 
   async replaceFieldToolsEquipment(userId: string, items: InsertFieldToolsEquipment[]): Promise<FieldToolsEquipment[]> {
-    await db.delete(fieldToolsEquipment).where(eq(fieldToolsEquipment.userId, userId));
+    await db().delete(fieldToolsEquipment).where(eq(fieldToolsEquipment.userId, userId));
     if (!items.length) return [];
     const payload = items.map((item) => ({
       ...item,
       userId,
     }));
-    const inserted = await db.insert(fieldToolsEquipment).values(payload).returning();
+    const inserted = await db().insert(fieldToolsEquipment).values(payload).returning();
     return inserted;
   }
 
   // User profile methods
   async getUserProfiles(): Promise<UserProfile[]> {
-    return await db.select().from(userProfiles).orderBy(desc(userProfiles.updatedAt));
+    return await db().select().from(userProfiles).orderBy(desc(userProfiles.updatedAt));
   }
 
   async getUserProfile(userId: string): Promise<UserProfile | undefined> {
-    const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId));
+    const [profile] = await db().select().from(userProfiles).where(eq(userProfiles.userId, userId));
     return profile;
   }
 
@@ -653,7 +655,7 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return updated;
     }
-    const [created] = await db.insert(userProfiles).values(profile).returning();
+    const [created] = await db().insert(userProfiles).values(profile).returning();
     return created;
   }
 
@@ -667,22 +669,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteUserProfile(userId: string): Promise<boolean> {
-    const result = await db.delete(userProfiles).where(eq(userProfiles.userId, userId));
+    const result = await db().delete(userProfiles).where(eq(userProfiles.userId, userId));
     return (result.rowCount ?? 0) > 0;
   }
 
   // Organization methods
   async getOrganizations(): Promise<Organization[]> {
-    return await db.select().from(organizations).orderBy(desc(organizations.updatedAt));
+    return await db().select().from(organizations).orderBy(desc(organizations.updatedAt));
   }
 
   async getOrganization(id: string): Promise<Organization | undefined> {
-    const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
+    const [org] = await db().select().from(organizations).where(eq(organizations.id, id));
     return org || undefined;
   }
 
   async createOrganization(org: InsertOrganization): Promise<Organization> {
-    const [created] = await db.insert(organizations).values(org).returning();
+    const [created] = await db().insert(organizations).values(org).returning();
     return created;
   }
 
@@ -696,7 +698,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteOrganization(id: string): Promise<boolean> {
-    const result = await db.delete(organizations).where(eq(organizations.id, id));
+    const result = await db().delete(organizations).where(eq(organizations.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -709,7 +711,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async addOrganizationMember(member: InsertOrganizationMember): Promise<OrganizationMember> {
-    const [created] = await db.insert(organizationMembers).values(member).returning();
+    const [created] = await db().insert(organizationMembers).values(member).returning();
     return created;
   }
 
@@ -723,7 +725,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async removeOrganizationMember(id: string): Promise<boolean> {
-    const result = await db.delete(organizationMembers).where(eq(organizationMembers.id, id));
+    const result = await db().delete(organizationMembers).where(eq(organizationMembers.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -744,17 +746,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAirMonitoringDocument(id: string): Promise<AirMonitoringDocument | undefined> {
-    const [doc] = await db.select().from(airMonitoringDocuments).where(eq(airMonitoringDocuments.id, id));
+    const [doc] = await db().select().from(airMonitoringDocuments).where(eq(airMonitoringDocuments.id, id));
     return doc || undefined;
   }
 
   async createAirMonitoringDocument(doc: InsertAirMonitoringDocument): Promise<AirMonitoringDocument> {
-    const [created] = await db.insert(airMonitoringDocuments).values(doc).returning();
+    const [created] = await db().insert(airMonitoringDocuments).values(doc).returning();
     return created;
   }
 
   async deleteAirMonitoringDocument(id: string): Promise<boolean> {
-    const result = await db.delete(airMonitoringDocuments).where(eq(airMonitoringDocuments.id, id));
+    const result = await db().delete(airMonitoringDocuments).where(eq(airMonitoringDocuments.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -768,7 +770,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDailyWeatherLog(id: string): Promise<DailyWeatherLog | undefined> {
-    const [log] = await db.select().from(dailyWeatherLogs).where(eq(dailyWeatherLogs.id, id));
+    const [log] = await db().select().from(dailyWeatherLogs).where(eq(dailyWeatherLogs.id, id));
     return log || undefined;
   }
 
@@ -790,7 +792,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteDailyWeatherLog(id: string): Promise<boolean> {
-    const result = await db.delete(dailyWeatherLogs).where(eq(dailyWeatherLogs.id, id));
+    const result = await db().delete(dailyWeatherLogs).where(eq(dailyWeatherLogs.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 

@@ -8,7 +8,7 @@ import path from "path";
 import fs from "fs/promises";
 import { nanoid } from "nanoid";
 import { getUserDisplayName, requireAdmin, requireAuth } from "./auth";
-import { db } from "./db";
+import { getDb } from "./db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -3067,6 +3067,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/stats", requireAdmin, async (_req, res) => {
     let dbConnected = true;
     try {
+      const db = getDb();
       const [
         totalUsersResult,
         activeUsersResult,
@@ -3225,6 +3226,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Data management endpoints
   app.get("/api/admin/data-management", requireAdmin, async (_req, res) => {
     try {
+      const db = getDb();
       const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(userProfilesTable);
       const [surveyCount] = await db.select({ count: sql<number>`count(*)` }).from(surveysTable);
       const [airSampleCount] = await db.select({ count: sql<number>`count(*)` }).from(airSamplesTable);
