@@ -228,7 +228,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createSurvey(insertSurvey: InsertSurvey): Promise<Survey> {
-    const [survey] = await db
+    const [survey] = await db()
       .insert(surveys)
       .values(insertSurvey)
       .returning();
@@ -236,7 +236,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateSurvey(id: string, updateSurvey: Partial<InsertSurvey>): Promise<Survey | undefined> {
-    const [survey] = await db
+    const [survey] = await db()
       .update(surveys)
       .set({ ...updateSurvey, updatedAt: new Date() })
       .where(eq(surveys.id, id))
@@ -245,7 +245,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateSurveySitePhoto(id: string, sitePhotoUrl: string): Promise<Survey | undefined> {
-    const [survey] = await db
+    const [survey] = await db()
       .update(surveys)
       .set({ sitePhotoUrl, updatedAt: new Date() })
       .where(eq(surveys.id, id))
@@ -259,7 +259,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async searchSurveys(query: string): Promise<Survey[]> {
-    return await db
+    return await db()
       .select()
       .from(surveys)
       .where(
@@ -275,7 +275,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getObservations(surveyId: string): Promise<Observation[]> {
-    return await db
+    return await db()
       .select()
       .from(observations)
       .where(eq(observations.surveyId, surveyId))
@@ -288,7 +288,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createObservation(insertObservation: InsertObservation): Promise<Observation> {
-    const [observation] = await db
+    const [observation] = await db()
       .insert(observations)
       .values(insertObservation)
       .returning();
@@ -296,7 +296,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateObservation(id: string, updateObservation: Partial<InsertObservation>): Promise<Observation | undefined> {
-    const [observation] = await db
+    const [observation] = await db()
       .update(observations)
       .set({ ...updateObservation, updatedAt: new Date() })
       .where(eq(observations.id, id))
@@ -310,7 +310,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getObservationPhotos(observationId: string): Promise<ObservationPhoto[]> {
-    return await db
+    return await db()
       .select()
       .from(observationPhotos)
       .where(eq(observationPhotos.observationId, observationId));
@@ -322,7 +322,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createObservationPhoto(insertPhoto: InsertObservationPhoto): Promise<ObservationPhoto> {
-    const [photo] = await db
+    const [photo] = await db()
       .insert(observationPhotos)
       .values(insertPhoto)
       .returning();
@@ -335,7 +335,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAsbestosSamples(surveyId: string): Promise<AsbestosSample[]> {
-    return await db
+    return await db()
       .select()
       .from(asbestosSamples)
       .where(eq(asbestosSamples.surveyId, surveyId))
@@ -353,7 +353,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateAsbestosSample(id: string, sample: Partial<InsertAsbestosSample>): Promise<AsbestosSample | undefined> {
-    const [updated] = await db
+    const [updated] = await db()
       .update(asbestosSamples)
       .set({ ...sample, updatedAt: new Date() })
       .where(eq(asbestosSamples.id, id))
@@ -367,7 +367,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAsbestosSampleLayers(sampleId: string): Promise<AsbestosSampleLayer[]> {
-    return await db
+    return await db()
       .select()
       .from(asbestosSampleLayers)
       .where(eq(asbestosSampleLayers.sampleId, sampleId))
@@ -384,7 +384,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAsbestosSamplePhotos(sampleId: string): Promise<AsbestosSamplePhoto[]> {
-    return await db
+    return await db()
       .select()
       .from(asbestosSamplePhotos)
       .where(eq(asbestosSamplePhotos.sampleId, sampleId))
@@ -407,7 +407,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPaintSamples(surveyId: string): Promise<PaintSample[]> {
-    return await db
+    return await db()
       .select()
       .from(paintSamples)
       .where(eq(paintSamples.surveyId, surveyId))
@@ -425,7 +425,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updatePaintSample(id: string, sample: Partial<InsertPaintSample>): Promise<PaintSample | undefined> {
-    const [updated] = await db
+    const [updated] = await db()
       .update(paintSamples)
       .set({ ...sample, updatedAt: new Date() })
       .where(eq(paintSamples.id, id))
@@ -439,7 +439,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPaintSamplePhotos(sampleId: string): Promise<PaintSamplePhoto[]> {
-    return await db
+    return await db()
       .select()
       .from(paintSamplePhotos)
       .where(eq(paintSamplePhotos.sampleId, sampleId))
@@ -497,7 +497,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updatePersonnelProfile(id: string, profile: Partial<InsertPersonnelProfile>): Promise<PersonnelProfile | undefined> {
-    const [updatedProfile] = await db
+    const [updatedProfile] = await db()
       .update(personnelProfiles)
       .set({ ...profile, updatedAt: new Date() })
       .where(eq(personnelProfiles.id, id))
@@ -532,7 +532,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateAirMonitoringJob(id: string, job: Partial<InsertAirMonitoringJob>): Promise<AirMonitoringJob | undefined> {
-    const [updatedJob] = await db
+    const [updatedJob] = await db()
       .update(airMonitoringJobs)
       .set({ ...job, updatedAt: new Date() })
       .where(eq(airMonitoringJobs.id, id))
@@ -598,7 +598,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateAirMonitoringEquipment(id: string, equipment: Partial<InsertAirMonitoringEquipment>): Promise<AirMonitoringEquipment | undefined> {
-    const [updatedEquipment] = await db
+    const [updatedEquipment] = await db()
       .update(airMonitoringEquipment)
       .set(equipment)
       .where(eq(airMonitoringEquipment.id, id))
@@ -638,7 +638,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserProfileByEmail(email: string): Promise<UserProfile | undefined> {
-    const [profile] = await db
+    const [profile] = await db()
       .select()
       .from(userProfiles)
       .where(ilike(userProfiles.email, email));
@@ -648,7 +648,7 @@ export class DatabaseStorage implements IStorage {
   async upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile> {
     const existing = await this.getUserProfile(profile.userId);
     if (existing) {
-      const [updated] = await db
+      const [updated] = await db()
         .update(userProfiles)
         .set({ ...profile, updatedAt: new Date() })
         .where(eq(userProfiles.userId, profile.userId))
@@ -660,7 +660,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserProfile(userId: string, profile: Partial<InsertUserProfile>): Promise<UserProfile | undefined> {
-    const [updated] = await db
+    const [updated] = await db()
       .update(userProfiles)
       .set({ ...profile, updatedAt: new Date() })
       .where(eq(userProfiles.userId, userId))
@@ -689,7 +689,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateOrganization(id: string, org: Partial<InsertOrganization>): Promise<Organization | undefined> {
-    const [updated] = await db
+    const [updated] = await db()
       .update(organizations)
       .set({ ...org, updatedAt: new Date() })
       .where(eq(organizations.id, id))
@@ -703,7 +703,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getOrganizationMembers(organizationId: string): Promise<OrganizationMember[]> {
-    return await db
+    return await db()
       .select()
       .from(organizationMembers)
       .where(eq(organizationMembers.organizationId, organizationId))
@@ -716,7 +716,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateOrganizationMember(id: string, member: Partial<InsertOrganizationMember>): Promise<OrganizationMember | undefined> {
-    const [updated] = await db
+    const [updated] = await db()
       .update(organizationMembers)
       .set(member)
       .where(eq(organizationMembers.id, id))
@@ -730,7 +730,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getOrganizationIdsForUser(userId: string): Promise<string[]> {
-    const memberships = await db
+    const memberships = await db()
       .select({ organizationId: organizationMembers.organizationId })
       .from(organizationMembers)
       .where(eq(organizationMembers.userId, userId));
@@ -738,7 +738,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]> {
-    return await db
+    return await db()
       .select()
       .from(airMonitoringDocuments)
       .where(eq(airMonitoringDocuments.jobId, jobId))
@@ -762,7 +762,7 @@ export class DatabaseStorage implements IStorage {
 
   // Daily Weather Log methods
   async getDailyWeatherLogs(jobId: string): Promise<DailyWeatherLog[]> {
-    return await db
+    return await db()
       .select()
       .from(dailyWeatherLogs)
       .where(eq(dailyWeatherLogs.jobId, jobId))
@@ -775,7 +775,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createDailyWeatherLog(insertLog: InsertDailyWeatherLog): Promise<DailyWeatherLog> {
-    const [log] = await db
+    const [log] = await db()
       .insert(dailyWeatherLogs)
       .values(insertLog)
       .returning();
@@ -783,7 +783,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateDailyWeatherLog(id: string, updateLog: Partial<InsertDailyWeatherLog>): Promise<DailyWeatherLog | undefined> {
-    const [log] = await db
+    const [log] = await db()
       .update(dailyWeatherLogs)
       .set({ ...updateLog, updatedAt: new Date() })
       .where(eq(dailyWeatherLogs.id, id))
@@ -797,7 +797,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getHomogeneousAreas(surveyId: string): Promise<HomogeneousArea[]> {
-    return await db
+    return await db()
       .select()
       .from(homogeneousAreas)
       .where(eq(homogeneousAreas.surveyId, surveyId))
@@ -805,13 +805,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createHomogeneousArea(surveyId: string, data: { title?: string; description?: string | null }): Promise<HomogeneousArea> {
-    const existingCount = await db
+    const existingCount = await db()
       .select({ count: sql<number>`count(*)` })
       .from(homogeneousAreas)
       .where(eq(homogeneousAreas.surveyId, surveyId));
     const nextIndex = (existingCount[0]?.count ?? 0) + 1;
     const haId = `HA-${nextIndex}`;
-    const [area] = await db
+    const [area] = await db()
       .insert(homogeneousAreas)
       .values({
         id: nanoid(),
@@ -825,14 +825,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteHomogeneousArea(surveyId: string, id: string): Promise<boolean> {
-    const result = await db
+    const result = await db()
       .delete(homogeneousAreas)
       .where(and(eq(homogeneousAreas.surveyId, surveyId), eq(homogeneousAreas.id, id)));
     return (result.rowCount ?? 0) > 0;
   }
 
   async getFunctionalAreas(surveyId: string): Promise<FunctionalArea[]> {
-    return await db
+    return await db()
       .select()
       .from(functionalAreas)
       .where(eq(functionalAreas.surveyId, surveyId))
@@ -852,7 +852,7 @@ export class DatabaseStorage implements IStorage {
     wallSqft?: number | null;
     photoUrl?: string | null;
   }): Promise<FunctionalArea> {
-    const [area] = await db
+    const [area] = await db()
       .insert(functionalAreas)
       .values({
         id: nanoid(),
@@ -886,7 +886,7 @@ export class DatabaseStorage implements IStorage {
     wallSqft?: number | null;
     photoUrl?: string | null;
   }>): Promise<FunctionalArea | undefined> {
-    const [updated] = await db
+    const [updated] = await db()
       .update(functionalAreas)
       .set({ ...data, updatedAt: new Date() })
       .where(and(eq(functionalAreas.surveyId, surveyId), eq(functionalAreas.id, id)))
@@ -895,7 +895,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteFunctionalArea(surveyId: string, id: string): Promise<boolean> {
-    const result = await db
+    const result = await db()
       .delete(functionalAreas)
       .where(and(eq(functionalAreas.surveyId, surveyId), eq(functionalAreas.id, id)));
     return (result.rowCount ?? 0) > 0;

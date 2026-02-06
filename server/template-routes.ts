@@ -77,7 +77,7 @@ export async function getSurveyTemplate(req: Request, res: Response) {
   try {
     const { id } = req.params;
     
-    const [template] = await db
+    const [template] = await db()
       .select()
       .from(surveyTemplates)
       .where(eq(surveyTemplates.id, id));
@@ -87,7 +87,7 @@ export async function getSurveyTemplate(req: Request, res: Response) {
     }
 
     // Get associated checklists and items
-    const checklists = await db
+    const checklists = await db()
       .select()
       .from(checklistTemplates)
       .where(eq(checklistTemplates.surveyTemplateId, id))
@@ -95,7 +95,7 @@ export async function getSurveyTemplate(req: Request, res: Response) {
 
     const checklistsWithItems = await Promise.all(
       checklists.map(async (checklist) => {
-        const items = await db
+        const items = await db()
           .select()
           .from(checklistItems)
           .where(eq(checklistItems.checklistTemplateId, checklist.id))
@@ -123,7 +123,7 @@ export async function createSurveyTemplate(req: Request, res: Response) {
   try {
     const data = createSurveyTemplateSchema.parse(req.body);
     
-    const [template] = await db
+    const [template] = await db()
       .insert(surveyTemplates)
       .values(data)
       .returning();
@@ -144,7 +144,7 @@ export async function updateSurveyTemplate(req: Request, res: Response) {
     const { id } = req.params;
     const data = createSurveyTemplateSchema.partial().parse(req.body);
     
-    const [template] = await db
+    const [template] = await db()
       .update(surveyTemplates)
       .set({ ...data, updatedAt: sql`now()` })
       .where(eq(surveyTemplates.id, id))
@@ -169,7 +169,7 @@ export async function deleteSurveyTemplate(req: Request, res: Response) {
   try {
     const { id } = req.params;
     
-    const [template] = await db
+    const [template] = await db()
       .delete(surveyTemplates)
       .where(eq(surveyTemplates.id, id))
       .returning();
@@ -190,7 +190,7 @@ export async function getTemplateChecklists(req: Request, res: Response) {
   try {
     const { templateId } = req.params;
     
-    const checklists = await db
+    const checklists = await db()
       .select()
       .from(checklistTemplates)
       .where(eq(checklistTemplates.surveyTemplateId, templateId))
@@ -198,7 +198,7 @@ export async function getTemplateChecklists(req: Request, res: Response) {
 
     const checklistsWithItems = await Promise.all(
       checklists.map(async (checklist) => {
-        const items = await db
+        const items = await db()
           .select()
           .from(checklistItems)
           .where(eq(checklistItems.checklistTemplateId, checklist.id))
@@ -226,20 +226,20 @@ export async function getSurveyChecklists(req: Request, res: Response) {
     // Get template checklists
     let checklists;
     if (templateId) {
-      checklists = await db
+      checklists = await db()
         .select()
         .from(checklistTemplates)
         .where(eq(checklistTemplates.surveyTemplateId, templateId))
         .orderBy(checklistTemplates.order);
     } else {
       // Get from survey instance if no templateId provided
-      const [instance] = await db
+      const [instance] = await db()
         .select()
         .from(surveyInstances)
         .where(eq(surveyInstances.surveyId, surveyId));
         
       if (instance?.templateId) {
-        checklists = await db
+        checklists = await db()
           .select()
           .from(checklistTemplates)
           .where(eq(checklistTemplates.surveyTemplateId, instance.templateId))
@@ -251,7 +251,7 @@ export async function getSurveyChecklists(req: Request, res: Response) {
 
     const checklistsWithItems = await Promise.all(
       checklists.map(async (checklist) => {
-        const items = await db
+        const items = await db()
           .select()
           .from(checklistItems)
           .where(eq(checklistItems.checklistTemplateId, checklist.id))
@@ -276,7 +276,7 @@ export async function getChecklistResponses(req: Request, res: Response) {
   try {
     const { surveyId } = req.params;
     
-    const responses = await db
+    const responses = await db()
       .select()
       .from(checklistResponses)
       .where(eq(checklistResponses.surveyId, surveyId));
@@ -295,7 +295,7 @@ export async function saveChecklistResponse(req: Request, res: Response) {
     const { itemId, response, isCompleted, notes } = req.body;
     
     // Check if response already exists
-    const [existingResponse] = await db
+    const [existingResponse] = await db()
       .select()
       .from(checklistResponses)
       .where(
@@ -308,7 +308,7 @@ export async function saveChecklistResponse(req: Request, res: Response) {
     let result;
     if (existingResponse) {
       // Update existing response
-      [result] = await db
+      [result] = await db()
         .update(checklistResponses)
         .set({
           response,
@@ -320,7 +320,7 @@ export async function saveChecklistResponse(req: Request, res: Response) {
         .returning();
     } else {
       // Create new response
-      [result] = await db
+      [result] = await db()
         .insert(checklistResponses)
         .values({
           surveyId,
@@ -345,7 +345,7 @@ export async function saveChecklistResponse(req: Request, res: Response) {
 // Increment template usage count
 export async function incrementTemplateUsage(templateId: string) {
   try {
-    await db
+    await db()
       .update(surveyTemplates)
       .set({ 
         usageCount: sql`${surveyTemplates.usageCount} + 1`,
