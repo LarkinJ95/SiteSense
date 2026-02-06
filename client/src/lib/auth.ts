@@ -11,6 +11,24 @@ const getAuthBaseUrl = () => {
   return "/api/auth";
 };
 
+if (typeof window !== "undefined") {
+  const globalAny = globalThis as { fetch: typeof fetch; __abateiqFetchPatched?: boolean };
+  if (!globalAny.__abateiqFetchPatched) {
+    const nativeFetch = globalAny.fetch.bind(globalThis);
+    globalAny.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const isRelative = url.startsWith("/");
+      const isSameOrigin = !isRelative && typeof window !== "undefined" && url.startsWith(window.location.origin);
+      const shouldInclude = isRelative || isSameOrigin;
+      if (shouldInclude) {
+        return nativeFetch(input, { credentials: "include", ...(init || {}) });
+      }
+      return nativeFetch(input, init);
+    };
+    globalAny.__abateiqFetchPatched = true;
+  }
+}
+
 const authBaseUrl = getAuthBaseUrl();
 const neonAuth = createInternalNeonAuth(authBaseUrl, {
   adapter: BetterAuthReactAdapter(),
