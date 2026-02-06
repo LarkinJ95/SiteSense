@@ -22,6 +22,6 @@ export const getDb = () => {
     throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
   }
   const sql = neon(databaseUrl);
-  cachedDb = drizzle({ client: sql, schema });
+  cachedDb = drizzle(sql, { schema });
   return cachedDb;
 };
