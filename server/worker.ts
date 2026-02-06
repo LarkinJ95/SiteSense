@@ -646,7 +646,26 @@ app.all("/api/auth/*", async (c) => {
   };
 
   const response = await fetch(targetUrl, requestInit);
-  return response;
+  const headers = new Headers(response.headers);
+
+  const getSetCookie = (response.headers as any).getSetCookie?.bind(response.headers);
+  const setCookies: string[] = getSetCookie
+    ? getSetCookie()
+    : (headers.get("set-cookie") ? [headers.get("set-cookie") as string] : []);
+
+  if (setCookies.length) {
+    headers.delete("set-cookie");
+    for (const cookie of setCookies) {
+      const rewritten = cookie.replace(/;\s*Domain=[^;]+/i, "");
+      headers.append("set-cookie", rewritten);
+    }
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 });
 
 app.get("/api/me", (c) => {
