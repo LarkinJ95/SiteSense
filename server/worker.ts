@@ -635,36 +635,36 @@ app.all("/api/auth/*", async (c) => {
   const targetPath = incomingUrl.pathname.replace(/^\/api\/auth/, "");
   const targetUrl = new URL(base.replace(/\/$/, "") + targetPath + incomingUrl.search);
 
-  const headers = new Headers(c.req.raw.headers);
-  headers.set("host", targetUrl.host);
+  const requestHeaders = new Headers(c.req.raw.headers);
+  requestHeaders.set("host", targetUrl.host);
 
   const requestInit: RequestInit = {
     method: c.req.method,
-    headers,
+    headers: requestHeaders,
     body: c.req.method === "GET" || c.req.method === "HEAD" ? undefined : await c.req.arrayBuffer(),
     redirect: "manual",
   };
 
   const response = await fetch(targetUrl, requestInit);
-  const headers = new Headers(response.headers);
+  const responseHeaders = new Headers(response.headers);
 
   const getSetCookie = (response.headers as any).getSetCookie?.bind(response.headers);
   const setCookies: string[] = getSetCookie
     ? getSetCookie()
-    : (headers.get("set-cookie") ? [headers.get("set-cookie") as string] : []);
+    : (responseHeaders.get("set-cookie") ? [responseHeaders.get("set-cookie") as string] : []);
 
   if (setCookies.length) {
-    headers.delete("set-cookie");
+    responseHeaders.delete("set-cookie");
     for (const cookie of setCookies) {
       const rewritten = cookie.replace(/;\s*Domain=[^;]+/i, "");
-      headers.append("set-cookie", rewritten);
+      responseHeaders.append("set-cookie", rewritten);
     }
   }
 
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
-    headers,
+    headers: responseHeaders,
   });
 });
 
