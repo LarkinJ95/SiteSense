@@ -649,14 +649,14 @@ app.get("/api/health", (c) => c.json({ ok: true }));
 app.get("/api/health/db", async (c) => {
   try {
     const db = getDb();
-    const result = await db.execute(sql`select 1 as ok`);
-    const tableCheck = await db.execute(
+    const result = await db.all(sql`select 1 as ok`);
+    const tableCheck = await db.all(
       sql`select name from sqlite_master where type='table' and name='user_profiles'`
     );
     return c.json({
       ok: true,
-      ping: Array.isArray(result) ? result : result.rows ?? result,
-      user_profiles_table: Array.isArray(tableCheck) ? tableCheck : tableCheck.rows ?? tableCheck,
+      ping: result,
+      user_profiles_table: tableCheck,
     });
   } catch (error) {
     return c.json(
@@ -999,10 +999,10 @@ app.get("/api/admin/stats", async (c) => {
   const [totalAirSamplesResult] = await db.select({ count: sql<number>`count(*)` }).from(airSamplesTable);
   let databaseSizeBytes = 0;
   try {
-    const sizeResult = await db.execute(
+    const sizeResult = await db.all(
       sql`select (page_count * page_size) as size from pragma_page_count, pragma_page_size`
     );
-    databaseSizeBytes = Number((sizeResult as any)?.rows?.[0]?.size ?? 0);
+    databaseSizeBytes = Number((sizeResult as any)?.[0]?.size ?? 0);
   } catch {
     databaseSizeBytes = 0;
   }

@@ -2,11 +2,13 @@ import { defineConfig } from "drizzle-kit";
 
 export default defineConfig({
   out: "./migrations",
-  schema: "./shared/schema.ts",
+  schema: [
+    "./shared/schema.ts",
+    "./shared/template-schema.ts",
+    "./shared/workflow-schema.ts",
+  ],
   dialect: "sqlite",
-  driver: "d1",
   dbCredentials: {
-    wranglerConfigPath: "./wrangler.toml",
-    dbName: "abateiq",
+    url: "file:./dev.db",
   },
 });

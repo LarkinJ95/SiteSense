@@ -8,7 +8,9 @@
     "build": "vite build",
     "start": "wrangler dev --local --port 5050",
     "check": "tsc",
-    "db:push": "drizzle-kit push"
+    "db:generate": "drizzle-kit generate",
+    "db:push": "npx wrangler d1 migrations apply abateiq --remote",
+    "db:push:local": "drizzle-kit push"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.16.0",

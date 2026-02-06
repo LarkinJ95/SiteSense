@@ -2,6 +2,10 @@ name = "abateiq"
 main = "server/worker.ts"
 compatibility_date = "2026-02-06"
 
+routes = [
+  { pattern = "abateiq.com", zone_name = "abateiq.com", custom_domain = true }
+]
+
 [assets]
 directory = "./dist/public"
 
@@ -19,7 +23,7 @@ bucket_name = "abateiq-uploads"
 [[d1_databases]]
 binding = "DB"
 database_name = "abateiq"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "80d077ef-36ef-4d59-b404-15cf040d5911"
 
 [observability.logs]
 enabled = false
