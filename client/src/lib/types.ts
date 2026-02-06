@@ -43,10 +43,10 @@ export interface CreateSurveyFormData {
 }
 
 export interface CreateObservationFormData {
-  area: string;
+  area?: string;
   homogeneousArea?: string;
-  materialType: string;
-  condition: string;
+  materialType?: string;
+  condition?: string;
   quantity?: string;
   quantityUnit?: string;
   quantityOtherUnit?: string;

@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import type { Observation } from "@shared/schema";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import {
   Dialog,
@@ -28,30 +28,26 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { CreateObservationFormData } from "@/lib/types";
 import { X, CloudUpload, MapPin } from "lucide-react";
 
 const createObservationSchema = z.object({
-  area: z.string().min(1, "Area/Location is required"),
+  area: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().optional()
+  ),
   homogeneousArea: z.string().optional(),
-  materialType: z.string().min(1, "Material type is required"),
-  condition: z.string().min(1, "Material condition is required"),
+  materialType: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().optional()
+  ),
+  condition: z.string().optional(),
   quantity: z.string().optional(),
   quantityUnit: z.string().optional(),
   quantityOtherUnit: z.string().optional(),
   riskLevel: z.string().optional(),
-  sampleCollected: z.boolean().default(false),
-  sampleId: z.string().optional(),
-  collectionMethod: z.string().optional(),
-  sampleNotes: z.string().optional(),
-  // Lab Results
-  asbestosType: z.string().optional(),
-  asbestosPercentage: z.string().optional(),
-  leadResultMgKg: z.string().optional(),
-  cadmiumResultMgKg: z.string().optional(),
   latitude: z.string().optional(),
   longitude: z.string().optional(),
   notes: z.string().optional(),
@@ -64,7 +60,6 @@ interface AddObservationModalProps {
   editingObservation?: Observation | null;
   homogeneousAreas?: string[];
   functionalAreas?: string[];
-  observations?: Observation[];
 }
 
 export function AddObservationModal({
@@ -74,7 +69,6 @@ export function AddObservationModal({
   editingObservation,
   homogeneousAreas = [],
   functionalAreas = [],
-  observations = [],
 }: AddObservationModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -117,44 +111,11 @@ export function AddObservationModal({
       quantityUnit: "sqft",
       quantityOtherUnit: "",
       riskLevel: "",
-      sampleCollected: false,
-      sampleId: "",
-      collectionMethod: "",
-      sampleNotes: "",
-      asbestosType: "",
-      asbestosPercentage: "",
-      leadResultMgKg: "",
-      cadmiumResultMgKg: "",
       latitude: "",
       longitude: "",
       notes: "",
     },
   });
-
-  const computeNextSampleId = (homogeneousArea: string) => {
-    const match = homogeneousArea.match(/HA-(\d+)/i);
-    const haIndex = match ? parseInt(match[1], 10) : null;
-    if (!haIndex) return "";
-    const existing = observations.filter((obs) => obs.homogeneousArea === homogeneousArea && obs.sampleId);
-    const nextSample = existing.length + 1;
-    return `${haIndex}-${nextSample}`;
-  };
-
-  const sampleCollected = useWatch({ control: form.control, name: "sampleCollected" });
-  const homogeneousArea = useWatch({ control: form.control, name: "homogeneousArea" });
-
-  useEffect(() => {
-    if (editingObservation) return;
-    if (!sampleCollected) {
-      form.setValue("sampleId", "");
-      return;
-    }
-    if (!homogeneousArea) return;
-    const nextId = computeNextSampleId(homogeneousArea);
-    if (nextId) {
-      form.setValue("sampleId", nextId);
-    }
-  }, [sampleCollected, homogeneousArea, observations, editingObservation, form]);
 
   // Reset form when editing observation changes
   useEffect(() => {
@@ -169,14 +130,6 @@ export function AddObservationModal({
         quantityUnit: parsedQuantity.unit,
         quantityOtherUnit: parsedQuantity.otherUnit,
         riskLevel: editingObservation.riskLevel || "",
-        sampleCollected: editingObservation.sampleCollected ?? false,
-        sampleId: editingObservation.sampleId || "",
-        collectionMethod: editingObservation.collectionMethod || "",
-        sampleNotes: editingObservation.sampleNotes || "",
-        asbestosType: editingObservation.asbestosType || "",
-        asbestosPercentage: editingObservation.asbestosPercentage || "",
-        leadResultMgKg: editingObservation.leadResultMgKg || "",
-        cadmiumResultMgKg: editingObservation.cadmiumResultMgKg || "",
         latitude: editingObservation.latitude || "",
         longitude: editingObservation.longitude || "",
         notes: editingObservation.notes || "",
@@ -191,14 +144,6 @@ export function AddObservationModal({
         quantityUnit: "sqft",
         quantityOtherUnit: "",
         riskLevel: "",
-        sampleCollected: false,
-        sampleId: "",
-        collectionMethod: "",
-        sampleNotes: "",
-        asbestosType: "",
-        asbestosPercentage: "",
-        leadResultMgKg: "",
-        cadmiumResultMgKg: "",
         latitude: "",
         longitude: "",
         notes: "",
@@ -332,8 +277,41 @@ export function AddObservationModal({
     setSelectedFiles(files);
   };
 
+  const { data: photoLibrary = [] } = useQuery<any[]>({
+    queryKey: ["/api/observations", editingObservation?.id, "photos"],
+    enabled: !!editingObservation?.id,
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/observations/${editingObservation?.id}/photos`);
+      return response.json();
+    },
+  });
+
+  const deletePhotoMutation = useMutation({
+    mutationFn: async (photoId: string) => {
+      await apiRequest("DELETE", `/api/photos/${photoId}`);
+    },
+    onSuccess: () => {
+      if (editingObservation?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/observations", editingObservation.id, "photos"] });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete photo",
+        variant: "destructive",
+      });
+    },
+  });
+
   const onSubmit = (data: CreateObservationFormData) => {
-    createObservationMutation.mutate(data);
+    const normalizedArea = data.area?.trim() || "Unspecified";
+    const normalizedMaterialType = data.materialType?.trim() || "other";
+    createObservationMutation.mutate({
+      ...data,
+      area: normalizedArea,
+      materialType: normalizedMaterialType,
+    });
   };
 
   return (
@@ -364,7 +342,7 @@ export function AddObservationModal({
                   name="area"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Functional Area *</FormLabel>
+                      <FormLabel>Functional Area</FormLabel>
                       <FormControl>
                         <>
                           <Input
@@ -412,375 +390,26 @@ export function AddObservationModal({
               </div>
             </div>
 
-            {/* Material Information */}
+            {/* Notes */}
             <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Material Details</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="materialType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Material Type *</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-material-type">
-                            <SelectValue placeholder="Select material type" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="ceiling-tiles">Ceiling Tiles</SelectItem>
-                          <SelectItem value="floor-tiles-9x9">9"x9" Floor Tiles</SelectItem>
-                          <SelectItem value="floor-tiles-12x12">12"x12" Floor Tiles</SelectItem>
-                          <SelectItem value="pipe-insulation">Pipe Insulation</SelectItem>
-                          <SelectItem value="duct-insulation">Duct Insulation</SelectItem>
-                          <SelectItem value="boiler-insulation">Boiler Insulation</SelectItem>
-                          <SelectItem value="drywall">Drywall/Joint Compound</SelectItem>
-                          <SelectItem value="paint">Paint/Coatings</SelectItem>
-                          <SelectItem value="roofing">Roofing Material</SelectItem>
-                          <SelectItem value="siding">Siding Material</SelectItem>
-                          <SelectItem value="window-glazing">Window Glazing</SelectItem>
-                          <SelectItem value="plaster">Plaster</SelectItem>
-                          <SelectItem value="masonry">Masonry/Mortar</SelectItem>
-                          <SelectItem value="vinyl-tiles">Vinyl Floor Tiles</SelectItem>
-                          <SelectItem value="carpet-mastic">Carpet Mastic</SelectItem>
-                          <SelectItem value="electrical-materials">Electrical Materials</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="condition"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Material Condition *</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-condition">
-                            <SelectValue placeholder="Select condition" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="excellent">Excellent</SelectItem>
-                          <SelectItem value="good">Good</SelectItem>
-                          <SelectItem value="fair">Fair</SelectItem>
-                          <SelectItem value="poor">Poor</SelectItem>
-                          <SelectItem value="severely-damaged">Severely Damaged</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="quantity"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Estimated Quantity</FormLabel>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        <FormControl>
-                          <Input
-                            placeholder="e.g., 81"
-                            {...field}
-                            data-testid="input-quantity"
-                          />
-                        </FormControl>
-                        <FormField
-                          control={form.control}
-                          name="quantityUnit"
-                          render={({ field: unitField }) => (
-                            <FormItem>
-                              <Select onValueChange={unitField.onChange} value={unitField.value}>
-                                <FormControl>
-                                  <SelectTrigger data-testid="select-quantity-unit">
-                                    <SelectValue placeholder="Select unit" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="sqft">SqFt</SelectItem>
-                                  <SelectItem value="lf">LF</SelectItem>
-                                  <SelectItem value="qty">Qty</SelectItem>
-                                  <SelectItem value="other">Other (fill in)</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      {form.watch("quantityUnit") === "other" && (
-                        <FormField
-                          control={form.control}
-                          name="quantityOtherUnit"
-                          render={({ field: otherUnitField }) => (
-                            <FormItem className="mt-2">
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter custom unit"
-                                  {...otherUnitField}
-                                  data-testid="input-quantity-other-unit"
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      )}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="riskLevel"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Risk Level</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-risk-level">
-                            <SelectValue placeholder="Select risk level" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="low">Low Risk</SelectItem>
-                          <SelectItem value="medium">Medium Risk</SelectItem>
-                          <SelectItem value="high">High Risk</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </div>
-
-            {/* Sample Collection */}
-            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Sample Collection</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <FormField
-                    control={form.control}
-                    name="sampleCollected"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-start space-x-3 space-y-0 mb-4">
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                            data-testid="checkbox-sample-collected"
-                          />
-                        </FormControl>
-                        <div className="space-y-1 leading-none">
-                          <FormLabel>Sample collected from this area</FormLabel>
-                        </div>
-                      </FormItem>
-                    )}
-                  />
-                  <div className="space-y-3">
-                    <FormField
-                      control={form.control}
-                      name="sampleId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Sample ID</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="e.g., AS-2024-001"
-                              {...field}
-                              readOnly={!editingObservation && !!sampleCollected && !!homogeneousArea}
-                              data-testid="input-sample-id"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="collectionMethod"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Collection Method</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger data-testid="select-collection-method">
-                                <SelectValue placeholder="Select method" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="bulk">Bulk Sample</SelectItem>
-                              <SelectItem value="scrape">Scrape Sample</SelectItem>
-                              <SelectItem value="core">Core Sample</SelectItem>
-                              <SelectItem value="air">Air Sample</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </div>
-                <FormField
-                  control={form.control}
-                  name="sampleNotes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Sample Location Notes</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Describe exact sample collection location..."
-                          rows={4}
-                          {...field}
-                          data-testid="textarea-sample-notes"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </div>
-
-            {/* Lab Results */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Lab Results</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Asbestos Results */}
-                <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4 bg-white dark:bg-gray-800 space-y-3">
-                  <h5 className="font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600 pb-2">Asbestos Analysis</h5>
-                  <FormField
-                    control={form.control}
-                    name="asbestosType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Asbestos Type</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-asbestos-type">
-                              <SelectValue placeholder="Select type" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="none-detected">None Detected</SelectItem>
-                            <SelectItem value="chrysotile">Chrysotile (White)</SelectItem>
-                            <SelectItem value="amosite">Amosite (Brown)</SelectItem>
-                            <SelectItem value="crocidolite">Crocidolite (Blue)</SelectItem>
-                            <SelectItem value="tremolite">Tremolite</SelectItem>
-                            <SelectItem value="actinolite">Actinolite</SelectItem>
-                            <SelectItem value="anthophyllite">Anthophyllite</SelectItem>
-                            <SelectItem value="mixed">Mixed Types</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  {form.watch("asbestosType") && form.watch("asbestosType") !== "none-detected" && (
-                    <FormField
-                      control={form.control}
-                      name="asbestosPercentage"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Percentage (%)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              max="100"
-                              placeholder="0.00"
-                              {...field}
-                              data-testid="input-asbestos-percentage"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
-                </div>
-
-                {/* Lead Results */}
-                <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4 bg-white dark:bg-gray-800 space-y-3">
-                  <h5 className="font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600 pb-2">Lead Analysis</h5>
-                  <FormField
-                    control={form.control}
-                    name="leadResultMgKg"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Result (mg/kg)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            placeholder="0.0"
-                            {...field}
-                            data-testid="input-lead-mg-kg"
-                            onChange={(e) => {
-                              field.onChange(e);
-                              // Auto-calculate percentage
-                              const mgKg = parseFloat(e.target.value);
-                              if (!isNaN(mgKg)) {
-                                // The percentage will be calculated on the server
-                              }
-                            }}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  {form.watch("leadResultMgKg") && (
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      <strong>% by weight:</strong> {((parseFloat(form.watch("leadResultMgKg") || "0")) / 10000).toFixed(6)}%
-                    </div>
-                  )}
-                </div>
-
-                {/* Cadmium Results */}
-                <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4 bg-white dark:bg-gray-800 space-y-3">
-                  <h5 className="font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600 pb-2">Cadmium Analysis</h5>
-                  <FormField
-                    control={form.control}
-                    name="cadmiumResultMgKg"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Result (mg/kg)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            placeholder="0.0"
-                            {...field}
-                            data-testid="input-cadmium-mg-kg"
-                            onChange={(e) => {
-                              field.onChange(e);
-                              // Auto-calculate percentage
-                              const mgKg = parseFloat(e.target.value);
-                              if (!isNaN(mgKg)) {
-                                // The percentage will be calculated on the server
-                              }
-                            }}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  {form.watch("cadmiumResultMgKg") && (
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      <strong>% by weight:</strong> {((parseFloat(form.watch("cadmiumResultMgKg") || "0")) / 10000).toFixed(6)}%
-                    </div>
-                  )}
-                </div>
-              </div>
+              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Observation Notes</h4>
+              <FormField
+                control={form.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Add detailed notes about this observation, including any hazards, recommendations, or specific concerns..."
+                        rows={4}
+                        {...field}
+                        data-testid="textarea-notes"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
             {/* Photos and Documentation */}
@@ -815,6 +444,44 @@ export function AddObservationModal({
                       </p>
                     )}
                   </div>
+                  {selectedFiles.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <FormLabel>Selected Photos</FormLabel>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedFiles.map((file) => (
+                          <img
+                            key={`${file.name}-${file.size}`}
+                            src={URL.createObjectURL(file)}
+                            alt={file.name}
+                            className="h-16 w-16 object-cover rounded border"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {photoLibrary.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <FormLabel>Uploaded Photos</FormLabel>
+                      <div className="flex flex-wrap gap-2">
+                        {photoLibrary.map((photo) => (
+                          <div key={photo.id} className="relative">
+                            <img
+                              src={`/uploads/${photo.filename}`}
+                              alt={photo.originalName || photo.filename}
+                              className="h-16 w-16 object-cover rounded border"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => deletePhotoMutation.mutate(photo.id)}
+                              className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <FormLabel>GPS Coordinates</FormLabel>
@@ -865,28 +532,6 @@ export function AddObservationModal({
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Notes */}
-            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-              <h4 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Observation Notes</h4>
-              <FormField
-                control={form.control}
-                name="notes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Add detailed notes about this observation, including any hazards, recommendations, or specific concerns..."
-                        rows={4}
-                        {...field}
-                        data-testid="textarea-notes"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </div>
 
             <div className="flex justify-end space-x-3 pt-4 border-t">

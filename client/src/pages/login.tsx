@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [debugError, setDebugError] = useState("");
   const { toast } = useToast();
+  const { data: session } = authClient.useSession();
 
   const [formData, setFormData] = useState({
     email: "",
@@ -64,6 +65,12 @@ export default function Login() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (session) {
+      setLocation("/");
+    }
+  }, [session, setLocation]);
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">

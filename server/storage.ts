@@ -2,6 +2,11 @@ import {
   surveys, 
   observations, 
   observationPhotos,
+  asbestosSamples,
+  asbestosSamplePhotos,
+  asbestosSampleLayers,
+  paintSamples,
+  paintSamplePhotos,
   personnelProfiles,
   airMonitoringJobs,
   airSamples,
@@ -20,6 +25,14 @@ import {
   type InsertObservation,
   type ObservationPhoto,
   type InsertObservationPhoto,
+  type AsbestosSample,
+  type InsertAsbestosSample,
+  type AsbestosSamplePhoto,
+  type AsbestosSampleLayer,
+  type InsertAsbestosSampleLayer,
+  type PaintSample,
+  type InsertPaintSample,
+  type PaintSamplePhoto,
   type PersonnelProfile,
   type InsertPersonnelProfile,
   type AirMonitoringJob,
@@ -68,6 +81,28 @@ export interface IStorage {
   getObservationPhotos(observationId: string): Promise<ObservationPhoto[]>;
   createObservationPhoto(photo: InsertObservationPhoto): Promise<ObservationPhoto>;
   deleteObservationPhoto(id: string): Promise<boolean>;
+
+  // Asbestos sample methods
+  getAsbestosSamples(surveyId: string): Promise<AsbestosSample[]>;
+  getAsbestosSample(id: string): Promise<AsbestosSample | undefined>;
+  createAsbestosSample(sample: InsertAsbestosSample): Promise<AsbestosSample>;
+  updateAsbestosSample(id: string, sample: Partial<InsertAsbestosSample>): Promise<AsbestosSample | undefined>;
+  deleteAsbestosSample(id: string): Promise<boolean>;
+  getAsbestosSampleLayers(sampleId: string): Promise<AsbestosSampleLayer[]>;
+  replaceAsbestosSampleLayers(sampleId: string, layers: InsertAsbestosSampleLayer[]): Promise<AsbestosSampleLayer[]>;
+  getAsbestosSamplePhotos(sampleId: string): Promise<AsbestosSamplePhoto[]>;
+  createAsbestosSamplePhoto(photo: { sampleId: string; url: string; filename?: string | null }): Promise<AsbestosSamplePhoto>;
+  deleteAsbestosSamplePhoto(id: string): Promise<boolean>;
+
+  // Paint sample methods
+  getPaintSamples(surveyId: string): Promise<PaintSample[]>;
+  getPaintSample(id: string): Promise<PaintSample | undefined>;
+  createPaintSample(sample: InsertPaintSample): Promise<PaintSample>;
+  updatePaintSample(id: string, sample: Partial<InsertPaintSample>): Promise<PaintSample | undefined>;
+  deletePaintSample(id: string): Promise<boolean>;
+  getPaintSamplePhotos(sampleId: string): Promise<PaintSamplePhoto[]>;
+  createPaintSamplePhoto(photo: { sampleId: string; url: string; filename?: string | null }): Promise<PaintSamplePhoto>;
+  deletePaintSamplePhoto(id: string): Promise<boolean>;
   
   // Stats methods
   getSurveyStats(): Promise<{
@@ -124,6 +159,7 @@ export interface IStorage {
   addOrganizationMember(member: InsertOrganizationMember): Promise<OrganizationMember>;
   updateOrganizationMember(id: string, member: Partial<InsertOrganizationMember>): Promise<OrganizationMember | undefined>;
   removeOrganizationMember(id: string): Promise<boolean>;
+  getOrganizationIdsForUser(userId: string): Promise<string[]>;
 
   // Air monitoring documents
   getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]>;
@@ -273,6 +309,123 @@ export class DatabaseStorage implements IStorage {
 
   async deleteObservationPhoto(id: string): Promise<boolean> {
     const result = await db.delete(observationPhotos).where(eq(observationPhotos.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getAsbestosSamples(surveyId: string): Promise<AsbestosSample[]> {
+    return await db
+      .select()
+      .from(asbestosSamples)
+      .where(eq(asbestosSamples.surveyId, surveyId))
+      .orderBy(desc(asbestosSamples.createdAt));
+  }
+
+  async getAsbestosSample(id: string): Promise<AsbestosSample | undefined> {
+    const [sample] = await db.select().from(asbestosSamples).where(eq(asbestosSamples.id, id));
+    return sample || undefined;
+  }
+
+  async createAsbestosSample(sample: InsertAsbestosSample): Promise<AsbestosSample> {
+    const [created] = await db.insert(asbestosSamples).values(sample).returning();
+    return created;
+  }
+
+  async updateAsbestosSample(id: string, sample: Partial<InsertAsbestosSample>): Promise<AsbestosSample | undefined> {
+    const [updated] = await db
+      .update(asbestosSamples)
+      .set({ ...sample, updatedAt: new Date() })
+      .where(eq(asbestosSamples.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteAsbestosSample(id: string): Promise<boolean> {
+    const result = await db.delete(asbestosSamples).where(eq(asbestosSamples.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getAsbestosSampleLayers(sampleId: string): Promise<AsbestosSampleLayer[]> {
+    return await db
+      .select()
+      .from(asbestosSampleLayers)
+      .where(eq(asbestosSampleLayers.sampleId, sampleId))
+      .orderBy(asbestosSampleLayers.layerNumber);
+  }
+
+  async replaceAsbestosSampleLayers(sampleId: string, layers: InsertAsbestosSampleLayer[]): Promise<AsbestosSampleLayer[]> {
+    return await db.transaction(async (tx) => {
+      await tx.delete(asbestosSampleLayers).where(eq(asbestosSampleLayers.sampleId, sampleId));
+      if (!layers.length) return [];
+      const created = await tx.insert(asbestosSampleLayers).values(layers).returning();
+      return created;
+    });
+  }
+
+  async getAsbestosSamplePhotos(sampleId: string): Promise<AsbestosSamplePhoto[]> {
+    return await db
+      .select()
+      .from(asbestosSamplePhotos)
+      .where(eq(asbestosSamplePhotos.sampleId, sampleId))
+      .orderBy(desc(asbestosSamplePhotos.uploadedAt));
+  }
+
+  async createAsbestosSamplePhoto(photo: { sampleId: string; url: string; filename?: string | null }): Promise<AsbestosSamplePhoto> {
+    const [created] = await db.insert(asbestosSamplePhotos).values(photo).returning();
+    return created;
+  }
+
+  async deleteAsbestosSamplePhoto(id: string): Promise<boolean> {
+    const result = await db.delete(asbestosSamplePhotos).where(eq(asbestosSamplePhotos.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getPaintSamples(surveyId: string): Promise<PaintSample[]> {
+    return await db
+      .select()
+      .from(paintSamples)
+      .where(eq(paintSamples.surveyId, surveyId))
+      .orderBy(desc(paintSamples.createdAt));
+  }
+
+  async getPaintSample(id: string): Promise<PaintSample | undefined> {
+    const [sample] = await db.select().from(paintSamples).where(eq(paintSamples.id, id));
+    return sample || undefined;
+  }
+
+  async createPaintSample(sample: InsertPaintSample): Promise<PaintSample> {
+    const [created] = await db.insert(paintSamples).values(sample).returning();
+    return created;
+  }
+
+  async updatePaintSample(id: string, sample: Partial<InsertPaintSample>): Promise<PaintSample | undefined> {
+    const [updated] = await db
+      .update(paintSamples)
+      .set({ ...sample, updatedAt: new Date() })
+      .where(eq(paintSamples.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deletePaintSample(id: string): Promise<boolean> {
+    const result = await db.delete(paintSamples).where(eq(paintSamples.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getPaintSamplePhotos(sampleId: string): Promise<PaintSamplePhoto[]> {
+    return await db
+      .select()
+      .from(paintSamplePhotos)
+      .where(eq(paintSamplePhotos.sampleId, sampleId))
+      .orderBy(desc(paintSamplePhotos.uploadedAt));
+  }
+
+  async createPaintSamplePhoto(photo: { sampleId: string; url: string; filename?: string | null }): Promise<PaintSamplePhoto> {
+    const [created] = await db.insert(paintSamplePhotos).values(photo).returning();
+    return created;
+  }
+
+  async deletePaintSamplePhoto(id: string): Promise<boolean> {
+    const result = await db.delete(paintSamplePhotos).where(eq(paintSamplePhotos.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -457,6 +610,70 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  // Organization methods
+  async getOrganizations(): Promise<Organization[]> {
+    return await db.select().from(organizations).orderBy(desc(organizations.updatedAt));
+  }
+
+  async getOrganization(id: string): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
+    return org || undefined;
+  }
+
+  async createOrganization(org: InsertOrganization): Promise<Organization> {
+    const [created] = await db.insert(organizations).values(org).returning();
+    return created;
+  }
+
+  async updateOrganization(id: string, org: Partial<InsertOrganization>): Promise<Organization | undefined> {
+    const [updated] = await db
+      .update(organizations)
+      .set({ ...org, updatedAt: new Date() })
+      .where(eq(organizations.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteOrganization(id: string): Promise<boolean> {
+    const result = await db.delete(organizations).where(eq(organizations.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getOrganizationMembers(organizationId: string): Promise<OrganizationMember[]> {
+    return await db
+      .select()
+      .from(organizationMembers)
+      .where(eq(organizationMembers.organizationId, organizationId))
+      .orderBy(desc(organizationMembers.createdAt));
+  }
+
+  async addOrganizationMember(member: InsertOrganizationMember): Promise<OrganizationMember> {
+    const [created] = await db.insert(organizationMembers).values(member).returning();
+    return created;
+  }
+
+  async updateOrganizationMember(id: string, member: Partial<InsertOrganizationMember>): Promise<OrganizationMember | undefined> {
+    const [updated] = await db
+      .update(organizationMembers)
+      .set(member)
+      .where(eq(organizationMembers.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async removeOrganizationMember(id: string): Promise<boolean> {
+    const result = await db.delete(organizationMembers).where(eq(organizationMembers.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getOrganizationIdsForUser(userId: string): Promise<string[]> {
+    const memberships = await db
+      .select({ organizationId: organizationMembers.organizationId })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.userId, userId));
+    return memberships.map((member) => member.organizationId);
+  }
+
   async getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]> {
     return await db
       .select()
@@ -520,13 +737,14 @@ export class DatabaseStorage implements IStorage {
       .from(homogeneousAreas)
       .where(eq(homogeneousAreas.surveyId, surveyId));
     const nextIndex = (existingCount[0]?.count ?? 0) + 1;
-    const autoTitle = `HA-${String(nextIndex).padStart(2, "0")}`;
+    const haId = `HA-${nextIndex}`;
     const [area] = await db
       .insert(homogeneousAreas)
       .values({
         id: nanoid(),
         surveyId,
-        title: data.title && data.title.trim() ? data.title : autoTitle,
+        haId,
+        title: data.title && data.title.trim() ? data.title : haId,
         description: data.description ?? null,
       })
       .returning();

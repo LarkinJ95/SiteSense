@@ -1,13 +1,14 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertSurveySchema, insertObservationSchema, insertAirMonitoringJobSchema, insertDailyWeatherLogSchema, insertPersonnelProfileSchema, insertFieldToolsEquipmentSchema, insertUserProfileSchema } from "@shared/schema";
-import type { Survey, Observation, ObservationPhoto, AirMonitoringJob, AirSample, DailyWeatherLog } from "@shared/schema";
+import { insertSurveySchema, insertObservationSchema, insertAirMonitoringJobSchema, insertDailyWeatherLogSchema, insertPersonnelProfileSchema, insertFieldToolsEquipmentSchema, insertUserProfileSchema, insertAsbestosSampleSchema, insertPaintSampleSchema, insertOrganizationSchema, insertOrganizationMemberSchema } from "@shared/schema";
+import type { Survey, Observation, ObservationPhoto, AirMonitoringJob, AirSample, DailyWeatherLog, AsbestosSample, PaintSample, AsbestosSampleLayer, AsbestosSamplePhoto, PaintSamplePhoto } from "@shared/schema";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
 import { nanoid } from "nanoid";
 import { getUserDisplayName, requireAdmin } from "./auth";
+import { z } from "zod";
 
 let heicConvert: any | null = null;
 
@@ -91,8 +92,13 @@ function generateSurveyReport(
   survey: Survey,
   observations: Observation[],
   photosByObservation: Array<{ observation: Observation; photos: Array<ObservationPhoto & { dataUrl?: string }> }>,
-  homogeneousAreas: Array<{ title: string; description?: string | null }>,
+  homogeneousAreas: Array<{ title: string; description?: string | null; haId?: string | null }>,
   functionalAreas: Array<{ title: string; description?: string | null }>,
+  asbestosSamples: AsbestosSample[],
+  paintSamples: PaintSample[],
+  asbestosLayersBySample: Record<string, AsbestosSampleLayer[]>,
+  asbestosPhotosBySample: Array<{ sample: AsbestosSample; photos: Array<AsbestosSamplePhoto & { dataUrl?: string }> }>,
+  paintPhotosBySample: Array<{ sample: PaintSample; photos: Array<PaintSamplePhoto & { dataUrl?: string }> }>,
   baseUrl?: string,
   sitePhotoDataUrl?: string | null
 ): string {
@@ -125,6 +131,18 @@ function generateSurveyReport(
     if (Number.isInteger(value)) return value.toString();
     return parseFloat(value.toFixed(6)).toString();
   };
+  const toNumber = (value: unknown) => {
+    if (value === null || value === undefined) return null;
+    const parsed = typeof value === "number" ? value : parseFloat(String(value));
+    if (Number.isNaN(parsed)) return null;
+    return parsed;
+  };
+  const formatOptionalNumber = (value: unknown, suffix?: string) => {
+    const parsed = toNumber(value);
+    if (parsed === null) return "—";
+    const formatted = formatNumber(parsed);
+    return suffix ? `${formatted}${suffix}` : formatted;
+  };
   const formatStatus = (value: string | null | undefined) => {
     const raw = value || "";
     return raw
@@ -153,72 +171,74 @@ function generateSurveyReport(
     if (!/^[A-Za-z]+$/.test(trimmed)) return trimmed;
     return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
   };
-  const parseQuantity = (rawQuantity: string | null) => {
+  const formatSubstrate = (sample: PaintSample) => {
+    if (!sample.substrate) return "—";
+    if (sample.substrate === "other") {
+      return sample.substrateOther?.trim() || "Other";
+    }
+    return toSentenceCaseIfOneWord(sample.substrate);
+  };
+  const formatLayerLines = (sample: AsbestosSample) => {
+    const layers = asbestosLayersBySample[sample.id] || [];
+    if (!layers.length) return "—";
+    return layers
+      .map((layer) => {
+        const material = layer.materialType ? formatMaterialType(layer.materialType) : formatMaterialType(sample.materialType);
+        const type = toSentenceCaseIfOneWord(layer.asbestosType) || "—";
+        const percent = formatOptionalNumber(layer.asbestosPercent, layer.asbestosPercent ? "%" : "");
+        const description = layer.description ? ` • ${layer.description}` : "";
+        return `Layer ${layer.layerNumber}: ${material} • ${type} • ${percent}${description}`;
+      })
+      .join("<br/>");
+  };
+  const parseSampleQty = (rawQuantity: string | null | undefined) => {
     if (!rawQuantity) return null;
     const raw = rawQuantity.trim();
     const match = raw.match(/^(-?\d+(?:\.\d+)?)/);
     if (!match) return null;
     const amount = parseFloat(match[1]);
     if (Number.isNaN(amount)) return null;
-    const rawUnit = raw.slice(match[0].length).trim();
-    let unit = rawUnit;
-    if (/^(sq\s*ft|sqft|sf)$/i.test(rawUnit)) unit = "SqFt";
-    if (/^(lf|linear\s*ft|linear\s*feet)$/i.test(rawUnit)) unit = "LF";
-    return { amount, unit };
-  };
-  const addByUnit = (totals: Record<string, number>, unit: string, amount: number) => {
-    const key = unit || "";
-    totals[key] = (totals[key] || 0) + amount;
-  };
-  const formatByUnit = (totals: Record<string, number>) => {
-    const entries = Object.entries(totals);
-    if (!entries.length) return "0";
-    return entries
-      .map(([unit, amount]) => `${formatNumber(amount)}${unit ? ` ${unit}` : ""}`)
-      .join(" + ");
+    return amount;
   };
 
   const highRiskObservations = observations.filter(obs => obs.riskLevel === "high");
   const mediumRiskObservations = observations.filter(obs => obs.riskLevel === "medium");
   const samplesCollected = observations.filter(obs => obs.sampleCollected);
   
-  // Calculate quantities by hazardous areas (HA)
   const hazardousAreas = observations.filter(obs => obs.riskLevel === "high" || obs.riskLevel === "medium");
-  const totalHAByUnit = hazardousAreas.reduce((totals, obs) => {
-    const parsed = parseQuantity(obs.quantity);
-    if (parsed && parsed.amount > 0) {
-      addByUnit(totals, parsed.unit, parsed.amount);
-    }
-    return totals;
-  }, {} as Record<string, number>);
-  
-  // Calculate quantities by sample
-  const totalSampleByUnit = samplesCollected.reduce((totals, obs) => {
-    const parsed = parseQuantity(obs.quantity);
-    if (parsed && parsed.amount > 0) {
-      addByUnit(totals, parsed.unit, parsed.amount);
-    }
-    return totals;
-  }, {} as Record<string, number>);
-  
-  // Group quantities by material type for detailed breakdown
-  const quantityByMaterial = observations.reduce((acc, obs) => {
-    const material = obs.materialType;
-    const parsed = parseQuantity(obs.quantity);
-    if (parsed && parsed.amount > 0) {
-      if (!acc[material]) {
-        acc[material] = { total: {}, hazardous: {}, sampled: {} };
-      }
-      addByUnit(acc[material].total, parsed.unit, parsed.amount);
-      if (obs.riskLevel === "high" || obs.riskLevel === "medium") {
-        addByUnit(acc[material].hazardous, parsed.unit, parsed.amount);
-      }
-      if (obs.sampleCollected) {
-        addByUnit(acc[material].sampled, parsed.unit, parsed.amount);
-      }
+
+  const totalQtyByHomogeneousArea = asbestosSamples.reduce((acc, sample) => {
+    const key = sample.homogeneousArea;
+    const qty = parseSampleQty(sample.estimatedQuantity);
+    if (!key) return acc;
+    if (!acc[key]) acc[key] = 0;
+    if (qty && qty > 0) {
+      acc[key] += qty;
     }
     return acc;
-  }, {} as Record<string, { total: Record<string, number>, hazardous: Record<string, number>, sampled: Record<string, number> }>);
+  }, {} as Record<string, number>);
+
+  const sampleCountByHomogeneousArea = asbestosSamples.reduce((acc, sample) => {
+    const key = sample.homogeneousArea;
+    if (!key) return acc;
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const firstObservationWithCoords = observations.find(
+    (obs) => obs.latitude !== null && obs.latitude !== undefined && obs.longitude !== null && obs.longitude !== undefined
+  );
+  const mapEmbedUrl = firstObservationWithCoords
+    ? (() => {
+        const lat = Number(firstObservationWithCoords.latitude);
+        const lon = Number(firstObservationWithCoords.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+        const latDelta = 0.005;
+        const lonDelta = 0.005;
+        const bbox = `${lon - lonDelta},${lat - latDelta},${lon + lonDelta},${lat + latDelta}`;
+        return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lon}`;
+      })()
+    : null;
   
   const sitePhotoSrc = sitePhotoDataUrl || (survey.sitePhotoUrl
     ? (survey.sitePhotoUrl.startsWith("http://") || survey.sitePhotoUrl.startsWith("https://")
@@ -243,6 +263,132 @@ function generateSurveyReport(
           <td>${toSentenceCaseIfOneWord(entry.observation.area)}</td>
           <td>${formatMaterialType(entry.observation.materialType)}</td>
           <td>${toSentenceCaseIfOneWord(entry.observation.condition)}</td>
+          <td class="photo-cell">${photoCells || "-"}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const buildSamplePhotoSrc = (photo: { dataUrl?: string; url?: string | null; filename?: string | null }) => {
+    if (photo.dataUrl) return photo.dataUrl;
+    if (photo.url) {
+      if (photo.url.startsWith("http://") || photo.url.startsWith("https://")) return photo.url;
+      if (baseUrl) {
+        return `${baseUrl}${photo.url.startsWith("/") ? photo.url : `/${photo.url}`}`;
+      }
+      return photo.url;
+    }
+    if (photo.filename) {
+      const safeFilename = path.basename(photo.filename);
+      return baseUrl ? `${baseUrl}/uploads/${safeFilename}` : `/uploads/${safeFilename}`;
+    }
+    return "";
+  };
+
+  const asbestosRows = asbestosSamples.map((sample) => {
+    const layers = asbestosLayersBySample[sample.id] || [];
+    if (layers.length === 0) {
+      return `
+        <tr>
+            <td>${sample.sampleNumber || "—"}</td>
+            <td>${sample.functionalArea || "—"}</td>
+            <td>${sample.homogeneousArea || "—"}</td>
+            <td>${formatMaterialType(sample.materialType)}</td>
+            <td>${sample.sampleDescription || "—"}</td>
+            <td>${sample.sampleLocation || "—"}</td>
+            <td>${sample.estimatedQuantity || "—"} ${sample.quantityUnit || ""}</td>
+            <td>${toSentenceCaseIfOneWord(sample.condition) || "—"}</td>
+            <td>${toSentenceCaseIfOneWord(sample.collectionMethod) || "—"}</td>
+            <td>${toSentenceCaseIfOneWord(sample.asbestosType) || "—"}</td>
+            <td>${formatOptionalNumber(sample.asbestosPercent, sample.asbestosPercent ? "%" : "")}</td>
+            <td>${sample.results || "—"}</td>
+            <td>${sample.notes || "—"}</td>
+            <td>—</td>
+        </tr>
+      `;
+    }
+    return layers.map((layer, index) => {
+      const material = layer.materialType ? formatMaterialType(layer.materialType) : formatMaterialType(sample.materialType);
+      const type = toSentenceCaseIfOneWord(layer.asbestosType) || "—";
+      const percent = formatOptionalNumber(layer.asbestosPercent, layer.asbestosPercent ? "%" : "");
+      const description = layer.description || "—";
+      const layerNotes = layer.notes || "—";
+      return `
+        <tr>
+            <td>${sample.sampleNumber ? `${sample.sampleNumber} (${index + 1}/${layers.length})` : `— (${index + 1}/${layers.length})`}</td>
+            <td>${sample.functionalArea || "—"}</td>
+            <td>${sample.homogeneousArea || "—"}</td>
+            <td>${material}</td>
+            <td>${sample.sampleDescription || "—"}</td>
+            <td>${sample.sampleLocation || "—"}</td>
+            <td>${sample.estimatedQuantity || "—"} ${sample.quantityUnit || ""}</td>
+            <td>${toSentenceCaseIfOneWord(sample.condition) || "—"}</td>
+            <td>${toSentenceCaseIfOneWord(sample.collectionMethod) || "—"}</td>
+            <td>${type}</td>
+            <td>${percent}</td>
+            <td>${sample.results || "—"}</td>
+            <td>${sample.notes || "—"}</td>
+            <td>${description}${layerNotes !== "—" ? `<br/>${layerNotes}` : ""}</td>
+        </tr>
+      `;
+    }).join("");
+  }).join("");
+
+  const formatMgKg = (value: unknown) => formatOptionalNumber(value, " mg/kg");
+  const formatPercentByWeight = (value: unknown) => {
+    const parsed = toNumber(value);
+    if (parsed === null) return "—";
+    return `${formatNumber(parsed / 10000)}%`;
+  };
+
+  const paintRows = paintSamples.map((sample) => `
+        <tr>
+            <td>${sample.sampleNumber || "—"}</td>
+            <td>${sample.functionalArea || "—"}</td>
+            <td>${formatSubstrate(sample)}</td>
+            <td>${sample.sampleDescription || "—"}</td>
+            <td>${sample.sampleLocation || "—"}</td>
+            <td>${toSentenceCaseIfOneWord(sample.collectionMethod) || "—"}</td>
+            <td>${formatMgKg(sample.leadResultMgKg)}</td>
+            <td>${formatPercentByWeight(sample.leadResultMgKg)}</td>
+            <td>${formatMgKg(sample.cadmiumResultMgKg)}</td>
+            <td>${formatPercentByWeight(sample.cadmiumResultMgKg)}</td>
+            <td>${sample.notes || "—"}</td>
+        </tr>
+  `).join("");
+
+  const asbestosPhotoRows = asbestosPhotosBySample
+    .filter((entry) => entry.photos.length > 0)
+    .map((entry) => {
+      const photoCells = entry.photos
+        .map((photo) => {
+          const photoSrc = buildSamplePhotoSrc(photo);
+          if (!photoSrc) return "";
+          return `<img src="${photoSrc}" alt="${photo.filename || "Asbestos sample photo"}" class="photo-thumb" />`;
+        })
+        .join("");
+      return `
+        <tr>
+          <td>${entry.sample.sampleNumber || "—"}</td>
+          <td class="photo-cell">${photoCells || "-"}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const paintPhotoRows = paintPhotosBySample
+    .filter((entry) => entry.photos.length > 0)
+    .map((entry) => {
+      const photoCells = entry.photos
+        .map((photo) => {
+          const photoSrc = buildSamplePhotoSrc(photo);
+          if (!photoSrc) return "";
+          return `<img src="${photoSrc}" alt="${photo.filename || "Paint sample photo"}" class="photo-thumb" />`;
+        })
+        .join("");
+      return `
+        <tr>
+          <td>${entry.sample.sampleNumber || "—"}</td>
           <td class="photo-cell">${photoCells || "-"}</td>
         </tr>
       `;
@@ -375,26 +521,28 @@ function generateSurveyReport(
     </div>
     ` : ''}
 
+    <div class="page-break"></div>
+
     <div class="section">
-        <h3>Executive Summary</h3>
-        <div class="stats">
-            <div class="stat-card">
-                <div class="stat-number">${observations.length}</div>
-                <div>Total Observations</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">${highRiskObservations.length}</div>
-                <div>High Risk Areas</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">${mediumRiskObservations.length}</div>
-                <div>Medium Risk Areas</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">${samplesCollected.length}</div>
-                <div>Samples Collected</div>
-            </div>
-        </div>
+        <h3>Functional Areas</h3>
+        ${functionalAreas.length > 0 ? `
+        <table>
+            <thead>
+                <tr>
+                    <th>Functional Area</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${functionalAreas.map(area => `
+                <tr>
+                    <td>${area.title}</td>
+                    <td>${area.description || '-'}</td>
+                </tr>
+                `).join('')}
+            </tbody>
+        </table>
+        ` : '<p><em>No functional areas defined for this survey.</em></p>'}
     </div>
 
     <div class="section">
@@ -405,61 +553,123 @@ function generateSurveyReport(
                 <tr>
                     <th>Homogeneous Area</th>
                     <th>Description</th>
+                    <th>Sample Count</th>
+                    <th>Total Sample Qty</th>
                 </tr>
             </thead>
             <tbody>
-                ${homogeneousAreas.map(area => `
+                ${homogeneousAreas.map(area => {
+                  const haLabel = area.haId || area.title;
+                  return `
                 <tr>
-                    <td>${area.title}</td>
+                    <td>${haLabel}</td>
                     <td>${area.description || '-'}</td>
+                    <td>${sampleCountByHomogeneousArea[haLabel] || 0}</td>
+                    <td>${formatNumber(totalQtyByHomogeneousArea[haLabel] || 0)}</td>
                 </tr>
-                `).join('')}
+                `;
+                }).join('')}
             </tbody>
         </table>
         ` : '<p><em>No homogeneous areas defined for this survey.</em></p>'}
     </div>
 
-    <div class="quantity-section">
-        <h3>📊 Quantity Analysis</h3>
-        <div class="stats">
-            <div class="stat-card">
-                <div class="stat-number">${formatByUnit(totalHAByUnit)}</div>
-                <div>Total Quantity in Hazardous Areas (HA)</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">${formatByUnit(totalSampleByUnit)}</div>
-                <div>Total Quantity by Sample</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">${hazardousAreas.length}</div>
-                <div>Hazardous Areas Count</div>
-            </div>
-        </div>
-        
-        ${Object.keys(quantityByMaterial).length > 0 ? `
-        <h4>Material Quantity Breakdown</h4>
-        <table class="quantity-table">
+    <div class="page-break"></div>
+
+    <div class="section">
+        <h3>Asbestos Samples</h3>
+        ${asbestosSamples.length > 0 ? `
+        <table>
             <thead>
                 <tr>
+                    <th>Sample #</th>
+                    <th>FA</th>
+                    <th>HA</th>
                     <th>Material Type</th>
-                    <th>Total Quantity</th>
-                    <th>Hazardous Quantity</th>
-                    <th>Sampled Quantity</th>
+                    <th>Description</th>
+                    <th>Location</th>
+                    <th>Est Qty</th>
+                    <th>Condition</th>
+                    <th>Collection Method</th>
+                    <th>Lab Type</th>
+                    <th>Lab %</th>
+                    <th>Results</th>
+                    <th>Notes</th>
+                    <th>Layers</th>
                 </tr>
             </thead>
             <tbody>
-                ${Object.entries(quantityByMaterial).map(([material, quantities]) => `
-                <tr>
-                    <td><strong>${formatMaterialType(material)}</strong></td>
-                    <td>${formatByUnit(quantities.total)}</td>
-                    <td>${formatByUnit(quantities.hazardous)}</td>
-                    <td>${formatByUnit(quantities.sampled)}</td>
-                </tr>
-                `).join('')}
+                ${asbestosRows}
             </tbody>
         </table>
-        ` : '<p><em>No quantity data available for detailed breakdown.</em></p>'}
+        ` : '<p><em>No asbestos samples recorded.</em></p>'}
+        ${asbestosSamples.length > 0 ? `
+        <div style="margin-top: 16px;">
+            <h4>Asbestos Sample Photos</h4>
+            ${asbestosPhotoRows ? `
+            <table class="photo-table">
+                <thead>
+                    <tr>
+                        <th>Sample #</th>
+                        <th>Photos</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${asbestosPhotoRows}
+                </tbody>
+            </table>
+            ` : '<p><em>No asbestos sample photos uploaded.</em></p>'}
+        </div>
+        ` : ''}
     </div>
+
+    <div class="page-break"></div>
+
+    <div class="section">
+        <h3>Paint Samples</h3>
+        ${paintSamples.length > 0 ? `
+        <table>
+            <thead>
+                <tr>
+                    <th>Sample #</th>
+                    <th>FA</th>
+                    <th>Substrate</th>
+                    <th>Description</th>
+                    <th>Location</th>
+                    <th>Collection Method</th>
+                    <th>Lead (mg/kg)</th>
+                    <th>Lead (% wt)</th>
+                    <th>Cadmium (mg/kg)</th>
+                    <th>Cadmium (% wt)</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${paintRows}
+            </tbody>
+        </table>
+        ` : '<p><em>No paint samples recorded.</em></p>'}
+        ${paintSamples.length > 0 ? `
+        <div style="margin-top: 16px;">
+            <h4>Paint Sample Photos</h4>
+            ${paintPhotoRows ? `
+            <table class="photo-table">
+                <thead>
+                    <tr>
+                        <th>Sample #</th>
+                        <th>Photos</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${paintPhotoRows}
+                </tbody>
+            </table>
+            ` : '<p><em>No paint sample photos uploaded.</em></p>'}
+        </div>
+        ` : ''}
+    </div>
+
+    <div class="page-break"></div>
 
     ${highRiskObservations.length > 0 ? `
     <div class="section">
@@ -474,6 +684,34 @@ function generateSurveyReport(
             ${obs.notes ? `<p><strong>Notes:</strong> ${obs.notes}</p>` : ''}
         </div>
         `).join('')}
+    </div>
+    ` : ''}
+
+    ${samplesCollected.length > 0 ? `
+    <div class="section">
+        <h3>Sample Collection Summary</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Sample ID</th>
+                    <th>Area</th>
+                    <th>Material Type</th>
+                    <th>Collection Method</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${samplesCollected.map(obs => `
+                <tr>
+                    <td>${obs.sampleId || 'Not specified'}</td>
+                    <td>${toSentenceCaseIfOneWord(obs.area)}</td>
+                    <td>${formatMaterialType(obs.materialType)}</td>
+                    <td>${toSentenceCaseIfOneWord(obs.collectionMethod || 'Not specified')}</td>
+                    <td>${obs.sampleNotes || '-'}</td>
+                </tr>
+                `).join('')}
+            </tbody>
+        </table>
     </div>
     ` : ''}
 
@@ -505,33 +743,22 @@ function generateSurveyReport(
         </table>
     </div>
 
-    ${samplesCollected.length > 0 ? `
     <div class="section">
-        <h3>Sample Collection Summary</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>Sample ID</th>
-                    <th>Area</th>
-                    <th>Material Type</th>
-                    <th>Collection Method</th>
-                    <th>Notes</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${samplesCollected.map(obs => `
-                <tr>
-                    <td>${obs.sampleId || 'Not specified'}</td>
-                    <td>${toSentenceCaseIfOneWord(obs.area)}</td>
-                    <td>${formatMaterialType(obs.materialType)}</td>
-                    <td>${toSentenceCaseIfOneWord(obs.collectionMethod || 'Not specified')}</td>
-                    <td>${obs.sampleNotes || '-'}</td>
-                </tr>
-                `).join('')}
-            </tbody>
-        </table>
+        <h3>Site Location Map</h3>
+        ${mapEmbedUrl ? `
+        <iframe
+            title="Site location map"
+            width="100%"
+            height="360"
+            frameborder="0"
+            marginheight="0"
+            marginwidth="0"
+            src="${mapEmbedUrl}"
+            style="border:1px solid #ddd; border-radius: 8px;"
+        ></iframe>
+        <p style="font-size: 12px; color: #666;">Based on the first observation GPS coordinates.</p>
+        ` : '<p><em>No GPS coordinates available to display a map.</em></p>'}
     </div>
-    ` : ''}
 
     <div class="section page-break">
         <h3>Observation Photos</h3>
@@ -645,6 +872,90 @@ const parsePreferences = (raw?: string | null) => {
 };
 
 const getAuthUserId = (req: any) => req.user?.sub || req.user?.email;
+
+const getUserOrgIds = async (req: any, res: any) => {
+  const userId = getAuthUserId(req);
+  if (!userId) {
+    res.status(401).json({ message: "Not authenticated" });
+    return null;
+  }
+  const orgIds = await storage.getOrganizationIdsForUser(userId);
+  if (!orgIds.length) {
+    res.status(403).json({ message: "No organization access" });
+    return null;
+  }
+  return orgIds;
+};
+
+const resolveOrgIdForCreate = (orgIds: string[], requested?: string | null) => {
+  if (requested && orgIds.includes(requested)) return requested;
+  return orgIds[0];
+};
+
+const assertSurveyOrgAccess = async (req: any, res: any, surveyId: string) => {
+  const orgIds = await getUserOrgIds(req, res);
+  if (!orgIds) return null;
+  const survey = await storage.getSurvey(surveyId);
+  if (!survey) {
+    res.status(404).json({ message: "Survey not found" });
+    return null;
+  }
+  if (!survey.organizationId || !orgIds.includes(survey.organizationId)) {
+    res.status(403).json({ message: "Forbidden" });
+    return null;
+  }
+  return survey;
+};
+
+const assertAirJobOrgAccess = async (req: any, res: any, jobId: string) => {
+  const orgIds = await getUserOrgIds(req, res);
+  if (!orgIds) return null;
+  const job = await storage.getAirMonitoringJob(jobId);
+  if (!job) {
+    res.status(404).json({ message: "Air monitoring job not found" });
+    return null;
+  }
+  if (!job.organizationId || !orgIds.includes(job.organizationId)) {
+    res.status(403).json({ message: "Forbidden" });
+    return null;
+  }
+  return job;
+};
+
+const normalizeHaIdForDisplay = (value: string) => {
+  const match = value.match(/(\d+)/);
+  if (!match) return value.trim();
+  const num = parseInt(match[1], 10);
+  if (!Number.isFinite(num)) return value.trim();
+  return `HA-${num}`;
+};
+
+const extractHaNumber = (value: string) => {
+  const match = value.match(/(\d+)/);
+  if (!match) return value.trim();
+  const num = parseInt(match[1], 10);
+  if (!Number.isFinite(num)) return value.trim();
+  return String(num);
+};
+
+const buildAsbestosSampleNumber = (haId: string, sequence: number) => {
+  const prefix = extractHaNumber(haId);
+  return `${prefix}-${sequence}`;
+};
+
+const asbestosLayerInputSchema = z.object({
+  layerNumber: z.preprocess(
+    (value) => (typeof value === "string" ? parseInt(value, 10) : value),
+    z.number().int().min(1)
+  ),
+  materialType: z.string().optional(),
+  asbestosType: z.string().optional(),
+  asbestosPercent: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  description: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+const asbestosLayersInputSchema = z.array(asbestosLayerInputSchema).optional().default([]);
 
 function generateAirMonitoringReport(
   job: AirMonitoringJob,
@@ -791,6 +1102,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/surveys", async (req, res) => {
     try {
       const { search } = req.query;
+      const orgIds = await getUserOrgIds(req, res);
+      if (!orgIds) return;
       let surveys;
       
       if (search && typeof search === 'string') {
@@ -798,8 +1111,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         surveys = await storage.getSurveys();
       }
-      
-      res.json(surveys);
+
+      const filtered = surveys.filter((survey) => survey.organizationId && orgIds.includes(survey.organizationId));
+      res.json(filtered);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch surveys", error: error instanceof Error ? error.message : 'Unknown error' });
     }
@@ -807,10 +1121,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/surveys/:id", async (req, res) => {
     try {
-      const survey = await storage.getSurvey(req.params.id);
-      if (!survey) {
-        return res.status(404).json({ message: "Survey not found" });
-      }
+      const survey = await assertSurveyOrgAccess(req, res, req.params.id);
+      if (!survey) return;
       res.json(survey);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch survey", error: error.message });
@@ -819,10 +1131,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/surveys", async (req, res) => {
     try {
+      const orgIds = await getUserOrgIds(req, res);
+      if (!orgIds) return;
       const inspectorName = getUserDisplayName(req.user);
+      const organizationId = resolveOrgIdForCreate(orgIds, req.body?.organizationId);
       const validatedData = insertSurveySchema.parse({
         ...req.body,
         inspector: inspectorName || req.body?.inspector,
+        organizationId,
       });
       const survey = await storage.createSurvey(validatedData);
       res.status(201).json(survey);
@@ -843,6 +1159,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid action or survey IDs" });
       }
 
+      const orgIds = await getUserOrgIds(req, res);
+      if (!orgIds) return;
+
+      const allowedSurveys = await Promise.all(
+        surveyIds.map(async (surveyId: string) => {
+          const survey = await storage.getSurvey(surveyId);
+          if (!survey || !survey.organizationId || !orgIds.includes(survey.organizationId)) {
+            return null;
+          }
+          return survey;
+        })
+      );
+      if (allowedSurveys.some((survey) => !survey)) {
+        return res.status(403).json({ error: "One or more surveys are not accessible" });
+      }
+
       let result = {};
       
       if (action === "delete") {
@@ -861,6 +1193,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const observations = await storage.getObservations(surveyId);
           const homogeneousAreas = await storage.getHomogeneousAreas(surveyId);
           const functionalAreas = await storage.getFunctionalAreas(surveyId);
+          const asbestosSamples = await storage.getAsbestosSamples(surveyId);
+          const paintSamples = await storage.getPaintSamples(surveyId);
 
           if (survey && observations) {
             const photosByObservation = await Promise.all(
@@ -878,12 +1212,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const sitePhotoDataUrl = survey.sitePhotoUrl
               ? await toImageDataUrl(path.basename(survey.sitePhotoUrl))
               : null;
+            const asbestosLayersBySample = await Promise.all(
+              asbestosSamples.map(async (sample) => ({
+                sampleId: sample.id,
+                layers: await storage.getAsbestosSampleLayers(sample.id),
+              }))
+            ).then((entries) =>
+              entries.reduce((acc, entry) => {
+                acc[entry.sampleId] = entry.layers;
+                return acc;
+              }, {} as Record<string, AsbestosSampleLayer[]>)
+            );
+            const asbestosPhotosBySample = await Promise.all(
+              asbestosSamples.map(async (sample) => {
+                const photos = await storage.getAsbestosSamplePhotos(sample.id);
+                const photosWithData = await Promise.all(
+                  photos.map(async (photo) => ({
+                    ...photo,
+                    dataUrl: photo.filename ? await toImageDataUrl(photo.filename) : null,
+                  }))
+                );
+                return { sample, photos: photosWithData };
+              })
+            );
+            const paintPhotosBySample = await Promise.all(
+              paintSamples.map(async (sample) => {
+                const photos = await storage.getPaintSamplePhotos(sample.id);
+                const photosWithData = await Promise.all(
+                  photos.map(async (photo) => ({
+                    ...photo,
+                    dataUrl: photo.filename ? await toImageDataUrl(photo.filename) : null,
+                  }))
+                );
+                return { sample, photos: photosWithData };
+              })
+            );
             const reportHtml = generateSurveyReport(
               survey,
               observations,
               photosByObservation,
               homogeneousAreas,
               functionalAreas,
+              asbestosSamples,
+              paintSamples,
+              asbestosLayersBySample,
+              asbestosPhotosBySample,
+              paintPhotosBySample,
               baseUrl,
               sitePhotoDataUrl
             );
@@ -968,6 +1342,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const observations = await storage.getObservations(req.params.id);
       const homogeneousAreas = await storage.getHomogeneousAreas(req.params.id);
       const functionalAreas = await storage.getFunctionalAreas(req.params.id);
+      const asbestosSamples = await storage.getAsbestosSamples(req.params.id);
+      const paintSamples = await storage.getPaintSamples(req.params.id);
       const photosByObservation = await Promise.all(
         observations.map(async (observation) => {
           const photos = await storage.getObservationPhotos(observation.id);
@@ -984,12 +1360,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sitePhotoDataUrl = survey.sitePhotoUrl
         ? await toImageDataUrl(path.basename(survey.sitePhotoUrl))
         : null;
+      const asbestosLayersBySample = await Promise.all(
+        asbestosSamples.map(async (sample) => ({
+          sampleId: sample.id,
+          layers: await storage.getAsbestosSampleLayers(sample.id),
+        }))
+      ).then((entries) =>
+        entries.reduce((acc, entry) => {
+          acc[entry.sampleId] = entry.layers;
+          return acc;
+        }, {} as Record<string, AsbestosSampleLayer[]>)
+      );
+      const asbestosPhotosBySample = await Promise.all(
+        asbestosSamples.map(async (sample) => {
+          const photos = await storage.getAsbestosSamplePhotos(sample.id);
+          const photosWithData = await Promise.all(
+            photos.map(async (photo) => ({
+              ...photo,
+              dataUrl: photo.filename ? await toImageDataUrl(photo.filename) : null,
+            }))
+          );
+          return { sample, photos: photosWithData };
+        })
+      );
+      const paintPhotosBySample = await Promise.all(
+        paintSamples.map(async (sample) => {
+          const photos = await storage.getPaintSamplePhotos(sample.id);
+          const photosWithData = await Promise.all(
+            photos.map(async (photo) => ({
+              ...photo,
+              dataUrl: photo.filename ? await toImageDataUrl(photo.filename) : null,
+            }))
+          );
+          return { sample, photos: photosWithData };
+        })
+      );
       const reportHtml = generateSurveyReport(
         survey,
         observations,
         photosByObservation,
         homogeneousAreas,
         functionalAreas,
+        asbestosSamples,
+        paintSamples,
+        asbestosLayersBySample,
+        asbestosPhotosBySample,
+        paintPhotosBySample,
         baseUrl,
         sitePhotoDataUrl
       );
@@ -1006,7 +1422,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/surveys/:surveyId/homogeneous-areas", async (req, res) => {
     try {
       const areas = await storage.getHomogeneousAreas(req.params.surveyId);
-      res.json(areas);
+      const samples = await storage.getAsbestosSamples(req.params.surveyId);
+      const byHaId = samples.reduce((acc, sample) => {
+        const key = sample.homogeneousArea;
+        if (!acc[key]) {
+          acc[key] = { count: 0, totalQty: 0 };
+        }
+        acc[key].count += 1;
+        const qty = typeof sample.estimatedQuantity === "string"
+          ? parseFloat(sample.estimatedQuantity)
+          : 0;
+        if (Number.isFinite(qty)) {
+          acc[key].totalQty += qty;
+        }
+        return acc;
+      }, {} as Record<string, { count: number; totalQty: number }>);
+
+      const enriched = areas.map((area) => {
+        const normalizedHaId = normalizeHaIdForDisplay(area.haId || area.title);
+        const key = normalizedHaId;
+        const stats = byHaId[key] || { count: 0, totalQty: 0 };
+        return {
+          ...area,
+          haId: normalizedHaId,
+          sampleCount: stats.count,
+          totalQuantity: stats.totalQty,
+        };
+      });
+      res.json(enriched);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch homogeneous areas", error: error instanceof Error ? error.message : "Unknown error" });
     }
@@ -1224,6 +1667,132 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Asbestos sample routes
+  app.get("/api/surveys/:surveyId/asbestos-samples", async (req, res) => {
+    try {
+      const samples = await storage.getAsbestosSamples(req.params.surveyId);
+      res.json(samples);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch asbestos samples", error: error.message });
+    }
+  });
+
+  app.post("/api/surveys/:surveyId/asbestos-samples", async (req, res) => {
+    try {
+      const payload = insertAsbestosSampleSchema.parse({
+        ...req.body,
+        surveyId: req.params.surveyId,
+      });
+      const layers = asbestosLayersInputSchema.parse(req.body.layers);
+      let sampleNumber = payload.sampleNumber;
+      if (!sampleNumber) {
+        const existing = await storage.getAsbestosSamples(req.params.surveyId);
+        const count = existing.filter(sample => sample.homogeneousArea === payload.homogeneousArea).length;
+        sampleNumber = buildAsbestosSampleNumber(payload.homogeneousArea, count + 1);
+      }
+      const sample = await storage.createAsbestosSample({ ...payload, sampleNumber });
+      if (layers.length > 0) {
+        await storage.replaceAsbestosSampleLayers(
+          sample.id,
+          layers.map((layer) => ({ ...layer, sampleId: sample.id }))
+        );
+      }
+      res.status(201).json(sample);
+    } catch (error) {
+      res.status(400).json({
+        message: "Invalid asbestos sample data",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  app.put("/api/asbestos-samples/:id", async (req, res) => {
+    try {
+      const payload = insertAsbestosSampleSchema.partial().parse(req.body);
+      const sample = await storage.updateAsbestosSample(req.params.id, payload);
+      const layers = asbestosLayersInputSchema.parse(req.body.layers);
+      if (!sample) {
+        return res.status(404).json({ message: "Asbestos sample not found" });
+      }
+      await storage.replaceAsbestosSampleLayers(
+        sample.id,
+        layers.map((layer) => ({ ...layer, sampleId: sample.id }))
+      );
+      res.json(sample);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid asbestos sample data", error: error.message });
+    }
+  });
+
+  app.get("/api/asbestos-samples/:id/layers", async (req, res) => {
+    try {
+      const layers = await storage.getAsbestosSampleLayers(req.params.id);
+      res.json(layers);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch asbestos sample layers", error: error.message });
+    }
+  });
+
+  app.delete("/api/asbestos-samples/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteAsbestosSample(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Asbestos sample not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete asbestos sample", error: error.message });
+    }
+  });
+
+  // Paint sample routes
+  app.get("/api/surveys/:surveyId/paint-samples", async (req, res) => {
+    try {
+      const samples = await storage.getPaintSamples(req.params.surveyId);
+      res.json(samples);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch paint samples", error: error.message });
+    }
+  });
+
+  app.post("/api/surveys/:surveyId/paint-samples", async (req, res) => {
+    try {
+      const payload = insertPaintSampleSchema.parse({
+        ...req.body,
+        surveyId: req.params.surveyId,
+      });
+      const sample = await storage.createPaintSample(payload);
+      res.status(201).json(sample);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid paint sample data", error: error.message });
+    }
+  });
+
+  app.put("/api/paint-samples/:id", async (req, res) => {
+    try {
+      const payload = insertPaintSampleSchema.partial().parse(req.body);
+      const sample = await storage.updatePaintSample(req.params.id, payload);
+      if (!sample) {
+        return res.status(404).json({ message: "Paint sample not found" });
+      }
+      res.json(sample);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid paint sample data", error: error.message });
+    }
+  });
+
+  app.delete("/api/paint-samples/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deletePaintSample(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Paint sample not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete paint sample", error: error.message });
+    }
+  });
+
   // Photo upload routes
   app.post("/api/observations/:observationId/photos", upload.array('photos', 10), async (req, res) => {
     try {
@@ -1260,6 +1829,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(photos);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch photos", error: error.message });
+    }
+  });
+
+  app.post("/api/asbestos-samples/:sampleId/photos", upload.array('photos', 10), async (req, res) => {
+    try {
+      const { sampleId } = req.params;
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: "No files uploaded" });
+      }
+      const uploaded = [];
+      for (const file of files) {
+        const normalized = await convertHeicToJpegIfNeeded(file);
+        const url = `/uploads/${normalized.filename}`;
+        const photo = await storage.createAsbestosSamplePhoto({
+          sampleId,
+          url,
+          filename: normalized.filename,
+        });
+        uploaded.push(photo);
+      }
+      res.status(201).json(uploaded);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to upload asbestos sample photos", error: error.message });
+    }
+  });
+
+  app.get("/api/asbestos-samples/:sampleId/photos", async (req, res) => {
+    try {
+      const photos = await storage.getAsbestosSamplePhotos(req.params.sampleId);
+      res.json(photos);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch asbestos sample photos", error: error.message });
+    }
+  });
+
+  app.delete("/api/asbestos-samples/photos/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteAsbestosSamplePhoto(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Photo not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete asbestos sample photo", error: error.message });
+    }
+  });
+
+  app.post("/api/paint-samples/:sampleId/photos", upload.array('photos', 10), async (req, res) => {
+    try {
+      const { sampleId } = req.params;
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: "No files uploaded" });
+      }
+      const uploaded = [];
+      for (const file of files) {
+        const normalized = await convertHeicToJpegIfNeeded(file);
+        const url = `/uploads/${normalized.filename}`;
+        const photo = await storage.createPaintSamplePhoto({
+          sampleId,
+          url,
+          filename: normalized.filename,
+        });
+        uploaded.push(photo);
+      }
+      res.status(201).json(uploaded);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to upload paint sample photos", error: error.message });
+    }
+  });
+
+  app.get("/api/paint-samples/:sampleId/photos", async (req, res) => {
+    try {
+      const photos = await storage.getPaintSamplePhotos(req.params.sampleId);
+      res.json(photos);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch paint sample photos", error: error.message });
+    }
+  });
+
+  app.delete("/api/paint-samples/photos/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deletePaintSamplePhoto(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Photo not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete paint sample photo", error: error.message });
     }
   });
 
@@ -2079,6 +2738,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
       name: getUserDisplayName(user),
       user,
     });
+  });
+
+  // Organization routes
+  app.get("/api/organizations", async (_req, res) => {
+    try {
+      const organizations = await storage.getOrganizations();
+      res.json(organizations);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch organizations", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.get("/api/organizations/:id", async (req, res) => {
+    try {
+      const organization = await storage.getOrganization(req.params.id);
+      if (!organization) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+      res.json(organization);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch organization", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.post("/api/organizations", requireAdmin, async (req, res) => {
+    try {
+      const payload = insertOrganizationSchema.parse(req.body);
+      const organization = await storage.createOrganization(payload);
+      res.status(201).json(organization);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid organization data", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.put("/api/organizations/:id", requireAdmin, async (req, res) => {
+    try {
+      const payload = insertOrganizationSchema.partial().parse(req.body);
+      const organization = await storage.updateOrganization(req.params.id, payload);
+      if (!organization) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+      res.json(organization);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid organization data", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.delete("/api/organizations/:id", requireAdmin, async (req, res) => {
+    try {
+      const deleted = await storage.deleteOrganization(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete organization", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.get("/api/organizations/:id/members", async (req, res) => {
+    try {
+      const members = await storage.getOrganizationMembers(req.params.id);
+      res.json(members);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch organization members", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.post("/api/organizations/:id/members", requireAdmin, async (req, res) => {
+    try {
+      const payload = insertOrganizationMemberSchema.parse({
+        ...req.body,
+        organizationId: req.params.id,
+      });
+      const member = await storage.addOrganizationMember(payload);
+      res.status(201).json(member);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid organization member data", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.put("/api/organization-members/:id", requireAdmin, async (req, res) => {
+    try {
+      const payload = insertOrganizationMemberSchema.partial().parse(req.body);
+      const member = await storage.updateOrganizationMember(req.params.id, payload);
+      if (!member) {
+        return res.status(404).json({ message: "Organization member not found" });
+      }
+      res.json(member);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid organization member data", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.delete("/api/organization-members/:id", requireAdmin, async (req, res) => {
+    try {
+      const deleted = await storage.removeOrganizationMember(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Organization member not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete organization member", error: error instanceof Error ? error.message : "Unknown error" });
+    }
   });
 
   // Admin Routes

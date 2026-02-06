@@ -57,11 +57,32 @@ interface SystemStats {
   lastBackup?: string;
 }
 
+interface Organization {
+  id: string;
+  name: string;
+  domain?: string | null;
+  status?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface OrganizationMember {
+  id: string;
+  organizationId: string;
+  userId: string;
+  role?: string | null;
+  status?: string | null;
+  createdAt?: string;
+}
+
 export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+  const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null);
+  const [isAddOrgModalOpen, setIsAddOrgModalOpen] = useState(false);
+  const [isEditOrgModalOpen, setIsEditOrgModalOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -88,6 +109,25 @@ export default function AdminDashboard() {
     status: "active" as 'active' | 'inactive' | 'pending'
   });
 
+  const [newOrgData, setNewOrgData] = useState({
+    name: "",
+    domain: "",
+    status: "active",
+  });
+
+  const [editOrgData, setEditOrgData] = useState({
+    id: "",
+    name: "",
+    domain: "",
+    status: "active",
+  });
+
+  const [newMemberData, setNewMemberData] = useState({
+    userId: "",
+    role: "member",
+    status: "active",
+  });
+
   // Fetch system statistics
   const { data: systemStats, isLoading: statsLoading } = useQuery<SystemStats>({
     queryKey: ["/api/admin/stats"],
@@ -96,6 +136,15 @@ export default function AdminDashboard() {
   // Fetch all users
   const { data: users = [], isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ["/api/admin/users"],
+  });
+
+  const { data: organizations = [] } = useQuery<Organization[]>({
+    queryKey: ["/api/organizations"],
+  });
+
+  const { data: organizationMembers = [] } = useQuery<OrganizationMember[]>({
+    queryKey: ["/api/organizations", selectedOrganization?.id, "members"],
+    enabled: !!selectedOrganization?.id,
   });
 
   // Filtered users based on search
@@ -231,6 +280,79 @@ export default function AdminDashboard() {
     },
   });
 
+  const createOrganizationMutation = useMutation({
+    mutationFn: async (payload: typeof newOrgData) => {
+      return await apiRequest("POST", "/api/organizations", payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations"] });
+      toast({ title: "Organization Created", description: "Organization has been created successfully." });
+      setIsAddOrgModalOpen(false);
+      setNewOrgData({ name: "", domain: "", status: "active" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create organization.", variant: "destructive" });
+    },
+  });
+
+  const updateOrganizationMutation = useMutation({
+    mutationFn: async (payload: typeof editOrgData) => {
+      const { id, ...data } = payload;
+      return await apiRequest("PUT", `/api/organizations/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations"] });
+      toast({ title: "Organization Updated", description: "Organization has been updated successfully." });
+      setIsEditOrgModalOpen(false);
+      setSelectedOrganization(null);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update organization.", variant: "destructive" });
+    },
+  });
+
+  const deleteOrganizationMutation = useMutation({
+    mutationFn: async (orgId: string) => {
+      return await apiRequest("DELETE", `/api/organizations/${orgId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations"] });
+      setSelectedOrganization(null);
+      toast({ title: "Organization Deleted", description: "Organization has been removed." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete organization.", variant: "destructive" });
+    },
+  });
+
+  const addOrganizationMemberMutation = useMutation({
+    mutationFn: async (payload: typeof newMemberData) => {
+      if (!selectedOrganization?.id) throw new Error("No organization selected");
+      return await apiRequest("POST", `/api/organizations/${selectedOrganization.id}/members`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations", selectedOrganization?.id, "members"] });
+      toast({ title: "Member Added", description: "Organization member added successfully." });
+      setNewMemberData({ userId: "", role: "member", status: "active" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to add organization member.", variant: "destructive" });
+    },
+  });
+
+  const removeOrganizationMemberMutation = useMutation({
+    mutationFn: async (memberId: string) => {
+      return await apiRequest("DELETE", `/api/organization-members/${memberId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations", selectedOrganization?.id, "members"] });
+      toast({ title: "Member Removed", description: "Organization member removed." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to remove organization member.", variant: "destructive" });
+    },
+  });
+
   const getRoleColor = (role: string) => {
     switch (role) {
       case 'admin': return 'bg-red-100 text-red-800';
@@ -244,6 +366,14 @@ export default function AdminDashboard() {
       case 'active': return 'bg-green-100 text-green-800';
       case 'inactive': return 'bg-gray-100 text-gray-800';
       case 'pending': return 'bg-yellow-100 text-yellow-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getOrgStatusColor = (status?: string | null) => {
+    switch (status) {
+      case 'active': return 'bg-green-100 text-green-800';
+      case 'inactive': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -339,6 +469,7 @@ export default function AdminDashboard() {
       <Tabs defaultValue="users" className="space-y-4">
         <TabsList>
           <TabsTrigger value="users">User Management</TabsTrigger>
+          <TabsTrigger value="organizations">Organizations</TabsTrigger>
           <TabsTrigger value="system">System Health</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
@@ -448,6 +579,281 @@ export default function AdminDashboard() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="organizations" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Organizations</CardTitle>
+              <CardDescription>Manage organizations and their members.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="relative w-72">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="Search organizations..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <Button
+                  onClick={() => setIsAddOrgModalOpen(true)}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Add Organization
+                </Button>
+              </div>
+
+              <div className="border rounded-lg mb-6">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Domain</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {organizations
+                      .filter(org =>
+                        org.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        (org.domain || "").toLowerCase().includes(searchQuery.toLowerCase())
+                      )
+                      .map((org) => (
+                        <TableRow key={org.id} onClick={() => setSelectedOrganization(org)} className="cursor-pointer">
+                          <TableCell className="font-medium">{org.name}</TableCell>
+                          <TableCell>{org.domain || "—"}</TableCell>
+                          <TableCell>
+                            <Badge className={getOrgStatusColor(org.status)}>
+                              {org.status || "active"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditOrgData({
+                                    id: org.id,
+                                    name: org.name,
+                                    domain: org.domain || "",
+                                    status: org.status || "active",
+                                  });
+                                  setIsEditOrgModalOpen(true);
+                                }}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="outline" size="sm" onClick={(e) => e.stopPropagation()}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete Organization</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Are you sure you want to delete {org.name}? This action cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => deleteOrganizationMutation.mutate(org.id)}
+                                      className="bg-red-600 hover:bg-red-700"
+                                    >
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Organization Members</CardTitle>
+                  <CardDescription>
+                    {selectedOrganization ? `Members of ${selectedOrganization.name}` : "Select an organization to view members."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {selectedOrganization ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <Input
+                          placeholder="User ID"
+                          value={newMemberData.userId}
+                          onChange={(e) => setNewMemberData((prev) => ({ ...prev, userId: e.target.value }))}
+                        />
+                        <Select
+                          value={newMemberData.role}
+                          onValueChange={(value) => setNewMemberData((prev) => ({ ...prev, role: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="member">Member</SelectItem>
+                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="manager">Manager</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={newMemberData.status}
+                          onValueChange={(value) => setNewMemberData((prev) => ({ ...prev, status: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="inactive">Inactive</SelectItem>
+                            <SelectItem value="pending">Pending</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          onClick={() => addOrganizationMemberMutation.mutate(newMemberData)}
+                          disabled={!newMemberData.userId}
+                        >
+                          Add Member
+                        </Button>
+                      </div>
+
+                      <div className="border rounded-lg">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>User ID</TableHead>
+                              <TableHead>Role</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {organizationMembers.map((member) => (
+                              <TableRow key={member.id}>
+                                <TableCell>{member.userId}</TableCell>
+                                <TableCell>{member.role || "member"}</TableCell>
+                                <TableCell>
+                                  <Badge className={getStatusColor(member.status || "active")}>
+                                    {member.status || "active"}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => removeOrganizationMemberMutation.mutate(member.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500">
+                      Select an organization above to manage members.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </CardContent>
+          </Card>
+
+          <Dialog open={isAddOrgModalOpen} onOpenChange={setIsAddOrgModalOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Organization</DialogTitle>
+                <DialogDescription>Create a new organization.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <Input
+                  placeholder="Organization name"
+                  value={newOrgData.name}
+                  onChange={(e) => setNewOrgData((prev) => ({ ...prev, name: e.target.value }))}
+                />
+                <Input
+                  placeholder="Domain (optional)"
+                  value={newOrgData.domain}
+                  onChange={(e) => setNewOrgData((prev) => ({ ...prev, domain: e.target.value }))}
+                />
+                <Select
+                  value={newOrgData.status}
+                  onValueChange={(value) => setNewOrgData((prev) => ({ ...prev, status: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={() => createOrganizationMutation.mutate(newOrgData)}
+                  disabled={!newOrgData.name}
+                >
+                  Create
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isEditOrgModalOpen} onOpenChange={setIsEditOrgModalOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit Organization</DialogTitle>
+                <DialogDescription>Update organization details.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <Input
+                  placeholder="Organization name"
+                  value={editOrgData.name}
+                  onChange={(e) => setEditOrgData((prev) => ({ ...prev, name: e.target.value }))}
+                />
+                <Input
+                  placeholder="Domain (optional)"
+                  value={editOrgData.domain}
+                  onChange={(e) => setEditOrgData((prev) => ({ ...prev, domain: e.target.value }))}
+                />
+                <Select
+                  value={editOrgData.status}
+                  onValueChange={(value) => setEditOrgData((prev) => ({ ...prev, status: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={() => updateOrganizationMutation.mutate(editOrgData)}
+                  disabled={!editOrgData.name}
+                >
+                  Save Changes
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         <TabsContent value="system" className="space-y-4">

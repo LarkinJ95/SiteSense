@@ -21,9 +21,10 @@ interface AppHeaderProps {
 export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
-  const { data: session } = authClient.useSession();
+  const { data: session, isPending } = authClient.useSession();
   const { data: profile } = useQuery({
     queryKey: ["/api/user/profile"],
+    enabled: !!session,
   });
   const profileName =
     profile && typeof profile === "object"
@@ -78,6 +79,31 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
     { key: "templates", label: "Templates", href: "/templates" },
     { key: "settings", label: "Settings", href: "/settings" },
   ];
+
+  if (!session && !isPending) {
+    return (
+      <header className="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center space-x-2">
+              <ClipboardList className="text-primary text-2xl" data-testid="app-logo" />
+              <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100" data-testid="app-title">
+                SiteSense
+              </h1>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Link href="/login">
+                <Button variant="ghost" className="text-sm">Sign in</Button>
+              </Link>
+              <Link href="/register">
+                <Button className="text-sm">Create account</Button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </header>
+    );
+  }
 
   return (
     <header className="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">

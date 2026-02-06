@@ -6,6 +6,7 @@ import { nanoid } from "nanoid";
 
 export const surveys = pgTable("surveys", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: text("organization_id").references(() => organizations.id, { onDelete: "set null" }),
   siteName: text("site_name").notNull(),
   address: text("address"),
   jobNumber: text("job_number"),
@@ -106,9 +107,81 @@ export const observations = pgTable("observations", {
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });
 
+export const asbestosSamples = pgTable("asbestos_samples", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  surveyId: varchar("survey_id").notNull().references(() => surveys.id, { onDelete: "cascade" }),
+  functionalArea: text("functional_area").notNull(),
+  homogeneousArea: text("homogeneous_area").notNull(),
+  sampleNumber: text("sample_number").notNull(),
+  materialType: text("material_type").notNull(),
+  sampleDescription: text("sample_description"),
+  sampleLocation: text("sample_location"),
+  estimatedQuantity: text("estimated_quantity"),
+  quantityUnit: text("quantity_unit"),
+  condition: text("condition"),
+  collectionMethod: text("collection_method"),
+  asbestosType: text("asbestos_type"),
+  asbestosPercent: decimal("asbestos_percent"),
+  results: text("results"),
+  latitude: decimal("latitude"),
+  longitude: decimal("longitude"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+export const asbestosSamplePhotos = pgTable("asbestos_sample_photos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sampleId: varchar("sample_id").notNull().references(() => asbestosSamples.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  filename: text("filename"),
+  uploadedAt: timestamp("uploaded_at").default(sql`now()`),
+});
+
+export const asbestosSampleLayers = pgTable("asbestos_sample_layers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sampleId: varchar("sample_id").notNull().references(() => asbestosSamples.id, { onDelete: "cascade" }),
+  layerNumber: integer("layer_number").notNull(),
+  materialType: text("material_type"),
+  asbestosType: text("asbestos_type"),
+  asbestosPercent: decimal("asbestos_percent"),
+  description: text("description"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+export const paintSamples = pgTable("paint_samples", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  surveyId: varchar("survey_id").notNull().references(() => surveys.id, { onDelete: "cascade" }),
+  functionalArea: text("functional_area").notNull(),
+  sampleNumber: text("sample_number").notNull(),
+  sampleDescription: text("sample_description"),
+  sampleLocation: text("sample_location"),
+  substrate: text("substrate"),
+  substrateOther: text("substrate_other"),
+  collectionMethod: text("collection_method"),
+  leadResultMgKg: decimal("lead_result_mg_kg"),
+  cadmiumResultMgKg: decimal("cadmium_result_mg_kg"),
+  latitude: decimal("latitude"),
+  longitude: decimal("longitude"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+export const paintSamplePhotos = pgTable("paint_sample_photos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sampleId: varchar("sample_id").notNull().references(() => paintSamples.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  filename: text("filename"),
+  uploadedAt: timestamp("uploaded_at").default(sql`now()`),
+});
+
 export const homogeneousAreas = pgTable("homogeneous_areas", {
   id: text("id").primaryKey().$defaultFn(() => nanoid()),
   surveyId: varchar("survey_id").notNull().references(() => surveys.id, { onDelete: "cascade" }),
+  haId: text("ha_id"),
   title: text("title").notNull(),
   description: text("description"),
   createdAt: timestamp("created_at").default(sql`now()`),
@@ -186,7 +259,10 @@ export const insertObservationSchema = z.object({
   area: z.string().min(1),
   homogeneousArea: z.string().optional(),
   materialType: z.string().min(1),
-  condition: z.string().min(1),
+  condition: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().optional().default("Unknown")
+  ),
   quantity: z.string().optional(),
   riskLevel: z.string().optional(),
   sampleCollected: z.boolean().optional().default(false),
@@ -201,6 +277,52 @@ export const insertObservationSchema = z.object({
   labReportFilename: z.string().optional(),
   latitude: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
   longitude: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  notes: z.string().optional(),
+});
+
+export const insertAsbestosSampleSchema = z.object({
+  surveyId: z.string().min(1),
+  functionalArea: z.string().min(1),
+  homogeneousArea: z.string().min(1),
+  sampleNumber: z.string().optional(),
+  materialType: z.string().min(1),
+  sampleDescription: z.string().optional(),
+  sampleLocation: z.string().optional(),
+  estimatedQuantity: z.string().optional(),
+  quantityUnit: z.string().optional(),
+  condition: z.string().optional(),
+  collectionMethod: z.string().optional(),
+  asbestosType: z.string().optional(),
+  asbestosPercent: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  results: z.string().optional(),
+  latitude: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  longitude: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  notes: z.string().optional(),
+});
+
+export const insertPaintSampleSchema = z.object({
+  surveyId: z.string().min(1),
+  functionalArea: z.string().min(1),
+  sampleNumber: z.string().min(1),
+  sampleDescription: z.string().optional(),
+  sampleLocation: z.string().optional(),
+  substrate: z.string().optional(),
+  substrateOther: z.string().optional(),
+  collectionMethod: z.string().optional(),
+  leadResultMgKg: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  cadmiumResultMgKg: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  latitude: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  longitude: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  notes: z.string().optional(),
+});
+
+export const insertAsbestosSampleLayerSchema = z.object({
+  sampleId: z.string().min(1),
+  layerNumber: z.number().int().min(1),
+  materialType: z.string().optional(),
+  asbestosType: z.string().optional(),
+  asbestosPercent: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
+  description: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -234,6 +356,7 @@ export const personnelProfiles = pgTable('personnel_profiles', {
 export const airMonitoringJobs = pgTable('air_monitoring_jobs', {
   id: text('id').primaryKey().$defaultFn(() => nanoid()),
   surveyId: varchar('survey_id').references(() => surveys.id),
+  organizationId: text('organization_id').references(() => organizations.id, { onDelete: "set null" }),
   
   // Job identification
   jobName: text('job_name').notNull(),
@@ -660,6 +783,14 @@ export type InsertObservation = z.infer<typeof insertObservationSchema>;
 export type Observation = typeof observations.$inferSelect;
 export type InsertObservationPhoto = z.infer<typeof insertObservationPhotoSchema>;
 export type ObservationPhoto = typeof observationPhotos.$inferSelect;
+export type AsbestosSample = typeof asbestosSamples.$inferSelect;
+export type InsertAsbestosSample = z.infer<typeof insertAsbestosSampleSchema>;
+export type AsbestosSamplePhoto = typeof asbestosSamplePhotos.$inferSelect;
+export type AsbestosSampleLayer = typeof asbestosSampleLayers.$inferSelect;
+export type InsertAsbestosSampleLayer = z.infer<typeof insertAsbestosSampleLayerSchema>;
+export type PaintSample = typeof paintSamples.$inferSelect;
+export type InsertPaintSample = z.infer<typeof insertPaintSampleSchema>;
+export type PaintSamplePhoto = typeof paintSamplePhotos.$inferSelect;
 export type PersonnelProfile = typeof personnelProfiles.$inferSelect;
 export type HomogeneousArea = typeof homogeneousAreas.$inferSelect;
 export type FunctionalArea = typeof functionalAreas.$inferSelect;
