@@ -183,12 +183,6 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
         localStorage.setItem("last-air-job-location", `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
       }
       
-      const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
-
-      if (!apiKey) {
-        throw new Error("OpenWeather API key not configured");
-      }
-
       const startDate = form.getValues("startDate");
       const targetDate = startDate ? new Date(`${startDate}T12:00:00`) : new Date();
       const now = new Date();
@@ -198,7 +192,7 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
 
       if (targetDate >= now) {
         const forecastResponse = await fetch(
-          `https://api.openweathermap.org/data/2.5/forecast?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=imperial`
+          `/api/weather/forecast?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`
         );
         if (forecastResponse.ok) {
           const forecast = await forecastResponse.json();
@@ -216,7 +210,7 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
 
       if (!weatherData) {
         const currentResponse = await fetch(
-          `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=imperial`
+          `/api/weather/current?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`
         );
         if (!currentResponse.ok) {
           throw new Error("Weather service unavailable");
@@ -260,9 +254,7 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
     } catch (error: any) {
       let errorMessage = "Unable to retrieve weather data. Please enter manually.";
       
-      if (error.message === "OpenWeather API key not configured") {
-        errorMessage = "OpenWeather API key is not configured. Please contact your administrator.";
-      } else if (error.message === "User denied Geolocation") {
+      if (error.message === "User denied Geolocation") {
         errorMessage = "Location access was denied. Please enable location permissions.";
       } else if (!navigator.onLine) {
         errorMessage = "No internet connection. Please check your connection and try again.";

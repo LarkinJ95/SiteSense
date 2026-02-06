@@ -217,11 +217,6 @@ export function DailyWeatherLog({ jobId }: DailyWeatherLogProps) {
         throw new Error("Invalid coordinates format");
       }
 
-      const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
-      if (!apiKey) {
-        throw new Error("OpenWeather API key not configured");
-      }
-      
       const logDate = form.getValues("logDate");
       const logTime = form.getValues("logTime");
       const targetDate = new Date(`${logDate}T${logTime || "12:00"}`);
@@ -232,7 +227,7 @@ export function DailyWeatherLog({ jobId }: DailyWeatherLogProps) {
 
       if (targetDate >= now) {
         const forecastResponse = await fetch(
-          `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=imperial`
+          `/api/weather/forecast?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`
         );
         if (forecastResponse.ok) {
           const forecast = await forecastResponse.json();
@@ -250,7 +245,7 @@ export function DailyWeatherLog({ jobId }: DailyWeatherLogProps) {
 
       if (!weatherData) {
         const currentResponse = await fetch(
-          `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=imperial`
+          `/api/weather/current?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`
         );
         if (!currentResponse.ok) {
           throw new Error("Failed to fetch weather data");

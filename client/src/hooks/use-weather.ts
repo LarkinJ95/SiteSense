@@ -44,13 +44,22 @@ export function useWeather() {
         localStorage.setItem("last-weather-coords", JSON.stringify(coords));
       }
 
-      const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
-      if (apiKey && latitude && longitude) {
+      if (latitude && longitude) {
         const response = await fetch(
-          `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=imperial`
+          `/api/weather/current?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`
         );
         if (!response.ok) {
-          throw new Error("Failed to fetch weather data");
+          let message = "Failed to fetch weather data";
+          try {
+            const errorBody = await response.json();
+            if (errorBody?.message) {
+              message = errorBody.message;
+            }
+          } catch {
+            const text = await response.text();
+            if (text) message = text;
+          }
+          throw new Error(message);
         }
         const data = await response.json();
         const weatherData: WeatherData = {
@@ -68,7 +77,7 @@ export function useWeather() {
         setWeather(weatherData);
         setError(null);
       } else {
-        // Fallback to simulated data if no API key is configured
+        // Fallback to simulated data if no coordinates are available
         const mockWeatherData: WeatherData = {
           conditions: getWeatherConditions(),
           temperature: Math.round(Math.random() * 30 + 40), // 40-70°F
@@ -80,7 +89,7 @@ export function useWeather() {
             : 'Location unknown'
         };
         setWeather(mockWeatherData);
-        setError(apiKey ? null : "OpenWeather API key not configured. Showing simulated data.");
+        setError("Location not available. Showing simulated data.");
       }
     } catch (err) {
       const fallbackCoords = lastCoords;

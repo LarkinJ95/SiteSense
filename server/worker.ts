@@ -41,6 +41,7 @@ type Env = {
   NEON_JWT_AUDIENCE?: string;
   ADMIN_EMAILS?: string;
   DATABASE_URL?: string;
+  OPENWEATHER_API_KEY?: string;
   ABATEIQ_UPLOADS: R2Bucket;
 };
 
@@ -587,6 +588,7 @@ app.use("/api/*", async (c, next) => {
   }
   if (c.req.path.startsWith("/api/auth/")) return next();
   if (c.req.path === "/api/health") return next();
+  if (c.req.path.startsWith("/api/weather")) return next();
 
   const jwksUrl = c.env.NEON_JWKS_URL;
   if (!jwksUrl) {
@@ -614,6 +616,65 @@ app.use("/api/*", async (c, next) => {
 });
 
 app.get("/api/health", (c) => c.json({ ok: true }));
+
+const parseWeatherCoords = (c: { req: { query: (key: string) => string | undefined } }) => {
+  const lat = Number(c.req.query("lat"));
+  const lon = Number(c.req.query("lon"));
+  if (Number.isNaN(lat) || Number.isNaN(lon)) {
+    return null;
+  }
+  return { lat, lon };
+};
+
+const fetchOpenWeather = async (
+  c: { env: Env },
+  path: string,
+  lat: number,
+  lon: number
+) => {
+  const apiKey = c.env.OPENWEATHER_API_KEY;
+  if (!apiKey) {
+    return {
+      ok: false as const,
+      status: 503,
+      body: { message: "OpenWeather API key not configured" },
+    };
+  }
+  const url = new URL(`https://api.openweathermap.org/data/2.5/${path}`);
+  url.searchParams.set("lat", lat.toString());
+  url.searchParams.set("lon", lon.toString());
+  url.searchParams.set("appid", apiKey);
+  url.searchParams.set("units", "imperial");
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    const text = await response.text();
+    return {
+      ok: false as const,
+      status: response.status,
+      body: { message: text || "OpenWeather request failed" },
+    };
+  }
+  const data = await response.json();
+  return { ok: true as const, status: 200, body: data };
+};
+
+app.get("/api/weather/current", async (c) => {
+  const coords = parseWeatherCoords(c);
+  if (!coords) {
+    return c.json({ message: "Latitude and longitude are required" }, 400);
+  }
+  const result = await fetchOpenWeather(c, "weather", coords.lat, coords.lon);
+  return c.json(result.body, result.status);
+});
+
+app.get("/api/weather/forecast", async (c) => {
+  const coords = parseWeatherCoords(c);
+  if (!coords) {
+    return c.json({ message: "Latitude and longitude are required" }, 400);
+  }
+  const result = await fetchOpenWeather(c, "forecast", coords.lat, coords.lon);
+  return c.json(result.body, result.status);
+});
 
 app.get("/uploads/:key", async (c) => {
   const key = c.req.param("key");
