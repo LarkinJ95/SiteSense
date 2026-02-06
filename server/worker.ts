@@ -608,6 +608,7 @@ app.use("/api/*", async (c, next) => {
   }
   if (c.req.path.startsWith("/api/auth/")) return next();
   if (c.req.path === "/api/health") return next();
+  if (c.req.path === "/api/health/db") return next();
   if (c.req.path.startsWith("/api/weather")) return next();
 
   const jwksUrl = c.env.NEON_JWKS_URL;
@@ -642,6 +643,29 @@ app.use("/api/*", async (c, next) => {
 });
 
 app.get("/api/health", (c) => c.json({ ok: true }));
+
+app.get("/api/health/db", async (c) => {
+  try {
+    const db = getDb();
+    const result = await db.execute(sql`select 1 as ok`);
+    const tableCheck = await db.execute(
+      sql`select to_regclass('public.user_profiles') as user_profiles_table`
+    );
+    return c.json({
+      ok: true,
+      ping: Array.isArray(result) ? result : result.rows ?? result,
+      user_profiles_table: Array.isArray(tableCheck) ? tableCheck : tableCheck.rows ?? tableCheck,
+    });
+  } catch (error) {
+    return c.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      500
+    );
+  }
+});
 
 const parseWeatherCoords = (c: { req: { query: (key: string) => string | undefined } }) => {
   const lat = Number(c.req.query("lat"));
