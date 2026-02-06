@@ -19,7 +19,7 @@ export function WeatherWidget({ onWeatherUpdate, latitude, longitude }: WeatherW
   useEffect(() => {
     // Auto-load weather on component mount
     getCurrentWeather(latitude, longitude);
-  }, [latitude, longitude]);
+  }, [latitude, longitude, getCurrentWeather]);
 
   useEffect(() => {
     let isActive = true;

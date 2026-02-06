@@ -102,6 +102,26 @@ const parseJsonBody = async <T = any>(c: { req: { json: () => Promise<T> } }) =>
   }
 };
 
+const getSessionJwtFromNeon = async (c: { env: Env; req: { header: (key: string) => string | undefined } }) => {
+  const base = c.env.NEON_AUTH_URL;
+  if (!base) return null;
+  const url = new URL(base.replace(/\/$/, "") + "/get-session");
+  const headers = new Headers();
+  const cookie = c.req.header("cookie");
+  if (cookie) headers.set("cookie", cookie);
+  headers.set("accept", "application/json");
+  try {
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers,
+    });
+    if (!response.ok) return null;
+    return response.headers.get("set-auth-jwt");
+  } catch {
+    return null;
+  }
+};
+
 const getUserOrgIds = async (userId: string) => {
   const orgIds = await storage.getOrganizationIdsForUser(userId);
   return orgIds || [];
@@ -595,10 +615,16 @@ app.use("/api/*", async (c, next) => {
     return c.json({ message: "Auth is not configured" }, 500);
   }
   const header = c.req.header("Authorization") || "";
-  if (!header.startsWith("Bearer ")) {
-    return c.json({ message: "Not authenticated" }, 401);
+  let token = "";
+  if (header.startsWith("Bearer ")) {
+    token = header.slice("Bearer ".length).trim();
   }
-  const token = header.slice("Bearer ".length).trim();
+  if (!token) {
+    const sessionJwt = await getSessionJwtFromNeon(c);
+    if (sessionJwt) {
+      token = sessionJwt;
+    }
+  }
   if (!token) {
     return c.json({ message: "Not authenticated" }, 401);
   }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 export interface WeatherData {
   conditions: string;
@@ -20,7 +20,7 @@ export function useWeather() {
     return stored ? JSON.parse(stored) : null;
   });
 
-  const getCurrentWeather = async (latitude?: number, longitude?: number) => {
+  const getCurrentWeather = useCallback(async (latitude?: number, longitude?: number) => {
     setLoading(true);
     setError(null);
     
@@ -42,7 +42,9 @@ export function useWeather() {
       }
       if (latitude && longitude) {
         const coords = { lat: latitude, lon: longitude };
-        setLastCoords(coords);
+        if (!lastCoords || lastCoords.lat !== coords.lat || lastCoords.lon !== coords.lon) {
+          setLastCoords(coords);
+        }
         localStorage.setItem("last-weather-coords", JSON.stringify(coords));
       }
 
@@ -115,7 +117,7 @@ export function useWeather() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [lastCoords]);
 
   const getWeatherConditions = (): string => {
     const conditions = ['Clear', 'Partly Cloudy', 'Cloudy', 'Overcast', 'Light Rain', 'Rain', 'Windy'];
