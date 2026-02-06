@@ -15,3 +15,7 @@ ADMIN_EMAILS = "larkinjason@icloud.com,jlarkin@bierlein.com"
 [[r2_buckets]]
 binding = "ABATEIQ_UPLOADS"
 bucket_name = "abateiq-uploads"
+
+[observability.logs]
+enabled = false
+invocation_logs = true
