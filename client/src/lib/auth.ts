@@ -1,5 +1,30 @@
 import { useQuery } from "@tanstack/react-query";
 
+const readErrorMessage = async (res: Response) => {
+  // Prefer structured `{ message }` errors, but fall back to raw text.
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+  const text = await res.text().catch(() => "");
+  const maybeJson =
+    contentType.includes("application/json") || text.trim().startsWith("{") || text.trim().startsWith("[");
+  if (maybeJson) {
+    try {
+      const parsed = JSON.parse(text) as any;
+      const msg =
+        parsed && typeof parsed === "object"
+          ? typeof parsed.message === "string"
+            ? parsed.message
+            : typeof parsed.error === "string"
+              ? parsed.error
+              : ""
+          : "";
+      if (msg) return msg;
+    } catch {
+      // ignore JSON parse errors
+    }
+  }
+  return text || res.statusText || `Request failed (${res.status})`;
+};
+
 type MeResponse = {
   id: string;
   email?: string;
@@ -33,7 +58,7 @@ export const authClient = {
       queryFn: async () => {
         const res = await fetch("/api/me", { credentials: "include" });
         if (res.status === 401) return null;
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) throw new Error(await readErrorMessage(res));
         return (await res.json()) as MeResponse;
       },
       retry: false,
@@ -59,7 +84,7 @@ export const authApi = {
       credentials: "include",
       body: JSON.stringify({ email, password }),
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(await readErrorMessage(res));
     return await res.json();
   },
   register: async (name: string, email: string, password: string) => {
@@ -69,7 +94,7 @@ export const authApi = {
       credentials: "include",
       body: JSON.stringify({ name, email, password }),
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(await readErrorMessage(res));
     return await res.json();
   },
   getJWTToken: async () => null as string | null,
