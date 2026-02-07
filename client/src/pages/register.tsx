@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { authApi, authClient } from "@/lib/auth";
+import { BrandMark } from "@/components/brand-mark";
 
 export default function Register() {
   const [, setLocation] = useLocation();
@@ -41,6 +42,9 @@ export default function Register() {
     <div className="min-h-screen w-full flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
+          <div className="flex items-center justify-center">
+            <BrandMark className="h-10 w-auto" title="AbateIQ" />
+          </div>
           <CardTitle className="text-2xl font-bold">Create account</CardTitle>
           <CardDescription>Set up your AbateIQ login</CardDescription>
         </CardHeader>
@@ -80,4 +84,3 @@ export default function Register() {
     </div>
   );
 }
-

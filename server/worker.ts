@@ -395,7 +395,9 @@ const timingSafeEqual = (a: Uint8Array, b: Uint8Array) => {
 
 const pbkdf2HashPassword = async (password: string) => {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iterations = 310_000;
+  // Cloudflare Workers PBKDF2 currently enforces an upper bound on iteration count.
+  // Keep this at <= 100_000 to avoid runtime failures.
+  const iterations = 100_000;
   const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, [
     "deriveBits",
   ]);
@@ -419,7 +421,7 @@ const pbkdf2VerifyPassword = async (password: string, stored: string) => {
   const [scheme, iterStr, saltB64, hashB64] = parts;
   if (scheme !== "pbkdf2_sha256") return false;
   const iterations = Number(iterStr);
-  if (!Number.isFinite(iterations) || iterations < 100_000) return false;
+  if (!Number.isFinite(iterations) || iterations < 50_000 || iterations > 100_000) return false;
   const salt = b64decode(saltB64 || "");
   const expected = b64decode(hashB64 || "");
   const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, [

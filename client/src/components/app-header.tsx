@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { useWeather } from "@/hooks/use-weather";
+import { BrandMark } from "@/components/brand-mark";
 
 interface AppHeaderProps {
   onCreateSurvey: () => void;
@@ -134,10 +135,7 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-2">
-              <ClipboardList className="text-primary text-2xl" data-testid="app-logo" />
-              <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100" data-testid="app-title">
-                AbateIQ
-              </h1>
+              <BrandMark className="h-7 w-auto" title="AbateIQ" />
             </div>
             <div className="flex items-center space-x-2">
               <a href="/login">
@@ -156,10 +154,7 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
-              <ClipboardList className="text-primary text-2xl" data-testid="app-logo" />
-              <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100" data-testid="app-title">
-                AbateIQ
-              </h1>
+              <BrandMark className="h-7 w-auto" title="AbateIQ" />
             </div>
             <div className="hidden md:flex items-center space-x-6 text-xs text-gray-600 dark:text-gray-300">
               <div className="flex flex-col items-start gap-1">
