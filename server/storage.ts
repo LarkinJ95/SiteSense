@@ -171,6 +171,7 @@ export interface IStorage {
   updatePersonnel(id: string, userId: string, patch: Partial<InsertPersonnel>): Promise<Personnel | undefined>;
   deactivatePersonnel(id: string, userId: string): Promise<Personnel | undefined>;
   getPersonnelAssignments(organizationId: string, personId: string): Promise<PersonnelJobAssignment[]>;
+  getPersonnelAssignmentByPersonJob(organizationId: string, personId: string, jobId: string): Promise<PersonnelJobAssignment | undefined>;
   createPersonnelAssignment(organizationId: string, userId: string, payload: InsertPersonnelJobAssignment): Promise<PersonnelJobAssignment>;
   getExposureLimits(organizationId: string, profileKey?: string | null): Promise<ExposureLimit[]>;
   upsertExposureLimit(organizationId: string, payload: UpsertExposureLimit): Promise<ExposureLimit>;
@@ -251,6 +252,7 @@ export interface IStorage {
   updateOrganization(id: string, org: Partial<InsertOrganization>): Promise<Organization | undefined>;
   deleteOrganization(id: string): Promise<boolean>;
   getOrganizationMembers(organizationId: string): Promise<OrganizationMember[]>;
+  getOrganizationMemberById(id: string): Promise<OrganizationMember | undefined>;
   getOrganizationMembersWithUsers(organizationId: string): Promise<
     Array<
       OrganizationMember & {
@@ -740,6 +742,20 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(personnelJobAssignmentsTable.dateFrom));
   }
 
+  async getPersonnelAssignmentByPersonJob(organizationId: string, personId: string, jobId: string): Promise<PersonnelJobAssignment | undefined> {
+    const [row] = await db()
+      .select()
+      .from(personnelJobAssignmentsTable)
+      .where(
+        and(
+          eq(personnelJobAssignmentsTable.organizationId, organizationId),
+          eq(personnelJobAssignmentsTable.personId, personId),
+          eq(personnelJobAssignmentsTable.jobId, jobId)
+        )
+      );
+    return row || undefined;
+  }
+
   async createPersonnelAssignment(organizationId: string, userId: string, payload: InsertPersonnelJobAssignment): Promise<PersonnelJobAssignment> {
     const [created] = await db()
       .insert(personnelJobAssignmentsTable)
@@ -1137,6 +1153,11 @@ export class DatabaseStorage implements IStorage {
       .from(organizationMembers)
       .where(eq(organizationMembers.organizationId, organizationId))
       .orderBy(desc(organizationMembers.createdAt));
+  }
+
+  async getOrganizationMemberById(id: string): Promise<OrganizationMember | undefined> {
+    const [row] = await db().select().from(organizationMembers).where(eq(organizationMembers.id, id));
+    return row || undefined;
   }
 
   async getOrganizationMembersWithUsers(organizationId: string) {

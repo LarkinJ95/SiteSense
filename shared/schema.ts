@@ -538,7 +538,10 @@ export const airSamples = sqliteTable('air_samples', {
   id: text('id').primaryKey().$defaultFn(() => nanoid()),
   jobId: text('job_id').references(() => airMonitoringJobs.id, { onDelete: 'cascade' }).notNull(),
   surveyId: text('survey_id').references(() => surveys.id),
+  // Legacy personnel profile linkage (deprecated in favor of `person_id`).
   personnelId: text('personnel_id').references(() => personnelProfiles.id),
+  // Org-scoped personnel linkage for exposures and assignments.
+  personId: text("person_id").references(() => personnel.personId, { onDelete: "set null" }),
   sampleNumber: text('sample_number'),
   sampleType: text('sample_type', { 
     enum: ['area', 'blank', 'personal', 'excursion', 'clearance', 'other'] 
@@ -1086,13 +1089,77 @@ export const insertAirSampleSchema = createInsertSchema(airSamples).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
+  // Drizzle's sqlite `numeric(...)` columns are modeled as strings. Accept number inputs and coerce.
+  latitude: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
+  longitude: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
+  flowRate: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
+  samplingDuration: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
+    if (typeof value === "string" && value.trim()) {
+      const n = Number(value);
+      return Number.isFinite(n) ? Math.trunc(n) : value;
+    }
+    return value;
+  }, z.number().int().nullable().optional()),
+  totalVolume: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
+  temperature: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
+  humidity: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
+  pressure: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
+  windSpeed: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
+  reportingLimit: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
+  detectionLimit: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
+  regulatoryLimit: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
   // Lab Results section
   result: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
   resultUnit: z.string().optional(),
   uncertainty: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
   qualifiers: z.array(z.string()).optional(),
   exceedsLimit: z.boolean().optional(),
-  regulatoryLimit: z.string().or(z.number()).optional().transform((val) => val ? val.toString() : undefined),
   limitType: z.string().optional(),
   
   // Analysis results posting

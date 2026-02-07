@@ -123,6 +123,26 @@ export default function SystemSettings() {
     queryFn: async () => (await apiRequest("GET", "/api/personnel?compact=1&includeInactive=1")).json(),
   });
 
+  const { data: orgUsers = [] } = useQuery<any[]>({
+    queryKey: ["/api/inspectors"],
+    queryFn: async () => (await apiRequest("GET", "/api/inspectors")).json(),
+  });
+
+  const { data: surveysCompact = [] } = useQuery<any[]>({
+    queryKey: ["/api/surveys"],
+    queryFn: async () => (await apiRequest("GET", "/api/surveys")).json(),
+  });
+
+  const { data: airJobsCompact = [] } = useQuery<any[]>({
+    queryKey: ["/api/air-monitoring-jobs"],
+    queryFn: async () => (await apiRequest("GET", "/api/air-monitoring-jobs")).json(),
+  });
+
+  const { data: equipmentCompact = [] } = useQuery<any[]>({
+    queryKey: ["/api/equipment"],
+    queryFn: async () => (await apiRequest("GET", "/api/equipment?includeInactive=1")).json(),
+  });
+
   const personnelNameById = useMemo(() => {
     const map = new Map<string, string>();
     const list = Array.isArray(personnelCompact) ? personnelCompact : [];
@@ -135,15 +155,83 @@ export default function SystemSettings() {
     return map;
   }, [personnelCompact]);
 
+  const userNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    const list = Array.isArray(orgUsers) ? orgUsers : [];
+    for (const u of list) {
+      const id = (u?.userId || u?.id || "").toString();
+      if (!id) continue;
+      const name = (u?.name || "").toString().trim();
+      const email = (u?.email || "").toString().trim();
+      map.set(id, name || email || id);
+    }
+    return map;
+  }, [orgUsers]);
+
+  const surveyLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    const list = Array.isArray(surveysCompact) ? surveysCompact : [];
+    for (const s of list) {
+      const id = (s?.id || "").toString();
+      if (!id) continue;
+      const site = (s?.siteName || "").toString().trim();
+      const jobNumber = (s?.jobNumber || "").toString().trim();
+      map.set(id, site || jobNumber || id);
+    }
+    return map;
+  }, [surveysCompact]);
+
+  const airJobLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    const list = Array.isArray(airJobsCompact) ? airJobsCompact : [];
+    for (const j of list) {
+      const id = (j?.id || "").toString();
+      if (!id) continue;
+      const name = (j?.jobName || "").toString().trim();
+      const num = (j?.jobNumber || "").toString().trim();
+      map.set(id, name || num || id);
+    }
+    return map;
+  }, [airJobsCompact]);
+
+  const equipmentLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    const list = Array.isArray(equipmentCompact) ? equipmentCompact : [];
+    for (const e of list) {
+      const id = (e?.equipmentId || e?.id || "").toString();
+      if (!id) continue;
+      const category = (e?.category || "").toString().trim();
+      const sn = (e?.serialNumber || "").toString().trim();
+      const label = category && sn ? `${category} (${sn})` : category || sn || id;
+      map.set(id, label);
+    }
+    return map;
+  }, [equipmentCompact]);
+
   const humanAction = (action: string) => {
     const a = (action || "").toString();
     const known: Record<string, string> = {
+      "org.create": "Organization Create",
+      "org.update": "Organization Update",
+      "org_member.add": "Organization Member Add",
+      "org_member.update": "Organization Member Update",
+      "org_member.delete": "Organization Member Delete",
       "personnel.create": "Personnel Create",
       "personnel.update": "Personnel Update",
       "personnel.deactivate": "Personnel Deactivate",
       "personnel.reactivate": "Personnel Reactivate",
       "personnel.assignment.add": "Personnel Assignment Add",
       "personnel.assignment.delete": "Personnel Assignment Delete",
+      "survey.create": "Survey Create",
+      "survey.delete": "Survey Delete",
+      "equipment.create": "Equipment Create",
+      "equipment.update": "Equipment Update",
+      "equipment.retire": "Equipment Retire",
+      "equipment.calibration.add": "Equipment Calibration Add",
+      "equipment.document.add": "Equipment Document Upload",
+      "equipment.document.delete": "Equipment Document Delete",
+      "air_job.create": "Air Monitoring Job Create",
+      "exposure_limits.upsert": "Exposure Limits Upsert",
     };
     if (known[a]) return known[a];
     const words = a.replace(/[\._]+/g, " ").trim();
@@ -159,10 +247,53 @@ export default function SystemSettings() {
   const humanEntity = (row: AuditLogRow) => {
     const type = (row.entityType || "").toString();
     const id = (row.entityId || "").toString();
+    const meta =
+      row.details && typeof row.details === "object" && row.details.metadata && typeof row.details.metadata === "object"
+        ? row.details.metadata
+        : null;
+    const entityLabel = meta && typeof meta.entityLabel === "string" ? meta.entityLabel.trim() : "";
+    if (entityLabel) return entityLabel;
+
     if (type === "personnel") {
       return personnelNameById.get(id) || id;
     }
+    if (type === "survey") {
+      return surveyLabelById.get(id) || id;
+    }
+    if (type === "air_monitoring_job") {
+      return airJobLabelById.get(id) || id;
+    }
+    if (type === "equipment") {
+      return equipmentLabelById.get(id) || id;
+    }
+    if (type === "organization_member") {
+      const userId = meta && meta.userId ? String(meta.userId) : "";
+      if (userId) return userNameById.get(userId) || userId;
+    }
     return id ? `${type}:${id}` : type || "—";
+  };
+
+  const humanSummary = (row: AuditLogRow) => {
+    const details = row.details && typeof row.details === "object" ? row.details : null;
+    const summary = details && details.summary ? String(details.summary) : "";
+    const meta = details && details.metadata && typeof details.metadata === "object" ? details.metadata : null;
+    const changes = meta && Array.isArray(meta.changes) ? meta.changes : null;
+    if (changes && changes.length) {
+      const parts = changes.map((c: any) => {
+        const field = (c?.field || "").toString() || "field";
+        const from = c?.from === null || c?.from === undefined ? "—" : String(c.from);
+        const to = c?.to === null || c?.to === undefined ? "—" : String(c.to);
+        return `${field}: ${from} -> ${to}`;
+      });
+      return parts.join("; ");
+    }
+
+    // Repair older audit entries that embedded IDs in summary strings.
+    if (row.action === "org_member.add" && meta && meta.userId) {
+      const who = userNameById.get(String(meta.userId)) || String(meta.userId);
+      return summary.replace(String(meta.userId), who);
+    }
+    return summary;
   };
 
   const notificationSettingsList: NotificationSetting[] = Array.isArray(notificationSettings)
@@ -597,25 +728,22 @@ export default function SystemSettings() {
                       </TableRow>
                     </TableHeader>
 	                  <TableBody>
-	                    {auditLogs.map((row) => {
-	                        const when = row.timestamp ? new Date(row.timestamp).toLocaleString() : "—";
-	                        const who =
-	                          (row.details && typeof row.details === "object" && (row.details.actorName || row.details.actorEmail)) ||
-	                          row.userId;
-	                        const summary =
-	                          row.details && typeof row.details === "object" && row.details.summary
-	                            ? String(row.details.summary)
-	                            : "";
-	                        return (
-	                          <TableRow key={row.id}>
-	                            <TableCell className="whitespace-nowrap text-sm">{when}</TableCell>
-	                            <TableCell className="text-sm">{who}</TableCell>
-	                            <TableCell className="text-sm font-medium">{humanAction(row.action)}</TableCell>
-	                            <TableCell className="text-sm">{humanEntity(row)}</TableCell>
-	                            <TableCell className="text-sm text-gray-600 dark:text-gray-300">{summary || "—"}</TableCell>
-	                          </TableRow>
-	                        );
-	                      })}
+		                    {auditLogs.map((row) => {
+		                        const when = row.timestamp ? new Date(row.timestamp).toLocaleString() : "—";
+		                        const who =
+		                          (row.details && typeof row.details === "object" && (row.details.actorName || row.details.actorEmail)) ||
+		                          row.userId;
+		                        const summary = humanSummary(row);
+		                        return (
+		                          <TableRow key={row.id}>
+		                            <TableCell className="whitespace-nowrap text-sm">{when}</TableCell>
+		                            <TableCell className="text-sm">{who}</TableCell>
+		                            <TableCell className="text-sm font-medium">{humanAction(row.action)}</TableCell>
+		                            <TableCell className="text-sm">{humanEntity(row)}</TableCell>
+		                            <TableCell className="text-sm text-gray-600 dark:text-gray-300">{summary || "—"}</TableCell>
+		                          </TableRow>
+		                        );
+		                      })}
 	                  </TableBody>
                   </Table>
                 </div>

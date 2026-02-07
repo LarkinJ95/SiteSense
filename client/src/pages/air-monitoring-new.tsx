@@ -203,7 +203,7 @@ export default function AirMonitoringPage() {
 
   // Air sample mutations
   const createSampleMutation = useMutation({
-    mutationFn: async ({ data, file }: { data: InsertAirSample; file?: File | null }) => {
+    mutationFn: async ({ data }: { data: InsertAirSample }) => {
       const response = await fetch('/api/air-samples', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -215,17 +215,24 @@ export default function AirMonitoringPage() {
         try {
           const parsed = JSON.parse(errorText);
           message = parsed.message || parsed.error || message;
+          if (parsed?.issues && Array.isArray(parsed.issues)) {
+            const details = parsed.issues
+              .slice(0, 3)
+              .map((i: any) => {
+                const path = Array.isArray(i?.path) ? i.path.join(".") : "";
+                const msg = (i?.message || "").toString();
+                return path ? `${path}: ${msg}` : msg;
+              })
+              .filter(Boolean)
+              .join("; ");
+            if (details) message = `${message}: ${details}`;
+          }
         } catch {
           if (errorText) message = errorText;
         }
         throw new Error(message);
       }
       const created = await response.json();
-      if (file && created?.id) {
-        const formData = new FormData();
-        formData.append("labReport", file);
-        await apiRequest("POST", `/api/air-samples/${created.id}/lab-report`, formData);
-      }
       return created;
     },
     onSuccess: () => {
@@ -242,7 +249,7 @@ export default function AirMonitoringPage() {
   });
 
   const updateSampleMutation = useMutation({
-    mutationFn: async ({ id, data, file }: { id: string; data: InsertAirSample; file?: File | null }) => {
+    mutationFn: async ({ id, data }: { id: string; data: InsertAirSample }) => {
       const response = await fetch(`/api/air-samples/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -254,17 +261,24 @@ export default function AirMonitoringPage() {
         try {
           const parsed = JSON.parse(errorText);
           message = parsed.message || parsed.error || message;
+          if (parsed?.issues && Array.isArray(parsed.issues)) {
+            const details = parsed.issues
+              .slice(0, 3)
+              .map((i: any) => {
+                const path = Array.isArray(i?.path) ? i.path.join(".") : "";
+                const msg = (i?.message || "").toString();
+                return path ? `${path}: ${msg}` : msg;
+              })
+              .filter(Boolean)
+              .join("; ");
+            if (details) message = `${message}: ${details}`;
+          }
         } catch {
           if (errorText) message = errorText;
         }
         throw new Error(message);
       }
       const updated = await response.json();
-      if (file) {
-        const formData = new FormData();
-        formData.append("labReport", file);
-        await apiRequest("POST", `/api/air-samples/${id}/lab-report`, formData);
-      }
       return updated;
     },
     onSuccess: () => {
@@ -866,12 +880,12 @@ export default function AirMonitoringPage() {
                       existingSamples={jobSamples}
                       personnel={personnel}
                       equipmentList={equipmentList}
-                      onSuccess={() => setJobDetailsTab("samples")}
-                      onSubmit={(data, file) => createSampleMutation.mutate({ data, file })}
-                      isLoading={createSampleMutation.isPending}
-                    />
-                  </Card>
-                </TabsContent>
+	                      onSuccess={() => setJobDetailsTab("samples")}
+	                      onSubmit={(data) => createSampleMutation.mutate({ data })}
+	                      isLoading={createSampleMutation.isPending}
+	                    />
+	                  </Card>
+	                </TabsContent>
                 
                 <TabsContent value="weather">
                   <DailyWeatherLog jobId={selectedJob.id} />
@@ -1189,17 +1203,17 @@ export default function AirMonitoringPage() {
             <DialogHeader>
               <DialogTitle>Edit Air Sample</DialogTitle>
             </DialogHeader>
-            <AirSampleForm 
-              jobId={editingSample.jobId}
-              jobNumber={selectedJob?.jobNumber || ""}
-              existingSamples={jobSamples}
-              personnel={personnel}
-              equipmentList={equipmentList}
-              onSuccess={() => setEditingSample(null)}
-              onSubmit={(data, file) => updateSampleMutation.mutate({ id: editingSample.id, data, file })}
-              isLoading={updateSampleMutation.isPending}
-              initialData={editingSample}
-            />
+	            <AirSampleForm 
+	              jobId={editingSample.jobId}
+	              jobNumber={selectedJob?.jobNumber || ""}
+	              existingSamples={jobSamples}
+	              personnel={personnel}
+	              equipmentList={equipmentList}
+	              onSuccess={() => setEditingSample(null)}
+	              onSubmit={(data) => updateSampleMutation.mutate({ id: editingSample.id, data })}
+	              isLoading={updateSampleMutation.isPending}
+	              initialData={editingSample}
+	            />
           </DialogContent>
         </Dialog>
       )}
@@ -1224,7 +1238,7 @@ interface AirSampleFormProps {
     active: boolean;
   }[];
   onSuccess: () => void;
-  onSubmit: (data: InsertAirSample, file?: File | null) => void;
+  onSubmit: (data: InsertAirSample) => void;
   isLoading: boolean;
   initialData?: AirSample;
 }
@@ -1232,7 +1246,7 @@ interface AirSampleFormProps {
 function AirSampleForm({ jobId, jobNumber, existingSamples, personnel, equipmentList, onSuccess, onSubmit, isLoading, initialData }: AirSampleFormProps) {
   const [personnelQuery, setPersonnelQuery] = useState("");
   const [lastUnitDefault, setLastUnitDefault] = useState<string>("");
-  const [labReportFile, setLabReportFile] = useState<File | null>(null);
+  // Lab report uploads are handled outside this modal; keep sample details pure JSON.
   const [pumpOpen, setPumpOpen] = useState(false);
 
   const pumpOptions = useMemo(() => {
@@ -1261,27 +1275,28 @@ function AirSampleForm({ jobId, jobNumber, existingSamples, personnel, equipment
     return `${prefix}${maxIndex + 1}`;
   };
 
-  const form = useForm<AirSampleFormData>({
-    resolver: zodResolver(airSampleFormSchema),
-    defaultValues: {
-      jobId,
-      sampleNumber: initialData?.sampleNumber || getNextSampleNumber(),
-      sampleType: initialData?.sampleType || 'area',
-      customSampleType: initialData?.customSampleType || '',
-      analyte: initialData?.analyte || 'asbestos',
-      customAnalyte: initialData?.customAnalyte || '',
-      pumpId: initialData?.pumpId || '',
-      location: initialData?.location || '',
-      collectedBy: initialData?.collectedBy || 'N/A',
-      monitorWornBy: initialData?.monitorWornBy || '',
-      sampleDate: initialData?.startTime ? new Date(initialData.startTime).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
-      startTime: initialData?.startTime ? new Date(initialData.startTime).toISOString().slice(11, 16) : '',
-      endTime: initialData?.endTime ? new Date(initialData.endTime).toISOString().slice(11, 16) : '',
-      flowRate: initialData?.flowRate?.toString() || '',
-      samplingDuration: initialData?.samplingDuration || undefined,
-      analysisMethod: initialData?.analysisMethod || '',
-      fieldNotes: initialData?.fieldNotes || '',
-      status: initialData?.status || 'collecting',
+	  const form = useForm<AirSampleFormData>({
+	    resolver: zodResolver(airSampleFormSchema),
+	    defaultValues: {
+	      jobId,
+	      sampleNumber: initialData?.sampleNumber || getNextSampleNumber(),
+	      sampleType: initialData?.sampleType || 'area',
+	      customSampleType: initialData?.customSampleType || '',
+	      analyte: initialData?.analyte || 'asbestos',
+	      customAnalyte: initialData?.customAnalyte || '',
+	      pumpId: initialData?.pumpId || '',
+	      personId: (initialData as any)?.personId || '',
+	      location: initialData?.location || '',
+	      collectedBy: initialData?.collectedBy || 'N/A',
+	      monitorWornBy: initialData?.monitorWornBy || '',
+	      sampleDate: initialData?.startTime ? new Date(initialData.startTime).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+	      startTime: initialData?.startTime ? new Date(initialData.startTime).toISOString().slice(11, 16) : '',
+	      endTime: initialData?.endTime ? new Date(initialData.endTime).toISOString().slice(11, 16) : '',
+	      flowRate: initialData?.flowRate?.toString() || '',
+	      samplingDuration: initialData?.samplingDuration || undefined,
+	      analysisMethod: initialData?.analysisMethod || '',
+	      fieldNotes: initialData?.fieldNotes || '',
+	      status: initialData?.status || 'collecting',
       
       // Lab Results defaults
       result: initialData?.result?.toString() || '',
@@ -1305,22 +1320,34 @@ function AirSampleForm({ jobId, jobNumber, existingSamples, personnel, equipment
     return fullName.includes(needle) || accreditation.includes(needle);
   });
 
+  const personnelById = useMemo(() => {
+    const map = new Map<string, { name: string }>();
+    for (const p of personnel as any[]) {
+      const id = (p?.personId || p?.id || "").toString();
+      if (!id) continue;
+      const name = `${(p?.firstName || "").toString()} ${(p?.lastName || "").toString()}`.trim();
+      map.set(id, { name: name || (p?.email || "").toString() || id });
+    }
+    return map;
+  }, [personnel]);
+
   const handleSubmit = (data: AirSampleFormData) => {
-    const startDateTime = data.sampleDate && data.startTime
-      ? new Date(`${data.sampleDate}T${data.startTime}`)
-      : undefined;
-    const endDateTime = data.sampleDate && data.endTime
-      ? new Date(`${data.sampleDate}T${data.endTime}`)
-      : undefined;
+    // Important: do not send form-only fields (sampleDate/startTime/endTime strings) to the API.
+    // Some Zod schemas may be strict in production, which would reject unknown keys.
+    const { sampleDate, startTime, endTime, ...rest } = data;
+    const startDateTime =
+      sampleDate && startTime ? new Date(`${sampleDate}T${startTime}`) : undefined;
+    const endDateTime =
+      sampleDate && endTime ? new Date(`${sampleDate}T${endTime}`) : undefined;
     const submitData: InsertAirSample = {
-      ...data,
+      ...(rest as any),
       startTime: startDateTime || new Date(),
       endTime: endDateTime || undefined,
-      flowRate: data.flowRate ? parseFloat(data.flowRate as string) : undefined,
-      result: data.result ? parseFloat(data.result) : undefined,
-      uncertainty: data.uncertainty ? parseFloat(data.uncertainty) : undefined,
-      regulatoryLimit: data.regulatoryLimit ? parseFloat(data.regulatoryLimit) : undefined,
-      labReportDate: data.labReportDate ? new Date(data.labReportDate) : undefined,
+      flowRate: rest.flowRate ? parseFloat(rest.flowRate as any) : undefined,
+      result: rest.result ? parseFloat(rest.result as any) : undefined,
+      uncertainty: rest.uncertainty ? parseFloat(rest.uncertainty as any) : undefined,
+      regulatoryLimit: rest.regulatoryLimit ? parseFloat(rest.regulatoryLimit as any) : undefined,
+      labReportDate: rest.labReportDate ? new Date(rest.labReportDate as any) : undefined,
     };
     if (!submitData.collectedBy) {
       submitData.collectedBy = "N/A";
@@ -1334,18 +1361,19 @@ function AirSampleForm({ jobId, jobNumber, existingSamples, personnel, equipment
     if (submitData.pumpId === "") {
       submitData.pumpId = undefined;
     }
-    onSubmit(submitData, labReportFile);
+    onSubmit(submitData);
   };
 
   const monitorLockedTypes = ["area", "blank", "clearance"];
   const sampleTypeValue = form.watch("sampleType");
   const monitorLocked = monitorLockedTypes.includes(sampleTypeValue);
 
-  useEffect(() => {
-    if (monitorLocked) {
-      form.setValue("monitorWornBy", "N/A");
-    }
-  }, [monitorLocked, form]);
+	  useEffect(() => {
+	    if (monitorLocked) {
+	      form.setValue("monitorWornBy", "N/A");
+	      form.setValue("personId", "");
+	    }
+	  }, [monitorLocked, form]);
 
   const getDefaultUnitForAnalyte = (analyte: string) => {
     switch (analyte) {
@@ -1515,41 +1543,52 @@ function AirSampleForm({ jobId, jobNumber, existingSamples, personnel, equipment
           )}
         />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="monitorWornBy"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Monitor Worn By</FormLabel>
-                {!monitorLocked && (
-                  <Input
-                    placeholder="Search personnel..."
-                    value={personnelQuery}
-                    onChange={(e) => setPersonnelQuery(e.target.value)}
-                    className="mb-2"
-                  />
-                )}
-                <Select onValueChange={field.onChange} value={field.value || ''} disabled={monitorLocked}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select person wearing monitor" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="N/A">Not applicable (area/blank/clearance)</SelectItem>
-                    {filteredPersonnel.map((person) => (
-                      <SelectItem key={person.id} value={`${person.firstName} ${person.lastName}`}>
-                        {person.firstName} {person.lastName} - {person.stateAccreditationNumber}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
+	        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+	          <FormField
+	            control={form.control}
+	            name="personId"
+	            render={({ field }) => (
+	              <FormItem>
+	                <FormLabel>Personnel</FormLabel>
+	                {!monitorLocked && (
+	                  <Input
+	                    placeholder="Search personnel..."
+	                    value={personnelQuery}
+	                    onChange={(e) => setPersonnelQuery(e.target.value)}
+	                    className="mb-2"
+	                  />
+	                )}
+	                <Select
+	                  onValueChange={(value) => {
+	                    field.onChange(value === "__none__" ? "" : value);
+	                    const sel = personnelById.get(value);
+	                    if (sel) {
+	                      // Keep the legacy human-readable field populated for reports/UI.
+	                      form.setValue("monitorWornBy", sel.name);
+	                    }
+	                  }}
+	                  value={field.value || ""}
+	                  disabled={monitorLocked}
+	                >
+	                  <FormControl>
+	                    <SelectTrigger>
+	                      <SelectValue placeholder="Select personnel" />
+	                    </SelectTrigger>
+	                  </FormControl>
+	                  <SelectContent>
+	                    <SelectItem value="__none__">Not assigned</SelectItem>
+	                    {filteredPersonnel.map((person) => (
+	                      <SelectItem key={(person as any).personId || (person as any).id} value={((person as any).personId || (person as any).id).toString()}>
+	                        {(person as any).firstName} {(person as any).lastName}
+	                      </SelectItem>
+	                    ))}
+	                  </SelectContent>
+	                </Select>
+	                <FormMessage />
+	              </FormItem>
+	            )}
+	          />
+	        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <FormField
@@ -1791,13 +1830,22 @@ function AirSampleForm({ jobId, jobNumber, existingSamples, personnel, equipment
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Unit</FormLabel>
-                  <FormControl>
-                    <Input 
-                      {...field} 
-                      value={field.value || ''}
-                      placeholder="f/cc, mg/m³, ppm"
-                    />
-                  </FormControl>
+                  <Select onValueChange={field.onChange} value={field.value || ""}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select unit" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="f/cc">f/cc</SelectItem>
+                      <SelectItem value="fibers/L">fibers/L</SelectItem>
+                      <SelectItem value="ug/m3">ug/m3</SelectItem>
+                      <SelectItem value="mg/m3">mg/m3</SelectItem>
+                      <SelectItem value="ppm">ppm</SelectItem>
+                      <SelectItem value="ppb">ppb</SelectItem>
+                      <SelectItem value="%">%</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
@@ -1934,15 +1982,7 @@ function AirSampleForm({ jobId, jobNumber, existingSamples, personnel, equipment
               )}
             />
 
-            <div className="mt-4">
-              <FormLabel>Lab Report Upload</FormLabel>
-              <Input
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                onChange={(e) => setLabReportFile(e.target.files?.[0] || null)}
-              />
-              <p className="text-xs text-gray-500 mt-1">Attach a lab report file (optional).</p>
-            </div>
+            {/* Lab report upload removed from this modal. */}
           </div>
         </div>
         </div>

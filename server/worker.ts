@@ -377,6 +377,35 @@ const audit = async (
   });
 };
 
+const auditVal = (value: any) => {
+  if (value === undefined) return null;
+  if (value instanceof Date) return value.toISOString();
+  return value;
+};
+
+const computeAuditChanges = (before: any, after: any, keys: string[]) => {
+  const changes: Array<{ field: string; from: any; to: any }> = [];
+  for (const key of keys) {
+    const from = auditVal(before ? (before as any)[key] : undefined);
+    const to = auditVal(after ? (after as any)[key] : undefined);
+    if (JSON.stringify(from) !== JSON.stringify(to)) {
+      changes.push({ field: key, from, to });
+    }
+  }
+  return changes;
+};
+
+const changesSummary = (changes: Array<{ field: string; from: any; to: any }>) => {
+  const parts = changes.map((c) => {
+    const from = c.from === null ? "—" : String(c.from);
+    const to = c.to === null ? "—" : String(c.to);
+    return `${c.field}: ${from} -> ${to}`;
+  });
+  const joined = parts.join("; ");
+  // Keep audit summaries readable in a table.
+  return joined.length > 240 ? `${joined.slice(0, 237)}...` : joined;
+};
+
 const resolveOrgIdForCreate = (orgIds: string[], requested?: string | null) => {
   if (requested && orgIds.includes(requested)) return requested;
   return orgIds[0];
@@ -1433,6 +1462,7 @@ app.post("/api/organizations", async (c) => {
     entityType: "organization",
     entityId: org.id,
     summary: `Created organization ${org.name}`,
+    metadata: { entityLabel: org.name },
   });
   return c.json(org, 201);
 });
@@ -1446,9 +1476,20 @@ app.put("/api/organizations/:id", async (c) => {
   if (!isAdminUser(user, adminEmails)) {
     return c.json({ message: "Admin access required" }, 403);
   }
+  const existing = await storage.getOrganization(c.req.param("id"));
+  if (!existing) return c.json({ message: "Organization not found" }, 404);
   const payload = insertOrganizationSchema.partial().parse(await c.req.json());
   const org = await storage.updateOrganization(c.req.param("id"), payload);
   if (!org) return c.json({ message: "Organization not found" }, 404);
+  const changes = computeAuditChanges(existing as any, org as any, Object.keys(payload as any));
+  await audit(c, {
+    organizationId: org.id,
+    action: "org.update",
+    entityType: "organization",
+    entityId: org.id,
+    summary: changes.length ? `Updated organization ${org.name}: ${changesSummary(changes)}` : `Updated organization ${org.name}`,
+    metadata: { entityLabel: org.name, changes },
+  });
   return c.json(org);
 });
 
@@ -1510,13 +1551,18 @@ app.post("/api/organizations/:id/members", async (c) => {
     organizationId: c.req.param("id"),
   });
   const member = await storage.addOrganizationMember(payload);
+  const profile = await storage.getUserProfile(payload.userId);
+  const authUser = await storage.getAuthUserById(payload.userId);
+  const memberEmail = (profile?.email || authUser?.email || "").toString();
+  const memberName = `${profile?.firstName || ""} ${profile?.lastName || ""}`.trim() || (authUser?.name || "").toString();
+  const entityLabel = memberName || memberEmail || payload.userId;
   await audit(c, {
     organizationId: payload.organizationId,
     action: "org_member.add",
     entityType: "organization_member",
     entityId: member.id,
-    summary: `Added org member ${payload.userId}`,
-    metadata: { userId: payload.userId, role: payload.role, status: payload.status },
+    summary: `Added org member ${entityLabel}`,
+    metadata: { entityLabel, userId: payload.userId, memberName: memberName || null, memberEmail: memberEmail || null, role: payload.role, status: payload.status },
   });
   return c.json(member, 201);
 });
@@ -1530,9 +1576,25 @@ app.put("/api/organization-members/:id", async (c) => {
   if (!isAdminUser(user, adminEmails)) {
     return c.json({ message: "Admin access required" }, 403);
   }
+  const existing = await storage.getOrganizationMemberById(c.req.param("id"));
+  if (!existing) return c.json({ message: "Organization member not found" }, 404);
   const payload = insertOrganizationMemberSchema.partial().parse(await c.req.json());
   const member = await storage.updateOrganizationMember(c.req.param("id"), payload);
   if (!member) return c.json({ message: "Organization member not found" }, 404);
+  const changes = computeAuditChanges(existing as any, member as any, Object.keys(payload as any));
+  const profile = await storage.getUserProfile(member.userId);
+  const authUser = await storage.getAuthUserById(member.userId);
+  const memberEmail = (profile?.email || authUser?.email || "").toString();
+  const memberName = `${profile?.firstName || ""} ${profile?.lastName || ""}`.trim() || (authUser?.name || "").toString();
+  const entityLabel = memberName || memberEmail || member.userId;
+  await audit(c, {
+    organizationId: member.organizationId,
+    action: "org_member.update",
+    entityType: "organization_member",
+    entityId: member.id,
+    summary: changes.length ? `Updated org member ${entityLabel}: ${changesSummary(changes)}` : `Updated org member ${entityLabel}`,
+    metadata: { entityLabel, userId: member.userId, memberName: memberName || null, memberEmail: memberEmail || null, changes },
+  });
   return c.json(member);
 });
 
@@ -1545,8 +1607,23 @@ app.delete("/api/organization-members/:id", async (c) => {
   if (!isAdminUser(user, adminEmails)) {
     return c.json({ message: "Admin access required" }, 403);
   }
+  const existing = await storage.getOrganizationMemberById(c.req.param("id"));
+  if (!existing) return c.json({ message: "Organization member not found" }, 404);
   const deleted = await storage.removeOrganizationMember(c.req.param("id"));
   if (!deleted) return c.json({ message: "Organization member not found" }, 404);
+  const profile = await storage.getUserProfile(existing.userId);
+  const authUser = await storage.getAuthUserById(existing.userId);
+  const memberEmail = (profile?.email || authUser?.email || "").toString();
+  const memberName = `${profile?.firstName || ""} ${profile?.lastName || ""}`.trim() || (authUser?.name || "").toString();
+  const entityLabel = memberName || memberEmail || existing.userId;
+  await audit(c, {
+    organizationId: existing.organizationId,
+    action: "org_member.delete",
+    entityType: "organization_member",
+    entityId: existing.id,
+    summary: `Deleted org member ${entityLabel}`,
+    metadata: { entityLabel, userId: existing.userId, memberName: memberName || null, memberEmail: memberEmail || null },
+  });
   return c.body(null, 204);
 });
 
@@ -2899,12 +2976,14 @@ app.post("/api/personnel", async (c) => {
   if (!organizationId) return c.json({ message: "No organization access" }, 403);
   const payload = insertPersonnelSchema.parse(body);
   const created = await storage.createPersonnel(organizationId, userId, payload);
+  const createdName = `${created.firstName || ""} ${created.lastName || ""}`.trim() || created.personId;
   await audit(c, {
     organizationId,
     action: "personnel.create",
     entityType: "personnel",
     entityId: created.personId,
-    summary: `Created personnel ${created.firstName} ${created.lastName}`,
+    summary: `Created personnel ${createdName}`,
+    metadata: { entityLabel: createdName },
   });
   return c.json(created, 201);
 });
@@ -2934,12 +3013,14 @@ app.put("/api/personnel/:id", async (c) => {
   const updated = await storage.updatePersonnel(existing.personId, userId, payload);
   if (!updated) return c.json({ message: "Not found" }, 404);
   const existingName = `${existing.firstName || ""} ${existing.lastName || ""}`.trim() || existing.personId;
+  const changes = computeAuditChanges(existing as any, updated as any, Object.keys(payload as any));
   await audit(c, {
     organizationId: existing.organizationId,
     action: "personnel.update",
     entityType: "personnel",
     entityId: existing.personId,
-    summary: `Updated personnel ${existingName}`,
+    summary: changes.length ? `Updated personnel ${existingName}: ${changesSummary(changes)}` : `Updated personnel ${existingName}`,
+    metadata: { entityLabel: existingName, changes },
   });
   return c.json(updated);
 });
@@ -3233,18 +3314,43 @@ app.post("/api/air-samples", async (c) => {
   if (!organizationId) return c.json({ message: "Job is missing organizationId" }, 400);
   try {
     const payload = insertAirSampleSchema.parse(body);
+    const linkedPersonId = (payload as any).personId ? String((payload as any).personId) : "";
+    if (linkedPersonId) {
+      const person = await storage.getPersonnelById(linkedPersonId);
+      if (!person || person.organizationId !== organizationId) {
+        return c.json({ message: "Selected personnel not found" }, 404);
+      }
+    }
     const created = await storage.createAirSample(payload);
 
 	  // Exposure snapshot: store raw inputs + computed outputs (auditable) when personnel is linked.
 	  try {
-	    const personId = (created as any).personnelId ? String((created as any).personnelId) : "";
-    if (personId) {
-      const person = await storage.getPersonnelById(personId);
-      if (person && person.organizationId === organizationId) {
-        const durationMinutes =
-          typeof (created as any).samplingDuration === "number"
-            ? (created as any).samplingDuration
-            : parseNumeric((created as any).samplingDuration);
+	    const personId = (created as any).personId ? String((created as any).personId) : "";
+	    if (personId) {
+	      const person = await storage.getPersonnelById(personId);
+	      if (person && person.organizationId === organizationId) {
+	        // Auto-create a personnel assignment if one doesn't exist for this job.
+	        const existing = await storage.getPersonnelAssignmentByPersonJob(organizationId, personId, created.jobId);
+	        if (!existing) {
+	          const dateMs = (created as any).startTime ? Number((created as any).startTime) : null;
+	          const shiftDate = Number.isFinite(dateMs as any) ? new Date(dateMs as any).toISOString().slice(0, 10) : null;
+	          await storage.createPersonnelAssignment(organizationId, userId, {
+	            personId,
+	            jobId: created.jobId,
+	            shiftDate,
+	            roleOnJob: null,
+	            supervisorPersonId: null,
+	            supervisorName: null,
+	            notes: "Auto-assigned from air sample",
+	            dateFrom: undefined,
+	            dateTo: undefined,
+	          } as any);
+	        }
+
+	        const durationMinutes =
+	          typeof (created as any).samplingDuration === "number"
+	            ? (created as any).samplingDuration
+	            : parseNumeric((created as any).samplingDuration);
         const concentration = parseNumeric((created as any).result);
         const twa = computeTwa8hr(concentration, typeof durationMinutes === "number" ? durationMinutes : null);
         const profileKey = (body.profileKey || "OSHA").toString();
@@ -3304,19 +3410,45 @@ app.put("/api/air-samples/:id", async (c) => {
   const body = normalizeAirSampleBody(bodyRaw);
   try {
     const payload = insertAirSampleSchema.partial().parse(body);
+    const orgId = (access as any).job?.organizationId || null;
+    if (orgId && (payload as any)?.personId) {
+      const linkedPersonId = String((payload as any).personId);
+      const person = await storage.getPersonnelById(linkedPersonId);
+      if (!person || person.organizationId !== orgId) {
+        return c.json({ message: "Selected personnel not found" }, 404);
+      }
+    }
     const updated = await storage.updateAirSample(c.req.param("id"), payload);
 
-  // Update exposure snapshot if still linked to personnel.
-  try {
-    const orgId = (access as any).job?.organizationId || null;
-    const personId = (updated as any)?.personnelId ? String((updated as any).personnelId) : "";
-    if (orgId && personId) {
-      const person = await storage.getPersonnelById(personId);
-      if (person && person.organizationId === orgId) {
-        const durationMinutes =
-          typeof (updated as any).samplingDuration === "number"
-            ? (updated as any).samplingDuration
-            : parseNumeric((updated as any).samplingDuration);
+	  // Update exposure snapshot if still linked to personnel.
+	  try {
+	    const orgId = (access as any).job?.organizationId || null;
+	    const personId = (updated as any)?.personId ? String((updated as any).personId) : "";
+	    if (orgId && personId) {
+	      const person = await storage.getPersonnelById(personId);
+	      if (person && person.organizationId === orgId) {
+	        // Auto-create a personnel assignment if one doesn't exist for this job.
+	        const existing = await storage.getPersonnelAssignmentByPersonJob(orgId, personId, updated.jobId);
+	        if (!existing) {
+	          const dateMs = (updated as any).startTime ? Number((updated as any).startTime) : null;
+	          const shiftDate = Number.isFinite(dateMs as any) ? new Date(dateMs as any).toISOString().slice(0, 10) : null;
+	          await storage.createPersonnelAssignment(orgId, userId, {
+	            personId,
+	            jobId: updated.jobId,
+	            shiftDate,
+	            roleOnJob: null,
+	            supervisorPersonId: null,
+	            supervisorName: null,
+	            notes: "Auto-assigned from air sample",
+	            dateFrom: undefined,
+	            dateTo: undefined,
+	          } as any);
+	        }
+
+	        const durationMinutes =
+	          typeof (updated as any).samplingDuration === "number"
+	            ? (updated as any).samplingDuration
+	            : parseNumeric((updated as any).samplingDuration);
         const concentration = parseNumeric((updated as any).result);
         const twa = computeTwa8hr(concentration, typeof durationMinutes === "number" ? durationMinutes : null);
         const profileKey = (body.profileKey || "OSHA").toString();
