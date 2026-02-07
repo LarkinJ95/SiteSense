@@ -3,8 +3,9 @@ main = "server/worker.ts"
 compatibility_date = "2026-02-06"
 
 routes = [
-  { pattern = "abateiq.com", zone_name = "abateiq.com", custom_domain = true },
-  { pattern = "www.abateiq.com", zone_name = "abateiq.com", custom_domain = true }
+  # Use Workers Routes (not Custom Domains) so we can route all paths (/*) without Custom Domain restrictions.
+  { pattern = "abateiq.com/*", zone_name = "abateiq.com" },
+  { pattern = "www.abateiq.com/*", zone_name = "abateiq.com" }
 ]
 
 [assets]
