@@ -18,6 +18,12 @@ import {
   userProfiles,
   organizations,
   organizationMembers,
+  auditLog,
+  equipment as equipmentTable,
+  equipmentCalibrationEvents as equipmentCalibrationEventsTable,
+  equipmentUsage as equipmentUsageTable,
+  equipmentNotes as equipmentNotesTable,
+  equipmentDocuments as equipmentDocumentsTable,
   dailyWeatherLogs,
   type Survey, 
   type InsertSurvey,
@@ -53,6 +59,11 @@ import {
   type InsertOrganization,
   type OrganizationMember,
   type InsertOrganizationMember,
+  type EquipmentRecord,
+  type EquipmentCalibrationEvent,
+  type EquipmentUsageRow,
+  type EquipmentNote,
+  type EquipmentDocument,
   type DailyWeatherLog,
   type InsertDailyWeatherLog
 } from "@shared/schema";
@@ -181,6 +192,18 @@ export interface IStorage {
   updateOrganizationMember(id: string, member: Partial<InsertOrganizationMember>): Promise<OrganizationMember | undefined>;
   removeOrganizationMember(id: string): Promise<boolean>;
   getOrganizationIdsForUser(userId: string): Promise<string[]>;
+  createAuditLog(entry: {
+    organizationId: string;
+    actorUserId?: string | null;
+    actorEmail?: string | null;
+    actorName?: string | null;
+    action: string;
+    entityType?: string | null;
+    entityId?: string | null;
+    summary?: string | null;
+    metadata?: any;
+  }): Promise<void>;
+  getAuditLogs(organizationId: string, limit?: number): Promise<any[]>;
   getActiveOrganizationUsers(organizationId: string): Promise<
     Array<{
       userId: string;
@@ -193,6 +216,23 @@ export interface IStorage {
       createdAt: number | null;
     }>
   >;
+
+  // Equipment tracking (organization-level)
+  getEquipment(organizationId: string, options?: { includeInactive?: boolean }): Promise<EquipmentRecord[]>;
+  getEquipmentById(id: string): Promise<EquipmentRecord | undefined>;
+  createEquipment(record: Omit<EquipmentRecord, "createdAt" | "updatedAt"> & Partial<Pick<EquipmentRecord, "createdAt" | "updatedAt">>): Promise<EquipmentRecord>;
+  updateEquipment(id: string, patch: Partial<EquipmentRecord>): Promise<EquipmentRecord | undefined>;
+  softDeleteEquipment(id: string): Promise<boolean>;
+  getEquipmentCalibrationEvents(organizationId: string, equipmentId: string): Promise<EquipmentCalibrationEvent[]>;
+  createEquipmentCalibrationEvent(event: Partial<EquipmentCalibrationEvent> & { organizationId: string; equipmentId: string }): Promise<EquipmentCalibrationEvent>;
+  getEquipmentUsage(organizationId: string, equipmentId: string): Promise<EquipmentUsageRow[]>;
+  createEquipmentUsage(row: Partial<EquipmentUsageRow> & { organizationId: string; equipmentId: string }): Promise<EquipmentUsageRow>;
+  getEquipmentNotes(organizationId: string, equipmentId: string): Promise<EquipmentNote[]>;
+  createEquipmentNote(note: Partial<EquipmentNote> & { organizationId: string; equipmentId: string; createdByUserId: string; noteText: string }): Promise<EquipmentNote>;
+  getEquipmentDocuments(organizationId: string, equipmentId: string): Promise<EquipmentDocument[]>;
+  getEquipmentDocument(id: string): Promise<EquipmentDocument | undefined>;
+  createEquipmentDocument(doc: Partial<EquipmentDocument> & { organizationId: string; equipmentId: string; filename: string; originalName: string; mimeType: string; size: number }): Promise<EquipmentDocument>;
+  deleteEquipmentDocument(id: string): Promise<boolean>;
 
   // Air monitoring documents
   getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]>;
@@ -762,6 +802,63 @@ export class DatabaseStorage implements IStorage {
     return memberships.map((member) => member.organizationId);
   }
 
+  async createAuditLog(entry: {
+    organizationId: string;
+    actorUserId?: string | null;
+    actorEmail?: string | null;
+    actorName?: string | null;
+    action: string;
+    entityType?: string | null;
+    entityId?: string | null;
+    summary?: string | null;
+    metadata?: any;
+  }): Promise<void> {
+    const userId = entry.actorUserId || "";
+    if (!userId) return;
+    try {
+      await db().insert(auditLog).values({
+        organizationId: entry.organizationId,
+        entityType: entry.entityType || "unknown",
+        entityId: entry.entityId || "unknown",
+        action: entry.action,
+        oldValues: null,
+        newValues: JSON.stringify({
+          actorEmail: entry.actorEmail ?? null,
+          actorName: entry.actorName ?? null,
+          summary: entry.summary ?? null,
+          metadata: entry.metadata ?? null,
+        }),
+        userId,
+        userAgent: null,
+        ipAddress: null,
+      } as any);
+    } catch {
+      // Audit should never break the primary workflow. If schema/migrations drift, skip logging.
+      return;
+    }
+  }
+
+  async getAuditLogs(organizationId: string, limit = 200): Promise<any[]> {
+    const rows = await db()
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.organizationId, organizationId))
+      .orderBy(desc(auditLog.timestamp))
+      .limit(Math.min(Math.max(limit, 1), 500));
+    return rows.map((row: any) => ({
+      ...row,
+      details: row.newValues
+        ? (() => {
+            try {
+              return JSON.parse(row.newValues);
+            } catch {
+              return row.newValues;
+            }
+          })()
+        : null,
+    }));
+  }
+
   async getActiveOrganizationUsers(organizationId: string) {
     const rows = await db()
       .select({
@@ -798,6 +895,103 @@ export class DatabaseStorage implements IStorage {
       profileStatus: row.profileStatus ?? null,
       createdAt: typeof row.createdAt === "number" ? row.createdAt : null,
     }));
+  }
+
+  // Equipment tracking (organization-level)
+  async getEquipment(organizationId: string, options?: { includeInactive?: boolean }): Promise<EquipmentRecord[]> {
+    const where = options?.includeInactive
+      ? eq(equipmentTable.organizationId, organizationId)
+      : and(eq(equipmentTable.organizationId, organizationId), eq(equipmentTable.active, true));
+    return await db().select().from(equipmentTable).where(where).orderBy(desc(equipmentTable.updatedAt));
+  }
+
+  async getEquipmentById(id: string): Promise<EquipmentRecord | undefined> {
+    const [row] = await db().select().from(equipmentTable).where(eq(equipmentTable.equipmentId, id));
+    return row || undefined;
+  }
+
+  async createEquipment(record: any): Promise<EquipmentRecord> {
+    const [created] = await db().insert(equipmentTable).values(record).returning();
+    return created;
+  }
+
+  async updateEquipment(id: string, patch: Partial<EquipmentRecord>): Promise<EquipmentRecord | undefined> {
+    const [updated] = await db()
+      .update(equipmentTable)
+      .set({ ...patch, updatedAt: new Date() } as any)
+      .where(eq(equipmentTable.equipmentId, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async softDeleteEquipment(id: string): Promise<boolean> {
+    const result = await db()
+      .update(equipmentTable)
+      .set({ active: false, updatedAt: new Date() } as any)
+      .where(eq(equipmentTable.equipmentId, id));
+    return didAffectRows(result);
+  }
+
+  async getEquipmentCalibrationEvents(organizationId: string, equipmentId: string): Promise<EquipmentCalibrationEvent[]> {
+    return await db()
+      .select()
+      .from(equipmentCalibrationEventsTable)
+      .where(and(eq(equipmentCalibrationEventsTable.organizationId, organizationId), eq(equipmentCalibrationEventsTable.equipmentId, equipmentId)))
+      .orderBy(desc(equipmentCalibrationEventsTable.calDate));
+  }
+
+  async createEquipmentCalibrationEvent(event: any): Promise<EquipmentCalibrationEvent> {
+    const [created] = await db().insert(equipmentCalibrationEventsTable).values(event).returning();
+    return created;
+  }
+
+  async getEquipmentUsage(organizationId: string, equipmentId: string): Promise<EquipmentUsageRow[]> {
+    return await db()
+      .select()
+      .from(equipmentUsageTable)
+      .where(and(eq(equipmentUsageTable.organizationId, organizationId), eq(equipmentUsageTable.equipmentId, equipmentId)))
+      .orderBy(desc(equipmentUsageTable.usedFrom));
+  }
+
+  async createEquipmentUsage(row: any): Promise<EquipmentUsageRow> {
+    const [created] = await db().insert(equipmentUsageTable).values(row).returning();
+    return created;
+  }
+
+  async getEquipmentNotes(organizationId: string, equipmentId: string): Promise<EquipmentNote[]> {
+    return await db()
+      .select()
+      .from(equipmentNotesTable)
+      .where(and(eq(equipmentNotesTable.organizationId, organizationId), eq(equipmentNotesTable.equipmentId, equipmentId)))
+      .orderBy(desc(equipmentNotesTable.createdAt));
+  }
+
+  async createEquipmentNote(note: any): Promise<EquipmentNote> {
+    const [created] = await db().insert(equipmentNotesTable).values(note).returning();
+    return created;
+  }
+
+  async getEquipmentDocuments(organizationId: string, equipmentId: string): Promise<EquipmentDocument[]> {
+    return await db()
+      .select()
+      .from(equipmentDocumentsTable)
+      .where(and(eq(equipmentDocumentsTable.organizationId, organizationId), eq(equipmentDocumentsTable.equipmentId, equipmentId)))
+      .orderBy(desc(equipmentDocumentsTable.uploadedAt));
+  }
+
+  async getEquipmentDocument(id: string): Promise<EquipmentDocument | undefined> {
+    const [row] = await db().select().from(equipmentDocumentsTable).where(eq(equipmentDocumentsTable.documentId, id));
+    return row || undefined;
+  }
+
+  async createEquipmentDocument(doc: any): Promise<EquipmentDocument> {
+    const [created] = await db().insert(equipmentDocumentsTable).values(doc).returning();
+    return created;
+  }
+
+  async deleteEquipmentDocument(id: string): Promise<boolean> {
+    const result = await db().delete(equipmentDocumentsTable).where(eq(equipmentDocumentsTable.documentId, id));
+    return didAffectRows(result);
   }
 
   async getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]> {

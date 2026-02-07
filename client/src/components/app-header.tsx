@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { ClipboardList, Plus, User, Settings, LogOut, UserCircle, Shield, Cloud, Sun, CloudRain, Wind, Droplets, Thermometer } from "lucide-react";
+import { ClipboardList, Plus, User, Settings, LogOut, UserCircle, Shield, Cloud, Sun, CloudRain, Wind, Droplets, Thermometer, Wrench } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
@@ -69,6 +69,10 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
     setLocation("/settings");
   };
 
+  const handleEquipmentClick = () => {
+    setLocation("/equipment");
+  };
+
   const handleAdminClick = () => {
     setLocation("/admin");
   };
@@ -81,7 +85,6 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
     { key: "air-monitoring", label: "Air Monitoring", href: "/air-monitoring" },
     { key: "field-tools", label: "Field Tools", href: "/field-tools" },
     { key: "templates", label: "Templates", href: "/templates" },
-    { key: "settings", label: "Settings", href: "/settings" },
   ];
 
   useEffect(() => {
@@ -235,6 +238,10 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
                 <DropdownMenuItem onClick={handleSettingsClick} data-testid="menu-settings">
                   <Settings className="mr-2 h-4 w-4" />
                   Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleEquipmentClick} data-testid="menu-equipment">
+                  <Wrench className="mr-2 h-4 w-4" />
+                  Equipment
                 </DropdownMenuItem>
                 {isAdmin && (
                   <DropdownMenuItem onClick={handleAdminClick} data-testid="menu-admin">

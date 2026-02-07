@@ -614,6 +614,100 @@ export const organizationMembers = sqliteTable('organization_members', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Audit log (org-scoped via optional organizationId; historical rows may be null)
+// Backed by the existing `audit_log` table created in the initial migration.
+export const auditLog = sqliteTable('audit_log', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  organizationId: text('organization_id').references(() => organizations.id, { onDelete: 'cascade' }),
+  entityType: text('entity_type').notNull(),
+  entityId: text('entity_id').notNull(),
+  action: text('action').notNull(),
+  oldValues: text('old_values'),
+  newValues: text('new_values'),
+  userId: text('user_id').notNull(),
+  userAgent: text('user_agent'),
+  ipAddress: text('ip_address'),
+  timestamp: timestamp('timestamp').defaultNow(),
+});
+
+// Organization-level Equipment Tracking (Air Sampling Pumps)
+export const equipment = sqliteTable("equipment", {
+  equipmentId: text("equipment_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  category: text("category").notNull(), // "Air Sampling Pump" initially
+  manufacturer: text("manufacturer"),
+  model: text("model"),
+  serialNumber: text("serial_number").notNull(),
+  assetTag: text("asset_tag"),
+  status: text("status").notNull().default("in_service"), // in_service | out_for_cal | repair | retired | lost
+  assignedToUserId: text("assigned_to_user_id"),
+  location: text("location"),
+  calibrationIntervalDays: integer("calibration_interval_days"),
+  lastCalibrationDate: text("last_calibration_date"), // YYYY-MM-DD
+  calibrationDueDate: text("calibration_due_date"), // YYYY-MM-DD (stored + derived)
+  active: bool("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const equipmentCalibrationEvents = sqliteTable("equipment_calibration_events", {
+  calEventId: text("cal_event_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  equipmentId: text("equipment_id").notNull().references(() => equipment.equipmentId, { onDelete: "cascade" }),
+  calDate: text("cal_date").notNull(), // YYYY-MM-DD
+  calType: text("cal_type").notNull(), // annual | verification | as_found | as_left | repair
+  performedBy: text("performed_by"),
+  methodStandard: text("method_standard"),
+  targetFlowLpm: numeric("target_flow_lpm"),
+  asFoundFlowLpm: numeric("as_found_flow_lpm"),
+  asLeftFlowLpm: numeric("as_left_flow_lpm"),
+  tolerance: numeric("tolerance"),
+  toleranceUnit: text("tolerance_unit"), // percent | lpm
+  passFail: text("pass_fail"), // pass | fail | unknown
+  certificateNumber: text("certificate_number"),
+  certificateFileUrl: text("certificate_file_url"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const equipmentUsage = sqliteTable("equipment_usage", {
+  usageId: text("usage_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  equipmentId: text("equipment_id").notNull().references(() => equipment.equipmentId, { onDelete: "cascade" }),
+  jobId: text("job_id").references(() => airMonitoringJobs.id, { onDelete: "set null" }),
+  usedFrom: timestamp("used_from"),
+  usedTo: timestamp("used_to"),
+  context: text("context"), // Air Sampling / PCM / TEM / etc.
+  sampleRunId: text("sample_run_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const equipmentNotes = sqliteTable("equipment_notes", {
+  noteId: text("note_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  equipmentId: text("equipment_id").notNull().references(() => equipment.equipmentId, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdByUserId: text("created_by_user_id").notNull(),
+  noteText: text("note_text").notNull(),
+  noteType: text("note_type"),
+  visibility: text("visibility").default("org"), // org | private
+});
+
+export const equipmentDocuments = sqliteTable("equipment_documents", {
+  documentId: text("document_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  equipmentId: text("equipment_id").notNull().references(() => equipment.equipmentId, { onDelete: "cascade" }),
+  filename: text("filename").notNull(), // R2 object key
+  originalName: text("original_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  size: integer("size").notNull(),
+  docType: text("doc_type"),
+  uploadedAt: timestamp("uploaded_at").defaultNow(),
+  uploadedByUserId: text("uploaded_by_user_id"),
+  linkedEntityType: text("linked_entity_type"), // equipment | calibration_event | usage | note | other
+  linkedEntityId: text("linked_entity_id"),
+});
+
 // Define relations for air monitoring
 export const personnelRelations = relations(personnelProfiles, ({ many }) => ({
   airSamples: many(airSamples),
@@ -653,12 +747,63 @@ export const dailyWeatherLogRelations = relations(dailyWeatherLogs, ({ one }) =>
 
 export const organizationRelations = relations(organizations, ({ many }) => ({
   members: many(organizationMembers),
+  auditLogs: many(auditLog),
 }));
 
 export const organizationMemberRelations = relations(organizationMembers, ({ one }) => ({
   organization: one(organizations, {
     fields: [organizationMembers.organizationId],
     references: [organizations.id],
+  }),
+}));
+
+export const auditLogRelations = relations(auditLog, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [auditLog.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
+export const equipmentRelations = relations(equipment, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [equipment.organizationId],
+    references: [organizations.id],
+  }),
+  calibrationEvents: many(equipmentCalibrationEvents),
+  usage: many(equipmentUsage),
+  notes: many(equipmentNotes),
+  documents: many(equipmentDocuments),
+}));
+
+export const equipmentCalibrationEventRelations = relations(equipmentCalibrationEvents, ({ one }) => ({
+  equipment: one(equipment, {
+    fields: [equipmentCalibrationEvents.equipmentId],
+    references: [equipment.equipmentId],
+  }),
+}));
+
+export const equipmentUsageRelations = relations(equipmentUsage, ({ one }) => ({
+  equipment: one(equipment, {
+    fields: [equipmentUsage.equipmentId],
+    references: [equipment.equipmentId],
+  }),
+  job: one(airMonitoringJobs, {
+    fields: [equipmentUsage.jobId],
+    references: [airMonitoringJobs.id],
+  }),
+}));
+
+export const equipmentNotesRelations = relations(equipmentNotes, ({ one }) => ({
+  equipment: one(equipment, {
+    fields: [equipmentNotes.equipmentId],
+    references: [equipment.equipmentId],
+  }),
+}));
+
+export const equipmentDocumentsRelations = relations(equipmentDocuments, ({ one }) => ({
+  equipment: one(equipment, {
+    fields: [equipmentDocuments.equipmentId],
+    references: [equipment.equipmentId],
   }),
 }));
 
@@ -796,6 +941,11 @@ export const insertOrganizationMemberSchema = createInsertSchema(organizationMem
   createdAt: true,
 });
 
+export const insertAuditLogSchema = createInsertSchema(auditLog).omit({
+  id: true,
+  timestamp: true,
+});
+
 export const insertDailyWeatherLogSchema = createInsertSchema(dailyWeatherLogs).omit({
   id: true,
   createdAt: true,
@@ -836,6 +986,8 @@ export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type OrganizationMember = typeof organizationMembers.$inferSelect;
 export type InsertOrganizationMember = z.infer<typeof insertOrganizationMemberSchema>;
+export type AuditLog = typeof auditLog.$inferSelect;
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type DailyWeatherLog = typeof dailyWeatherLogs.$inferSelect;
 export type InsertDailyWeatherLog = z.infer<typeof insertDailyWeatherLogSchema>;
 
@@ -1044,6 +1196,74 @@ export const collaborationChangeSchema = createInsertSchema(collaborationChanges
   timestamp: true,
 });
 
+// Equipment tracking input schemas (API-facing)
+export const insertEquipmentRecordSchema = z.object({
+  organizationId: z.string().optional(),
+  category: z.string().min(1),
+  manufacturer: z.string().optional().nullable(),
+  model: z.string().optional().nullable(),
+  serialNumber: z.string().min(1),
+  assetTag: z.string().optional().nullable(),
+  status: z
+    .enum(["in_service", "out_for_cal", "repair", "retired", "lost"])
+    .optional()
+    .default("in_service"),
+  assignedToUserId: z.string().optional().nullable(),
+  location: z.string().optional().nullable(),
+  calibrationIntervalDays: z.preprocess((value) => {
+    if (value === "" || value === null || value === undefined) return undefined;
+    if (typeof value === "string") return Number(value);
+    return value;
+  }, z.number().int().positive().optional()),
+  lastCalibrationDate: z.string().optional().nullable(), // YYYY-MM-DD
+  calibrationDueDate: z.string().optional().nullable(), // YYYY-MM-DD
+  active: z.boolean().optional(),
+});
+
+export const insertEquipmentCalibrationEventSchema = z.object({
+  equipmentId: z.string().min(1),
+  calDate: z.string().min(1), // YYYY-MM-DD
+  calType: z
+    .enum(["annual", "verification", "as_found", "as_left", "repair"])
+    .optional()
+    .default("annual"),
+  performedBy: z.string().optional().nullable(),
+  methodStandard: z.string().optional().nullable(),
+  targetFlowLpm: z.string().or(z.number()).optional().transform((val) => (val === undefined || val === null || val === "" ? undefined : val.toString())),
+  asFoundFlowLpm: z.string().or(z.number()).optional().transform((val) => (val === undefined || val === null || val === "" ? undefined : val.toString())),
+  asLeftFlowLpm: z.string().or(z.number()).optional().transform((val) => (val === undefined || val === null || val === "" ? undefined : val.toString())),
+  tolerance: z.string().or(z.number()).optional().transform((val) => (val === undefined || val === null || val === "" ? undefined : val.toString())),
+  toleranceUnit: z.enum(["percent", "lpm"]).optional(),
+  passFail: z.enum(["pass", "fail", "unknown"]).optional().default("unknown"),
+  certificateNumber: z.string().optional().nullable(),
+  certificateFileUrl: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
+export const insertEquipmentUsageSchema = z.object({
+  equipmentId: z.string().min(1),
+  jobId: z.string().optional().nullable(),
+  usedFrom: z.preprocess((value) => {
+    if (value === "" || value === null || value === undefined) return undefined;
+    if (typeof value === "string" && value.trim()) return new Date(value);
+    return value;
+  }, z.date().optional()),
+  usedTo: z.preprocess((value) => {
+    if (value === "" || value === null || value === undefined) return undefined;
+    if (typeof value === "string" && value.trim()) return new Date(value);
+    return value;
+  }, z.date().optional()),
+  context: z.string().optional().nullable(),
+  sampleRunId: z.string().optional().nullable(),
+});
+
+export const insertEquipmentNoteSchema = z.object({
+  equipmentId: z.string().min(1),
+  noteText: z.string().min(1),
+  noteType: z.string().optional().nullable(),
+  visibility: z.enum(["org", "private"]).optional().default("org"),
+});
+
 // Export types for new features
 export type InsertReportTemplate = z.infer<typeof reportBuilderSchema>;
 export type ReportTemplate = typeof reportTemplates.$inferSelect;
@@ -1063,3 +1283,14 @@ export type InsertCollaborationSession = z.infer<typeof collaborationSchema>;
 export type CollaborationSession = typeof collaborationSessions.$inferSelect;
 export type InsertCollaborationChange = z.infer<typeof collaborationChangeSchema>;
 export type CollaborationChange = typeof collaborationChanges.$inferSelect;
+
+// Export types for equipment tracking
+export type EquipmentRecord = typeof equipment.$inferSelect;
+export type InsertEquipmentRecord = z.infer<typeof insertEquipmentRecordSchema>;
+export type EquipmentCalibrationEvent = typeof equipmentCalibrationEvents.$inferSelect;
+export type InsertEquipmentCalibrationEvent = z.infer<typeof insertEquipmentCalibrationEventSchema>;
+export type EquipmentUsageRow = typeof equipmentUsage.$inferSelect;
+export type InsertEquipmentUsageRow = z.infer<typeof insertEquipmentUsageSchema>;
+export type EquipmentNote = typeof equipmentNotes.$inferSelect;
+export type InsertEquipmentNote = z.infer<typeof insertEquipmentNoteSchema>;
+export type EquipmentDocument = typeof equipmentDocuments.$inferSelect;

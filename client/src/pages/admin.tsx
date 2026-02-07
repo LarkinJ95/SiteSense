@@ -14,7 +14,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { 
   Users, 
-  Settings, 
   Database, 
   Shield, 
   Activity,
@@ -501,7 +500,6 @@ export default function AdminDashboard() {
           <TabsTrigger value="users">User Management</TabsTrigger>
           <TabsTrigger value="organizations">Organizations</TabsTrigger>
           <TabsTrigger value="system">System Health</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-4">
@@ -957,70 +955,6 @@ export default function AdminDashboard() {
           </div>
         </TabsContent>
 
-        <TabsContent value="settings" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>System Configuration</CardTitle>
-              <CardDescription>
-                Configure global system settings and preferences
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label htmlFor="registration">Allow New Registrations</Label>
-                      <p className="text-sm text-gray-500">Enable or disable new user registration</p>
-                    </div>
-                    <Switch id="registration" />
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label htmlFor="email-verification">Require Email Verification</Label>
-                      <p className="text-sm text-gray-500">New users must verify their email</p>
-                    </div>
-                    <Switch id="email-verification" defaultChecked />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label htmlFor="maintenance">Maintenance Mode</Label>
-                      <p className="text-sm text-gray-500">Temporarily disable access for maintenance</p>
-                    </div>
-                    <Switch id="maintenance" />
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="backup-frequency">Backup Frequency</Label>
-                    <Select defaultValue="daily">
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="hourly">Hourly</SelectItem>
-                        <SelectItem value="daily">Daily</SelectItem>
-                        <SelectItem value="weekly">Weekly</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="retention">Data Retention (days)</Label>
-                    <Input id="retention" type="number" defaultValue="365" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t">
-                <Button>Save Configuration</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
 
       {/* Add New User Modal */}

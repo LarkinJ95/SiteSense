@@ -19,6 +19,9 @@ import ClientPortal from "@/pages/client-portal";
 import Messaging from "@/pages/messaging";
 import AirMonitoring from "@/pages/air-monitoring-new";
 import AdvancedAirMonitoring from "@/pages/air-monitoring-advanced";
+import Equipment from "@/pages/equipment";
+import EquipmentDetail from "@/pages/equipment-detail";
+import EquipmentReport from "@/pages/equipment-report";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
 import ForgotPassword from "@/pages/forgot-password";
@@ -102,6 +105,21 @@ function Router() {
       <Route path="/field-tools">
         <Protected>
           <FieldTools />
+        </Protected>
+      </Route>
+      <Route path="/equipment">
+        <Protected>
+          <Equipment />
+        </Protected>
+      </Route>
+      <Route path="/equipment/:id">
+        <Protected>
+          <EquipmentDetail />
+        </Protected>
+      </Route>
+      <Route path="/equipment/:id/report">
+        <Protected>
+          <EquipmentReport />
         </Protected>
       </Route>
       <Route path="/templates">

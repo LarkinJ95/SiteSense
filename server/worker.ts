@@ -7,6 +7,10 @@ import {
   insertAirSampleSchema,
   insertDailyWeatherLogSchema,
   insertFieldToolsEquipmentSchema,
+  insertEquipmentRecordSchema,
+  insertEquipmentCalibrationEventSchema,
+  insertEquipmentUsageSchema,
+  insertEquipmentNoteSchema,
   insertOrganizationMemberSchema,
   insertOrganizationSchema,
   insertObservationSchema,
@@ -261,6 +265,38 @@ const getUserOrgIds = async (userId: string) => {
   return orgIds || [];
 };
 
+const getOrgIdForUserOrThrow = async (userId: string) => {
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) throw new Error("No organization access");
+  return orgIds[0]!;
+};
+
+const audit = async (
+  c: any,
+  params: {
+    organizationId: string;
+    action: string;
+    entityType?: string | null;
+    entityId?: string | null;
+    summary?: string | null;
+    metadata?: any;
+  }
+) => {
+  const user = c.get("user") as AuthUser | undefined;
+  if (!user) return;
+  await storage.createAuditLog({
+    organizationId: params.organizationId,
+    actorUserId: typeof user.sub === "string" ? user.sub : null,
+    actorEmail: typeof user.email === "string" ? user.email : null,
+    actorName: getDisplayName(user) || null,
+    action: params.action,
+    entityType: params.entityType ?? null,
+    entityId: params.entityId ?? null,
+    summary: params.summary ?? null,
+    metadata: params.metadata ?? null,
+  });
+};
+
 const resolveOrgIdForCreate = (orgIds: string[], requested?: string | null) => {
   if (requested && orgIds.includes(requested)) return requested;
   return orgIds[0];
@@ -305,6 +341,35 @@ const assertAirJobOrgAccess = async (userId: string, jobId: string) => {
 };
 
 const sanitizeFilename = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, "_");
+
+const parseYmdUtc = (ymd: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  return new Date(Date.UTC(year, month - 1, day));
+};
+
+const toYmd = (date: Date) => date.toISOString().slice(0, 10);
+
+const addDaysToYmd = (ymd: string, days: number) => {
+  const base = parseYmdUtc(ymd);
+  if (!base) return null;
+  const delta = Number(days);
+  if (!Number.isFinite(delta)) return null;
+  const updated = new Date(base.getTime() + delta * 24 * 60 * 60 * 1000);
+  return toYmd(updated);
+};
+
+const stripUndefined = <T extends Record<string, any>>(obj: T) => {
+  const out: Record<string, any> = { ...obj };
+  for (const [key, value] of Object.entries(out)) {
+    if (value === undefined) delete out[key];
+  }
+  return out as Partial<T>;
+};
 
 const storeUpload = async (bucket: R2Bucket, file: File) => {
   const safeName = sanitizeFilename(file.name || "upload");
@@ -1089,6 +1154,13 @@ app.post("/api/organizations", async (c) => {
   }
   const payload = insertOrganizationSchema.parse(await c.req.json());
   const org = await storage.createOrganization(payload);
+  await audit(c, {
+    organizationId: org.id,
+    action: "org.create",
+    entityType: "organization",
+    entityId: org.id,
+    summary: `Created organization ${org.name}`,
+  });
   return c.json(org, 201);
 });
 
@@ -1126,6 +1198,23 @@ app.get("/api/organizations/:id/members", async (c) => {
   return c.json(members);
 });
 
+app.get("/api/audit-logs", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const orgId = resolveOrgIdForCreate(orgIds, c.req.query("orgId"));
+  if (!orgId) return c.json({ message: "No organization access" }, 403);
+  const limitRaw = c.req.query("limit");
+  const limit = limitRaw ? Number(limitRaw) : 200;
+  try {
+    const rows = await storage.getAuditLogs(orgId, Number.isFinite(limit) ? limit : 200);
+    return c.json(rows);
+  } catch {
+    return c.json([]);
+  }
+});
+
 app.post("/api/organizations/:id/members", async (c) => {
   const user = c.get("user");
   const adminEmails = (c.env.ADMIN_EMAILS || "")
@@ -1140,6 +1229,14 @@ app.post("/api/organizations/:id/members", async (c) => {
     organizationId: c.req.param("id"),
   });
   const member = await storage.addOrganizationMember(payload);
+  await audit(c, {
+    organizationId: payload.organizationId,
+    action: "org_member.add",
+    entityType: "organization_member",
+    entityId: member.id,
+    summary: `Added org member ${payload.userId}`,
+    metadata: { userId: payload.userId, role: payload.role, status: payload.status },
+  });
   return c.json(member, 201);
 });
 
@@ -1338,6 +1435,476 @@ app.get("/api/inspectors", async (c) => {
   return c.json(inspectors);
 });
 
+app.get("/api/equipment", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const requestedOrgId = c.req.query("orgId");
+  const orgId = resolveOrgIdForCreate(orgIds, requestedOrgId);
+  if (!orgId) return c.json({ message: "No organization access" }, 403);
+  const includeInactive = c.req.query("includeInactive") === "1";
+  const rows = await storage.getEquipment(orgId, { includeInactive });
+  return c.json(rows);
+});
+
+app.post("/api/equipment", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const organizationId = resolveOrgIdForCreate(orgIds, body.organizationId);
+  if (!organizationId) return c.json({ message: "No organization access" }, 403);
+  const payload = insertEquipmentRecordSchema.parse({ ...body, organizationId });
+
+  let calibrationDueDate = payload.calibrationDueDate ?? null;
+  if (!calibrationDueDate && payload.lastCalibrationDate && payload.calibrationIntervalDays) {
+    calibrationDueDate = addDaysToYmd(payload.lastCalibrationDate, payload.calibrationIntervalDays) ?? null;
+  }
+
+  const created = await storage.createEquipment({
+    organizationId,
+    category: payload.category,
+    manufacturer: payload.manufacturer ?? null,
+    model: payload.model ?? null,
+    serialNumber: payload.serialNumber,
+    assetTag: payload.assetTag ?? null,
+    status: payload.status,
+    assignedToUserId: payload.assignedToUserId ?? null,
+    location: payload.location ?? null,
+    calibrationIntervalDays: payload.calibrationIntervalDays ?? null,
+    lastCalibrationDate: payload.lastCalibrationDate ?? null,
+    calibrationDueDate,
+    active: payload.active ?? true,
+  } as any);
+
+  await audit(c, {
+    organizationId,
+    action: "equipment.create",
+    entityType: "equipment",
+    entityId: created.equipmentId,
+    summary: `Created equipment ${created.category} SN ${created.serialNumber}`,
+  });
+
+  return c.json(created, 201);
+});
+
+app.get("/api/equipment/:id", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const row = await storage.getEquipmentById(c.req.param("id"));
+  if (!row) return c.json({ message: "Not found" }, 404);
+  if (!row.organizationId || !orgIds.includes(row.organizationId)) return c.json({ message: "No access" }, 403);
+  return c.json(row);
+});
+
+app.put("/api/equipment/:id", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const existing = await storage.getEquipmentById(c.req.param("id"));
+  if (!existing) return c.json({ message: "Not found" }, 404);
+  if (!existing.organizationId || !orgIds.includes(existing.organizationId)) return c.json({ message: "No access" }, 403);
+
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const payload = insertEquipmentRecordSchema.partial().parse(body);
+
+  // Re-derive calibration due date if the client didn't provide one and inputs changed.
+  let calibrationDueDate = payload.calibrationDueDate ?? undefined;
+  if (
+    calibrationDueDate === undefined &&
+    (payload.lastCalibrationDate !== undefined || payload.calibrationIntervalDays !== undefined)
+  ) {
+    const last = payload.lastCalibrationDate ?? existing.lastCalibrationDate ?? null;
+    const interval = payload.calibrationIntervalDays ?? existing.calibrationIntervalDays ?? null;
+    if (last && interval) {
+      calibrationDueDate = addDaysToYmd(last, interval) ?? null;
+    }
+  }
+
+  const patch = stripUndefined({
+    category: payload.category ?? undefined,
+    manufacturer: payload.manufacturer ?? undefined,
+    model: payload.model ?? undefined,
+    serialNumber: payload.serialNumber ?? undefined,
+    assetTag: payload.assetTag ?? undefined,
+    status: payload.status ?? undefined,
+    assignedToUserId: payload.assignedToUserId ?? undefined,
+    location: payload.location ?? undefined,
+    calibrationIntervalDays: payload.calibrationIntervalDays ?? undefined,
+    lastCalibrationDate: payload.lastCalibrationDate ?? undefined,
+    calibrationDueDate,
+    active: payload.active ?? undefined,
+  } as any);
+  const updated = await storage.updateEquipment(existing.equipmentId, patch as any);
+  if (!updated) return c.json({ message: "Not found" }, 404);
+
+  await audit(c, {
+    organizationId: existing.organizationId,
+    action: "equipment.update",
+    entityType: "equipment",
+    entityId: existing.equipmentId,
+    summary: `Updated equipment ${existing.equipmentId}`,
+  });
+
+  return c.json(updated);
+});
+
+app.delete("/api/equipment/:id", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const existing = await storage.getEquipmentById(c.req.param("id"));
+  if (!existing) return c.json({ message: "Not found" }, 404);
+  if (!existing.organizationId || !orgIds.includes(existing.organizationId)) return c.json({ message: "No access" }, 403);
+  await storage.softDeleteEquipment(existing.equipmentId);
+
+  await audit(c, {
+    organizationId: existing.organizationId,
+    action: "equipment.retire",
+    entityType: "equipment",
+    entityId: existing.equipmentId,
+    summary: `Soft-deleted equipment ${existing.equipmentId}`,
+  });
+
+  return c.body(null, 204);
+});
+
+app.get("/api/equipment/:id/calibration-events", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const equipment = await storage.getEquipmentById(c.req.param("id"));
+  if (!equipment) return c.json({ message: "Not found" }, 404);
+  if (!equipment.organizationId || !orgIds.includes(equipment.organizationId)) return c.json({ message: "No access" }, 403);
+  const rows = await storage.getEquipmentCalibrationEvents(equipment.organizationId, equipment.equipmentId);
+  return c.json(rows);
+});
+
+app.post("/api/equipment/:id/calibration-events", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const equipment = await storage.getEquipmentById(c.req.param("id"));
+  if (!equipment) return c.json({ message: "Not found" }, 404);
+  if (!equipment.organizationId || !orgIds.includes(equipment.organizationId)) return c.json({ message: "No access" }, 403);
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+
+  const payload = insertEquipmentCalibrationEventSchema.parse({ ...body, equipmentId: equipment.equipmentId });
+  const created = await storage.createEquipmentCalibrationEvent({
+    organizationId: equipment.organizationId,
+    equipmentId: equipment.equipmentId,
+    calDate: payload.calDate,
+    calType: payload.calType,
+    performedBy: payload.performedBy ?? null,
+    methodStandard: payload.methodStandard ?? null,
+    targetFlowLpm: payload.targetFlowLpm ?? null,
+    asFoundFlowLpm: payload.asFoundFlowLpm ?? null,
+    asLeftFlowLpm: payload.asLeftFlowLpm ?? null,
+    tolerance: payload.tolerance ?? null,
+    toleranceUnit: payload.toleranceUnit ?? null,
+    passFail: payload.passFail,
+    certificateNumber: payload.certificateNumber ?? null,
+    certificateFileUrl: payload.certificateFileUrl ?? null,
+    notes: payload.notes ?? null,
+  } as any);
+
+  // Keep the equipment's calibration dates up to date (best-effort).
+  try {
+    let calibrationDueDate: string | null | undefined = undefined;
+    if (equipment.calibrationIntervalDays && payload.calDate) {
+      calibrationDueDate = addDaysToYmd(payload.calDate, equipment.calibrationIntervalDays) ?? null;
+    }
+    await storage.updateEquipment(equipment.equipmentId, {
+      lastCalibrationDate: payload.calDate,
+      calibrationDueDate,
+    } as any);
+  } catch {
+    // ignore
+  }
+
+  await audit(c, {
+    organizationId: equipment.organizationId,
+    action: "equipment.calibration.add",
+    entityType: "equipment",
+    entityId: equipment.equipmentId,
+    summary: `Added calibration event ${payload.calType} (${payload.calDate})`,
+  });
+
+  return c.json(created, 201);
+});
+
+app.get("/api/equipment/:id/usage", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const equipment = await storage.getEquipmentById(c.req.param("id"));
+  if (!equipment) return c.json({ message: "Not found" }, 404);
+  if (!equipment.organizationId || !orgIds.includes(equipment.organizationId)) return c.json({ message: "No access" }, 403);
+  const rows = await storage.getEquipmentUsage(equipment.organizationId, equipment.equipmentId);
+  return c.json(rows);
+});
+
+app.post("/api/equipment/:id/usage", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const equipment = await storage.getEquipmentById(c.req.param("id"));
+  if (!equipment) return c.json({ message: "Not found" }, 404);
+  if (!equipment.organizationId || !orgIds.includes(equipment.organizationId)) return c.json({ message: "No access" }, 403);
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+
+  const payload = insertEquipmentUsageSchema.parse({ ...body, equipmentId: equipment.equipmentId });
+  const created = await storage.createEquipmentUsage({
+    organizationId: equipment.organizationId,
+    equipmentId: equipment.equipmentId,
+    jobId: payload.jobId ?? null,
+    usedFrom: payload.usedFrom ?? null,
+    usedTo: payload.usedTo ?? null,
+    context: payload.context ?? null,
+    sampleRunId: payload.sampleRunId ?? null,
+  } as any);
+
+  await audit(c, {
+    organizationId: equipment.organizationId,
+    action: "equipment.usage.add",
+    entityType: "equipment",
+    entityId: equipment.equipmentId,
+    summary: `Added usage record`,
+  });
+
+  return c.json(created, 201);
+});
+
+app.get("/api/equipment/:id/notes", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const equipment = await storage.getEquipmentById(c.req.param("id"));
+  if (!equipment) return c.json({ message: "Not found" }, 404);
+  if (!equipment.organizationId || !orgIds.includes(equipment.organizationId)) return c.json({ message: "No access" }, 403);
+  const rows = await storage.getEquipmentNotes(equipment.organizationId, equipment.equipmentId);
+  return c.json(rows);
+});
+
+app.post("/api/equipment/:id/notes", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const equipment = await storage.getEquipmentById(c.req.param("id"));
+  if (!equipment) return c.json({ message: "Not found" }, 404);
+  if (!equipment.organizationId || !orgIds.includes(equipment.organizationId)) return c.json({ message: "No access" }, 403);
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+
+  const payload = insertEquipmentNoteSchema.parse({ ...body, equipmentId: equipment.equipmentId });
+  const created = await storage.createEquipmentNote({
+    organizationId: equipment.organizationId,
+    equipmentId: equipment.equipmentId,
+    createdByUserId: userId,
+    noteText: payload.noteText,
+    noteType: payload.noteType ?? null,
+    visibility: payload.visibility,
+  } as any);
+
+  await audit(c, {
+    organizationId: equipment.organizationId,
+    action: "equipment.note.add",
+    entityType: "equipment",
+    entityId: equipment.equipmentId,
+    summary: `Added note`,
+  });
+
+  return c.json(created, 201);
+});
+
+app.get("/api/equipment/:id/documents", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const equipment = await storage.getEquipmentById(c.req.param("id"));
+  if (!equipment) return c.json({ message: "Not found" }, 404);
+  if (!equipment.organizationId || !orgIds.includes(equipment.organizationId)) return c.json({ message: "No access" }, 403);
+  const docs = await storage.getEquipmentDocuments(equipment.organizationId, equipment.equipmentId);
+  return c.json(
+    docs.map((doc: any) => ({
+      ...doc,
+      url: doc.filename ? `/uploads/${doc.filename}` : null,
+    }))
+  );
+});
+
+app.post("/api/equipment/:id/documents", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const equipment = await storage.getEquipmentById(c.req.param("id"));
+  if (!equipment) return c.json({ message: "Not found" }, 404);
+  if (!equipment.organizationId || !orgIds.includes(equipment.organizationId)) return c.json({ message: "No access" }, 403);
+
+  const form = await c.req.formData();
+  const file = form.get("document");
+  if (!(file instanceof File)) return c.json({ message: "No file uploaded" }, 400);
+  const stored = await storeUpload(c.env.ABATEIQ_UPLOADS, file);
+
+  const docType = (form.get("docType") || "").toString().trim() || null;
+  const linkedEntityType = (form.get("linkedEntityType") || "").toString().trim() || null;
+  const linkedEntityId = (form.get("linkedEntityId") || "").toString().trim() || null;
+
+  const created = await storage.createEquipmentDocument({
+    organizationId: equipment.organizationId,
+    equipmentId: equipment.equipmentId,
+    filename: stored.key,
+    originalName: file.name || stored.key,
+    mimeType: file.type || "application/octet-stream",
+    size: typeof file.size === "number" ? file.size : 0,
+    docType,
+    uploadedByUserId: userId,
+    linkedEntityType,
+    linkedEntityId,
+  } as any);
+
+  await audit(c, {
+    organizationId: equipment.organizationId,
+    action: "equipment.document.add",
+    entityType: "equipment",
+    entityId: equipment.equipmentId,
+    summary: `Uploaded document ${file.name || stored.key}`,
+  });
+
+  return c.json({ ...created, url: stored.url }, 201);
+});
+
+app.delete("/api/equipment-documents/:id", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const doc = await storage.getEquipmentDocument(c.req.param("id"));
+  if (!doc) return c.json({ message: "Not found" }, 404);
+  if (!doc.organizationId || !orgIds.includes(doc.organizationId)) return c.json({ message: "No access" }, 403);
+  await storage.deleteEquipmentDocument(doc.documentId);
+  if (doc.filename) {
+    try {
+      await c.env.ABATEIQ_UPLOADS.delete(doc.filename);
+    } catch {
+      // ignore
+    }
+  }
+  await audit(c, {
+    organizationId: doc.organizationId,
+    action: "equipment.document.delete",
+    entityType: "equipment_document",
+    entityId: doc.documentId,
+    summary: `Deleted equipment document ${doc.documentId}`,
+  });
+  return c.body(null, 204);
+});
+
+app.get("/api/equipment/:id/report-data", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const equipment = await storage.getEquipmentById(c.req.param("id"));
+  if (!equipment) return c.json({ message: "Not found" }, 404);
+  if (!equipment.organizationId || !orgIds.includes(equipment.organizationId)) return c.json({ message: "No access" }, 403);
+
+  const [calibrationEvents, usage, notes, docs, jobs] = await Promise.all([
+    storage.getEquipmentCalibrationEvents(equipment.organizationId, equipment.equipmentId),
+    storage.getEquipmentUsage(equipment.organizationId, equipment.equipmentId),
+    storage.getEquipmentNotes(equipment.organizationId, equipment.equipmentId),
+    storage.getEquipmentDocuments(equipment.organizationId, equipment.equipmentId),
+    storage.getAirMonitoringJobs(),
+  ]);
+
+  const jobsById = new Map<string, any>();
+  for (const job of jobs || []) {
+    if (job && job.id && job.organizationId === equipment.organizationId) {
+      jobsById.set(job.id, job);
+    }
+  }
+
+  const uniqueAuthorIds = Array.from(
+    new Set((notes || []).map((n: any) => n.createdByUserId).filter(Boolean))
+  );
+  const authorsById = new Map<string, any>();
+  await Promise.all(
+    uniqueAuthorIds.map(async (id) => {
+      try {
+        const profile = await storage.getUserProfile(id);
+        if (profile) {
+          const name = `${profile.firstName || ""} ${profile.lastName || ""}`.trim();
+          authorsById.set(id, { name: name || profile.email || id, email: profile.email || null });
+        } else {
+          authorsById.set(id, { name: id, email: null });
+        }
+      } catch {
+        authorsById.set(id, { name: id, email: null });
+      }
+    })
+  );
+
+  const enrichedUsage = (usage || []).map((u: any) => {
+    const job = u.jobId ? jobsById.get(u.jobId) : null;
+    return {
+      ...u,
+      job: job
+        ? {
+            id: job.id,
+            jobName: job.jobName,
+            jobNumber: job.jobNumber,
+            clientName: job.clientName,
+            siteName: job.siteName,
+            address: job.address,
+          }
+        : null,
+    };
+  });
+
+  const enrichedNotes = (notes || [])
+    .slice()
+    .sort((a: any, b: any) => (a.createdAt || 0) - (b.createdAt || 0))
+    .map((n: any) => {
+      const author = n.createdByUserId ? authorsById.get(n.createdByUserId) : null;
+      return {
+        ...n,
+        author: author || { name: n.createdByUserId || "Unknown", email: null },
+      };
+    });
+
+  const enrichedDocs = (docs || []).map((d: any) => ({
+    ...d,
+    url: d.filename ? `/uploads/${d.filename}` : null,
+  }));
+
+  return c.json({
+    equipment,
+    reportGeneratedAt: Date.now(),
+    calibrationEvents,
+    usage: enrichedUsage,
+    notes: enrichedNotes,
+    documents: enrichedDocs,
+  });
+});
+
 app.get("/api/surveys", async (c) => {
   const user = c.get("user");
   const userId = user?.sub;
@@ -1383,6 +1950,13 @@ app.post("/api/surveys", async (c) => {
   const organizationId = resolveOrgIdForCreate(orgIds, body.organizationId);
   const payload = insertSurveySchema.parse({ ...body, organizationId });
   const created = await storage.createSurvey(payload);
+  await audit(c, {
+    organizationId,
+    action: "survey.create",
+    entityType: "survey",
+    entityId: created.id,
+    summary: `Created survey ${created.siteName || created.id}`,
+  });
   return c.json(created, 201);
 });
 
@@ -1415,8 +1989,18 @@ app.delete("/api/surveys/:id", async (c) => {
   if (!userId) return c.json({ message: "Not authenticated" }, 401);
   const result = await assertSurveyOrgAccess(userId, c.req.param("id"));
   if (!result.allowed) return c.json({ message: result.notFound ? "Survey not found" : "No access" }, result.notFound ? 404 : 403);
+  const orgId = result.survey?.organizationId || null;
   const deleted = await storage.deleteSurvey(c.req.param("id"));
   if (!deleted) return c.json({ message: "Survey not found" }, 404);
+  if (orgId) {
+    await audit(c, {
+      organizationId: orgId,
+      action: "survey.delete",
+      entityType: "survey",
+      entityId: c.req.param("id"),
+      summary: `Deleted survey ${c.req.param("id")}`,
+    });
+  }
   return c.body(null, 204);
 });
 
@@ -1963,6 +2547,13 @@ app.post("/api/air-monitoring-jobs", async (c) => {
     }
     const payload = insertAirMonitoringJobSchema.parse({ ...body, organizationId });
     const created = await storage.createAirMonitoringJob(payload);
+    await audit(c, {
+      organizationId,
+      action: "air_job.create",
+      entityType: "air_monitoring_job",
+      entityId: created.id,
+      summary: `Created air monitoring job ${created.jobName || created.id}`,
+    });
     return c.json(created, 201);
   } catch (error) {
     const bad = zodBadRequest(c, error);

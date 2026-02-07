@@ -15,6 +15,7 @@ import {
   Shield, 
   FileText, 
   Users,
+  Activity,
   AlertTriangle,
   CheckCircle,
   Clock,
@@ -57,6 +58,19 @@ interface UserProfile {
   jobTitle?: string;
 }
 
+type AuditLogRow = {
+  id: string;
+  organizationId?: string | null;
+  entityType: string;
+  entityId: string;
+  action: string;
+  userId: string;
+  userAgent?: string | null;
+  ipAddress?: string | null;
+  timestamp?: number | null;
+  details?: any;
+};
+
 export default function SystemSettings() {
   const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
   const [selectedRule, setSelectedRule] = useState<ComplianceRule | null>(null);
@@ -97,6 +111,11 @@ export default function SystemSettings() {
   const { data: profileData, isLoading: loadingProfile } = useQuery({
     queryKey: ["/api/user/profile"],
     queryFn: async () => (await apiRequest("GET", "/api/user/profile")).json(),
+  });
+
+  const { data: auditLogs = [], isLoading: loadingAudit } = useQuery<AuditLogRow[]>({
+    queryKey: ["/api/audit-logs"],
+    queryFn: async () => (await apiRequest("GET", "/api/audit-logs?limit=200")).json(),
   });
 
   const notificationSettingsList: NotificationSetting[] = Array.isArray(notificationSettings)
@@ -194,9 +213,9 @@ export default function SystemSettings() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">System Settings</h1>
+        <h1 className="text-3xl font-bold">Settings</h1>
         <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Configure notifications, compliance rules, and system preferences
+          Profile, notifications, compliance rules, and security preferences
         </p>
       </div>
 
@@ -206,6 +225,7 @@ export default function SystemSettings() {
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="compliance">Compliance</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
+          <TabsTrigger value="audit">Audit Log</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
         </TabsList>
 
@@ -497,6 +517,64 @@ export default function SystemSettings() {
                   className="w-32"
                 />
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="audit" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Activity className="h-5 w-5 mr-2" />
+                Audit Log
+              </CardTitle>
+              <CardDescription>
+                Organization-level activity history (who did what, and when)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingAudit ? (
+                <div className="flex justify-center py-8">Loading audit log...</div>
+              ) : auditLogs.length === 0 ? (
+                <div className="text-sm text-gray-500">No audit events yet.</div>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>When</TableHead>
+                        <TableHead>Who</TableHead>
+                        <TableHead>Action</TableHead>
+                        <TableHead>Entity</TableHead>
+                        <TableHead>Summary</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {auditLogs.map((row) => {
+                        const when = row.timestamp ? new Date(row.timestamp).toLocaleString() : "—";
+                        const who =
+                          (row.details && typeof row.details === "object" && (row.details.actorName || row.details.actorEmail)) ||
+                          row.userId;
+                        const summary =
+                          row.details && typeof row.details === "object" && row.details.summary
+                            ? String(row.details.summary)
+                            : "";
+                        return (
+                          <TableRow key={row.id}>
+                            <TableCell className="whitespace-nowrap text-sm">{when}</TableCell>
+                            <TableCell className="text-sm">{who}</TableCell>
+                            <TableCell className="text-sm font-medium">{row.action}</TableCell>
+                            <TableCell className="text-sm">
+                              {row.entityType}:{row.entityId}
+                            </TableCell>
+                            <TableCell className="text-sm text-gray-600 dark:text-gray-300">{summary || "—"}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
