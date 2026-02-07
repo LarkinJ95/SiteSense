@@ -15,6 +15,10 @@ import {
   homogeneousAreas,
   functionalAreas,
   fieldToolsEquipment,
+  personnel as personnelTable,
+  personnelJobAssignments as personnelJobAssignmentsTable,
+  exposureRecords as exposureRecordsTable,
+  exposureLimits as exposureLimitsTable,
   userProfiles,
   organizations,
   organizationMembers,
@@ -41,6 +45,13 @@ import {
   type PaintSamplePhoto,
   type PersonnelProfile,
   type InsertPersonnelProfile,
+  type Personnel,
+  type InsertPersonnel,
+  type PersonnelJobAssignment,
+  type InsertPersonnelJobAssignment,
+  type ExposureRecord,
+  type ExposureLimit,
+  type UpsertExposureLimit,
   type AirMonitoringJob,
   type InsertAirMonitoringJob,
   type AirSample,
@@ -146,6 +157,42 @@ export interface IStorage {
   createPersonnelProfile(profile: InsertPersonnelProfile): Promise<PersonnelProfile>;
   updatePersonnelProfile(id: string, profile: Partial<InsertPersonnelProfile>): Promise<PersonnelProfile | undefined>;
   deletePersonnelProfile(id: string): Promise<boolean>;
+
+  // Personnel module (org-scoped)
+  getPersonnelForOrg(organizationId: string, options?: { includeInactive?: boolean; search?: string | null }): Promise<Personnel[]>;
+  getPersonnelById(id: string): Promise<Personnel | undefined>;
+  createPersonnel(organizationId: string, userId: string, payload: InsertPersonnel): Promise<Personnel>;
+  updatePersonnel(id: string, userId: string, patch: Partial<InsertPersonnel>): Promise<Personnel | undefined>;
+  deactivatePersonnel(id: string, userId: string): Promise<Personnel | undefined>;
+  getPersonnelAssignments(organizationId: string, personId: string): Promise<PersonnelJobAssignment[]>;
+  createPersonnelAssignment(organizationId: string, userId: string, payload: InsertPersonnelJobAssignment): Promise<PersonnelJobAssignment>;
+  getExposureLimits(organizationId: string, profileKey?: string | null): Promise<ExposureLimit[]>;
+  upsertExposureLimit(organizationId: string, payload: UpsertExposureLimit): Promise<ExposureLimit>;
+  getExposureRecordsForPerson(organizationId: string, personId: string, options?: { from?: number | null; to?: number | null; analyte?: string | null }): Promise<ExposureRecord[]>;
+  upsertExposureFromAirSample(params: {
+    organizationId: string;
+    userId: string;
+    airSampleId: string;
+    jobId: string;
+    personId: string;
+    dateMs: number | null;
+    analyte: string;
+    durationMinutes: number | null;
+    concentration: string | null;
+    units: string | null;
+    method: string | null;
+    sampleType: string | null;
+    taskActivity?: string | null;
+    ppeLevel?: string | null;
+    profileKey: string | null;
+    twa8hr: string | null;
+    limitType: string | null;
+    limitValue: string | null;
+    percentOfLimit: string | null;
+    exceedanceFlag: boolean;
+    nearMissFlag: boolean;
+    sourceRefs?: any;
+  }): Promise<ExposureRecord>;
 
   // Air monitoring job methods
   getAirMonitoringJobs(): Promise<AirMonitoringJob[]>;
@@ -573,6 +620,232 @@ export class DatabaseStorage implements IStorage {
   async deletePersonnelProfile(id: string): Promise<boolean> {
     const result = await db().delete(personnelProfiles).where(eq(personnelProfiles.id, id));
     return didAffectRows(result);
+  }
+
+  // Personnel module (org-scoped)
+  async getPersonnelForOrg(organizationId: string, options?: { includeInactive?: boolean; search?: string | null }): Promise<Personnel[]> {
+    const includeInactive = Boolean(options?.includeInactive);
+    const rawSearch = (options?.search || "").trim().toLowerCase();
+    const baseWhere = includeInactive
+      ? eq(personnelTable.organizationId, organizationId)
+      : and(eq(personnelTable.organizationId, organizationId), eq(personnelTable.active, true));
+
+    if (!rawSearch) {
+      return await db().select().from(personnelTable).where(baseWhere).orderBy(desc(personnelTable.updatedAt));
+    }
+
+    // Simple search; SQLite LIKE is case-insensitive depending on collation, so we normalize with lower(...)
+    const like = `%${rawSearch.replace(/%/g, "")}%`;
+    return await db()
+      .select()
+      .from(personnelTable)
+      .where(
+        and(
+          baseWhere,
+          or(
+            sql`lower(coalesce(${personnelTable.firstName}, '')) like ${like}`,
+            sql`lower(coalesce(${personnelTable.lastName}, '')) like ${like}`,
+            sql`lower(coalesce(${personnelTable.company}, '')) like ${like}`,
+            sql`lower(coalesce(${personnelTable.tradeRole}, '')) like ${like}`,
+            sql`lower(coalesce(${personnelTable.employeeId}, '')) like ${like}`,
+            sql`lower(coalesce(${personnelTable.email}, '')) like ${like}`
+          )
+        )
+      )
+      .orderBy(desc(personnelTable.updatedAt));
+  }
+
+  async getPersonnelById(id: string): Promise<Personnel | undefined> {
+    const [row] = await db().select().from(personnelTable).where(eq(personnelTable.personId, id));
+    return row || undefined;
+  }
+
+  async createPersonnel(organizationId: string, userId: string, payload: InsertPersonnel): Promise<Personnel> {
+    const [created] = await db()
+      .insert(personnelTable)
+      .values({
+        organizationId,
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        company: payload.company ?? null,
+        tradeRole: payload.tradeRole ?? null,
+        employeeId: payload.employeeId ?? null,
+        email: payload.email ?? null,
+        phone: payload.phone ?? null,
+        respiratorClearanceDate: payload.respiratorClearanceDate ?? null,
+        fitTestDate: payload.fitTestDate ?? null,
+        medicalSurveillanceDate: payload.medicalSurveillanceDate ?? null,
+        active: payload.active ?? true,
+        createdByUserId: userId,
+        updatedByUserId: userId,
+      } as any)
+      .returning();
+    return created;
+  }
+
+  async updatePersonnel(id: string, userId: string, patch: Partial<InsertPersonnel>): Promise<Personnel | undefined> {
+    const [updated] = await db()
+      .update(personnelTable)
+      .set({
+        ...patch,
+        updatedByUserId: userId,
+        updatedAt: new Date(),
+      } as any)
+      .where(eq(personnelTable.personId, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deactivatePersonnel(id: string, userId: string): Promise<Personnel | undefined> {
+    const [updated] = await db()
+      .update(personnelTable)
+      .set({ active: false, updatedByUserId: userId, updatedAt: new Date() } as any)
+      .where(eq(personnelTable.personId, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async getPersonnelAssignments(organizationId: string, personId: string): Promise<PersonnelJobAssignment[]> {
+    return await db()
+      .select()
+      .from(personnelJobAssignmentsTable)
+      .where(and(eq(personnelJobAssignmentsTable.organizationId, organizationId), eq(personnelJobAssignmentsTable.personId, personId)))
+      .orderBy(desc(personnelJobAssignmentsTable.dateFrom));
+  }
+
+  async createPersonnelAssignment(organizationId: string, userId: string, payload: InsertPersonnelJobAssignment): Promise<PersonnelJobAssignment> {
+    const [created] = await db()
+      .insert(personnelJobAssignmentsTable)
+      .values({
+        organizationId,
+        personId: payload.personId,
+        jobId: payload.jobId,
+        dateFrom: payload.dateFrom ?? null,
+        dateTo: payload.dateTo ?? null,
+        shiftDate: payload.shiftDate ?? null,
+        roleOnJob: payload.roleOnJob ?? null,
+        supervisorPersonId: payload.supervisorPersonId ?? null,
+        supervisorName: payload.supervisorName ?? null,
+        notes: payload.notes ?? null,
+        createdByUserId: userId,
+        updatedByUserId: userId,
+      } as any)
+      .returning();
+    return created;
+  }
+
+  async getExposureLimits(organizationId: string, profileKey?: string | null): Promise<ExposureLimit[]> {
+    const where = profileKey
+      ? and(eq(exposureLimitsTable.organizationId, organizationId), eq(exposureLimitsTable.profileKey, profileKey))
+      : eq(exposureLimitsTable.organizationId, organizationId);
+    return await db().select().from(exposureLimitsTable).where(where).orderBy(desc(exposureLimitsTable.updatedAt));
+  }
+
+  async upsertExposureLimit(organizationId: string, payload: UpsertExposureLimit): Promise<ExposureLimit> {
+    // D1 doesn't support full UPSERT in drizzle here; do a select-then-update/insert.
+    const [existing] = await db()
+      .select()
+      .from(exposureLimitsTable)
+      .where(
+        and(
+          eq(exposureLimitsTable.organizationId, organizationId),
+          eq(exposureLimitsTable.profileKey, payload.profileKey),
+          eq(exposureLimitsTable.analyte, payload.analyte)
+        )
+      );
+    if (existing) {
+      const [updated] = await db()
+        .update(exposureLimitsTable)
+        .set({
+          units: payload.units,
+          actionLevel: payload.actionLevel ?? null,
+          pel: payload.pel ?? null,
+          rel: payload.rel ?? null,
+          updatedAt: new Date(),
+        } as any)
+        .where(eq(exposureLimitsTable.limitId, existing.limitId))
+        .returning();
+      return updated;
+    }
+
+    const [created] = await db()
+      .insert(exposureLimitsTable)
+      .values({
+        organizationId,
+        profileKey: payload.profileKey,
+        analyte: payload.analyte,
+        units: payload.units,
+        actionLevel: payload.actionLevel ?? null,
+        pel: payload.pel ?? null,
+        rel: payload.rel ?? null,
+      } as any)
+      .returning();
+    return created;
+  }
+
+  async getExposureRecordsForPerson(
+    organizationId: string,
+    personId: string,
+    options?: { from?: number | null; to?: number | null; analyte?: string | null }
+  ): Promise<ExposureRecord[]> {
+    const parts: any[] = [eq(exposureRecordsTable.organizationId, organizationId), eq(exposureRecordsTable.personId, personId)];
+    if (options?.from) parts.push(sql`${exposureRecordsTable.date} >= ${options.from}`);
+    if (options?.to) parts.push(sql`${exposureRecordsTable.date} <= ${options.to}`);
+    if (options?.analyte) parts.push(eq(exposureRecordsTable.analyte, options.analyte));
+    const where = parts.length === 1 ? parts[0] : and(...parts);
+    return await db().select().from(exposureRecordsTable).where(where).orderBy(desc(exposureRecordsTable.date));
+  }
+
+  async upsertExposureFromAirSample(params: any): Promise<ExposureRecord> {
+    const [existing] = params.airSampleId
+      ? await db()
+          .select()
+          .from(exposureRecordsTable)
+          .where(and(eq(exposureRecordsTable.organizationId, params.organizationId), eq(exposureRecordsTable.airSampleId, params.airSampleId)))
+      : [null];
+
+    const values: any = {
+      organizationId: params.organizationId,
+      personId: params.personId,
+      jobId: params.jobId,
+      airSampleId: params.airSampleId ?? null,
+      sampleRunId: params.sampleRunId ?? null,
+      date: params.dateMs ?? null,
+      analyte: params.analyte,
+      durationMinutes: params.durationMinutes ?? null,
+      concentration: params.concentration ?? null,
+      units: params.units ?? null,
+      method: params.method ?? null,
+      sampleType: params.sampleType ?? null,
+      taskActivity: params.taskActivity ?? null,
+      ppeLevel: params.ppeLevel ?? null,
+      twa8hr: params.twa8hr ?? null,
+      profileKey: params.profileKey ?? null,
+      computedVersion: params.computedVersion ?? 1,
+      limitType: params.limitType ?? null,
+      limitValue: params.limitValue ?? null,
+      percentOfLimit: params.percentOfLimit ?? null,
+      exceedanceFlag: Boolean(params.exceedanceFlag),
+      nearMissFlag: Boolean(params.nearMissFlag),
+      sourceRefs: params.sourceRefs ? JSON.stringify(params.sourceRefs) : null,
+      updatedByUserId: params.userId,
+      updatedAt: new Date(),
+    };
+
+    if (existing) {
+      const [updated] = await db()
+        .update(exposureRecordsTable)
+        .set(values)
+        .where(eq(exposureRecordsTable.exposureId, existing.exposureId))
+        .returning();
+      return updated;
+    }
+
+    const [created] = await db()
+      .insert(exposureRecordsTable)
+      .values({ ...values, createdByUserId: params.userId } as any)
+      .returning();
+    return created;
   }
 
   // Air monitoring job methods

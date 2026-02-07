@@ -356,6 +356,91 @@ export const personnelProfiles = sqliteTable('personnel_profiles', {
   updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Personnel module (org-scoped, stable IDs)
+export const personnel = sqliteTable("personnel", {
+  personId: text("person_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  company: text("company"),
+  tradeRole: text("trade_role"),
+  employeeId: text("employee_id"),
+  email: text("email"),
+  phone: text("phone"),
+  respiratorClearanceDate: text("respirator_clearance_date"), // YYYY-MM-DD
+  fitTestDate: text("fit_test_date"), // YYYY-MM-DD
+  medicalSurveillanceDate: text("medical_surveillance_date"), // YYYY-MM-DD
+  active: bool("active").default(true),
+  createdByUserId: text("created_by_user_id"),
+  updatedByUserId: text("updated_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const personnelJobAssignments = sqliteTable("personnel_job_assignments", {
+  assignmentId: text("assignment_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  personId: text("person_id").notNull().references(() => personnel.personId, { onDelete: "cascade" }),
+  jobId: text("job_id").notNull().references(() => airMonitoringJobs.id, { onDelete: "cascade" }),
+  dateFrom: timestamp("date_from"),
+  dateTo: timestamp("date_to"),
+  shiftDate: text("shift_date"), // YYYY-MM-DD (optional)
+  roleOnJob: text("role_on_job"),
+  supervisorPersonId: text("supervisor_person_id"),
+  supervisorName: text("supervisor_name"),
+  notes: text("notes"),
+  createdByUserId: text("created_by_user_id"),
+  updatedByUserId: text("updated_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Optional org-configurable limits. If not configured, we do not flag exceedances.
+export const exposureLimits = sqliteTable("exposure_limits", {
+  limitId: text("limit_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  profileKey: text("profile_key").notNull(), // OSHA | MIOSHA | custom
+  analyte: text("analyte").notNull(), // asbestos, silica, lead, cadmium, etc.
+  units: text("units").notNull(),
+  actionLevel: numeric("action_level"),
+  pel: numeric("pel"),
+  rel: numeric("rel"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const exposureRecords = sqliteTable("exposure_records", {
+  exposureId: text("exposure_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  personId: text("person_id").notNull().references(() => personnel.personId, { onDelete: "cascade" }),
+  jobId: text("job_id").notNull().references(() => airMonitoringJobs.id, { onDelete: "cascade" }),
+  airSampleId: text("air_sample_id").references(() => airSamples.id, { onDelete: "set null" }),
+  sampleRunId: text("sample_run_id"),
+  date: timestamp("date"), // sample date/time
+  analyte: text("analyte").notNull(),
+  durationMinutes: integer("duration_minutes"),
+  concentration: numeric("concentration"),
+  units: text("units"),
+  method: text("method"),
+  sampleType: text("sample_type"), // personal | area
+  taskActivity: text("task_activity"),
+  ppeLevel: text("ppe_level"),
+  // computed snapshot (auditable)
+  twa8hr: numeric("twa_8hr"),
+  profileKey: text("profile_key"),
+  computedVersion: integer("computed_version").default(1),
+  limitType: text("limit_type"), // AL | PEL | REL
+  limitValue: numeric("limit_value"),
+  percentOfLimit: numeric("percent_of_limit"),
+  exceedanceFlag: bool("exceedance_flag").default(false),
+  nearMissFlag: bool("near_miss_flag").default(false),
+  sourceRefs: text("source_refs", { mode: "json" }), // lab result id, field sheet id, etc.
+  createdByUserId: text("created_by_user_id"),
+  updatedByUserId: text("updated_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Air monitoring jobs - main container for air sampling projects
 export const airMonitoringJobs = sqliteTable('air_monitoring_jobs', {
   id: text('id').primaryKey().$defaultFn(() => nanoid()),
@@ -713,6 +798,48 @@ export const personnelRelations = relations(personnelProfiles, ({ many }) => ({
   airSamples: many(airSamples),
 }));
 
+export const personnelNewRelations = relations(personnel, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [personnel.organizationId],
+    references: [organizations.id],
+  }),
+  assignments: many(personnelJobAssignments),
+  exposureRecords: many(exposureRecords),
+}));
+
+export const personnelAssignmentRelations = relations(personnelJobAssignments, ({ one }) => ({
+  person: one(personnel, {
+    fields: [personnelJobAssignments.personId],
+    references: [personnel.personId],
+  }),
+  job: one(airMonitoringJobs, {
+    fields: [personnelJobAssignments.jobId],
+    references: [airMonitoringJobs.id],
+  }),
+}));
+
+export const exposureRecordRelations = relations(exposureRecords, ({ one }) => ({
+  person: one(personnel, {
+    fields: [exposureRecords.personId],
+    references: [personnel.personId],
+  }),
+  job: one(airMonitoringJobs, {
+    fields: [exposureRecords.jobId],
+    references: [airMonitoringJobs.id],
+  }),
+  airSample: one(airSamples, {
+    fields: [exposureRecords.airSampleId],
+    references: [airSamples.id],
+  }),
+}));
+
+export const exposureLimitRelations = relations(exposureLimits, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [exposureLimits.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
 export const airSampleRelations = relations(airSamples, ({ one }) => ({
   survey: one(surveys, {
     fields: [airSamples.surveyId],
@@ -822,6 +949,51 @@ export const insertPersonnelProfileSchema = createInsertSchema(personnelProfiles
   updatedAt: true,
 }).extend({
   stateAccreditationNumber: z.string().optional(),
+});
+
+export const insertPersonnelSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  company: z.string().optional().nullable(),
+  tradeRole: z.string().optional().nullable(),
+  employeeId: z.string().optional().nullable(),
+  email: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  respiratorClearanceDate: z.string().optional().nullable(),
+  fitTestDate: z.string().optional().nullable(),
+  medicalSurveillanceDate: z.string().optional().nullable(),
+  active: z.boolean().optional(),
+});
+
+export const insertPersonnelAssignmentSchema = z.object({
+  personId: z.string().min(1),
+  jobId: z.string().min(1),
+  dateFrom: z.preprocess((value) => {
+    if (value === "" || value === null || value === undefined) return undefined;
+    if (value instanceof Date) return value;
+    if (typeof value === "string" && value.trim()) return new Date(value);
+    return value;
+  }, z.date().optional()),
+  dateTo: z.preprocess((value) => {
+    if (value === "" || value === null || value === undefined) return undefined;
+    if (value instanceof Date) return value;
+    if (typeof value === "string" && value.trim()) return new Date(value);
+    return value;
+  }, z.date().optional()),
+  shiftDate: z.string().optional().nullable(),
+  roleOnJob: z.string().optional().nullable(),
+  supervisorPersonId: z.string().optional().nullable(),
+  supervisorName: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
+export const upsertExposureLimitSchema = z.object({
+  profileKey: z.string().min(1),
+  analyte: z.string().min(1),
+  units: z.string().min(1),
+  actionLevel: z.string().or(z.number()).optional().transform((val) => (val === undefined || val === null || val === "" ? undefined : val.toString())),
+  pel: z.string().or(z.number()).optional().transform((val) => (val === undefined || val === null || val === "" ? undefined : val.toString())),
+  rel: z.string().or(z.number()).optional().transform((val) => (val === undefined || val === null || val === "" ? undefined : val.toString())),
 });
 
 export const insertAirMonitoringJobSchema = createInsertSchema(airMonitoringJobs).omit({
@@ -967,6 +1139,13 @@ export type PaintSample = typeof paintSamples.$inferSelect;
 export type InsertPaintSample = z.infer<typeof insertPaintSampleSchema>;
 export type PaintSamplePhoto = typeof paintSamplePhotos.$inferSelect;
 export type PersonnelProfile = typeof personnelProfiles.$inferSelect;
+export type Personnel = typeof personnel.$inferSelect;
+export type InsertPersonnel = z.infer<typeof insertPersonnelSchema>;
+export type PersonnelJobAssignment = typeof personnelJobAssignments.$inferSelect;
+export type InsertPersonnelJobAssignment = z.infer<typeof insertPersonnelAssignmentSchema>;
+export type ExposureRecord = typeof exposureRecords.$inferSelect;
+export type ExposureLimit = typeof exposureLimits.$inferSelect;
+export type UpsertExposureLimit = z.infer<typeof upsertExposureLimitSchema>;
 export type HomogeneousArea = typeof homogeneousAreas.$inferSelect;
 export type FunctionalArea = typeof functionalAreas.$inferSelect;
 export type InsertPersonnelProfile = z.infer<typeof insertPersonnelProfileSchema>;

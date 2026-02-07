@@ -22,6 +22,8 @@ import AdvancedAirMonitoring from "@/pages/air-monitoring-advanced";
 import Equipment from "@/pages/equipment";
 import EquipmentDetail from "@/pages/equipment-detail";
 import EquipmentReport from "@/pages/equipment-report";
+import Personnel from "@/pages/personnel";
+import PersonnelDetail from "@/pages/personnel-detail";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
 import ForgotPassword from "@/pages/forgot-password";
@@ -120,6 +122,16 @@ function Router() {
       <Route path="/equipment/:id/report">
         <Protected>
           <EquipmentReport />
+        </Protected>
+      </Route>
+      <Route path="/personnel">
+        <Protected>
+          <Personnel />
+        </Protected>
+      </Route>
+      <Route path="/personnel/:id">
+        <Protected>
+          <PersonnelDetail />
         </Protected>
       </Route>
       <Route path="/templates">

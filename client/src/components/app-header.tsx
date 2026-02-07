@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { ClipboardList, Plus, User, Settings, LogOut, UserCircle, Shield, Cloud, Sun, CloudRain, Wind, Droplets, Thermometer, Wrench } from "lucide-react";
+import { ClipboardList, Plus, User, Settings, LogOut, UserCircle, Shield, Cloud, Sun, CloudRain, Wind, Droplets, Thermometer, Wrench, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
@@ -71,6 +71,10 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
 
   const handleEquipmentClick = () => {
     setLocation("/equipment");
+  };
+
+  const handlePersonnelClick = () => {
+    setLocation("/personnel");
   };
 
   const handleAdminClick = () => {
@@ -242,6 +246,10 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
                 <DropdownMenuItem onClick={handleEquipmentClick} data-testid="menu-equipment">
                   <Wrench className="mr-2 h-4 w-4" />
                   Equipment
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handlePersonnelClick} data-testid="menu-personnel">
+                  <Users className="mr-2 h-4 w-4" />
+                  Personnel
                 </DropdownMenuItem>
                 {isAdmin && (
                   <DropdownMenuItem onClick={handleAdminClick} data-testid="menu-admin">

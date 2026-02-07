@@ -6,18 +6,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { insertPersonnelProfileSchema } from "@shared/schema";
+import { insertPersonnelSchema } from "@shared/schema";
 
 interface CreatePersonnelModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const formSchema = insertPersonnelProfileSchema;
+const formSchema = insertPersonnelSchema;
 type CreatePersonnelFormData = z.infer<typeof formSchema>;
 
 export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModalProps) {
@@ -28,17 +27,15 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
     defaultValues: {
       firstName: "",
       lastName: "",
-      employeeId: undefined,
-      jobTitle: undefined,
-      department: undefined,
-      company: undefined,
-      email: undefined,
-      phone: undefined,
-      certifications: [],
-      medicalClearance: false,
-      lastMedicalDate: undefined,
-      notes: undefined,
-      isActive: true,
+      company: null,
+      tradeRole: null,
+      employeeId: null,
+      email: null,
+      phone: null,
+      respiratorClearanceDate: null,
+      fitTestDate: null,
+      medicalSurveillanceDate: null,
+      active: true,
     },
   });
 
@@ -48,7 +45,7 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
       queryClient.invalidateQueries({ queryKey: ["/api/personnel"] });
       toast({
         title: "Success",
-        description: "Personnel profile created successfully",
+        description: "Personnel created successfully",
       });
       form.reset();
       onOpenChange(false);
@@ -56,7 +53,7 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to create personnel profile",
+        description: error.message || "Failed to create personnel",
         variant: "destructive",
       });
     },
@@ -70,12 +67,12 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="create-personnel-modal">
         <DialogHeader>
-          <DialogTitle>Add Personnel Profile</DialogTitle>
+          <DialogTitle>Add Personnel</DialogTitle>
         </DialogHeader>
-        
+
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="firstName"
@@ -104,55 +101,13 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="employeeId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>State Accreditation Number</FormLabel>
-                    <FormControl>
-                      <Input placeholder="SA12345 or Last 4 of SSN" {...field} value={field.value || ""} data-testid="input-accreditation-number" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="jobTitle"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Job Title</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Environmental Technician" {...field} value={field.value || ""} data-testid="input-job-title" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="department"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Department</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Environmental Services" {...field} value={field.value || ""} data-testid="input-department" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="company"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Company</FormLabel>
+                    <FormLabel>Employer/Company</FormLabel>
                     <FormControl>
                       <Input placeholder="ABC Environmental" {...field} value={field.value || ""} data-testid="input-company" />
                     </FormControl>
@@ -160,9 +115,35 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="tradeRole"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Trade/Role</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Abatement Worker" {...field} value={field.value || ""} data-testid="input-trade-role" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="employeeId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Employee ID (optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="12345" {...field} value={field.value || ""} data-testid="input-employee-id" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="email"
@@ -176,6 +157,9 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
                   </FormItem>
                 )}
               />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="phone"
@@ -189,35 +173,62 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
                   </FormItem>
                 )}
               />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
-                name="medicalClearance"
+                name="active"
                 render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormItem>
+                    <FormLabel>Status</FormLabel>
+                    <Select value={field.value ? "active" : "inactive"} onValueChange={(v) => field.onChange(v === "active")}>
+                      <SelectTrigger data-testid="select-personnel-status">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <FormField
+                control={form.control}
+                name="respiratorClearanceDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Respirator Clearance</FormLabel>
                     <FormControl>
-                      <Checkbox
-                        checked={field.value || false}
-                        onCheckedChange={field.onChange}
-                        data-testid="checkbox-medical-clearance"
-                      />
+                      <Input type="date" {...field} value={field.value || ""} data-testid="input-respirator-clearance-date" />
                     </FormControl>
-                    <div className="space-y-1 leading-none">
-                      <FormLabel>Medical Clearance</FormLabel>
-                    </div>
+                    <FormMessage />
                   </FormItem>
                 )}
               />
               <FormField
                 control={form.control}
-                name="lastMedicalDate"
+                name="fitTestDate"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Last Medical Date</FormLabel>
+                    <FormLabel>Fit Test</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} value={field.value || ""} data-testid="input-medical-date" />
+                      <Input type="date" {...field} value={field.value || ""} data-testid="input-fit-test-date" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="medicalSurveillanceDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Medical Surveillance</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} value={field.value || ""} data-testid="input-medical-surveillance-date" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -225,26 +236,12 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
               />
             </div>
 
-            <FormField
-              control={form.control}
-              name="notes"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Notes</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder="Additional notes about this person..." {...field} value={field.value || ""} data-testid="input-notes" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel">
                 Cancel
               </Button>
               <Button type="submit" disabled={createPersonnelMutation.isPending} data-testid="button-create-personnel">
-                {createPersonnelMutation.isPending ? "Creating..." : "Create Profile"}
+                {createPersonnelMutation.isPending ? "Creating..." : "Create"}
               </Button>
             </div>
           </form>
@@ -253,3 +250,4 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
     </Dialog>
   );
 }
+

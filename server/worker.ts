@@ -11,6 +11,9 @@ import {
   insertEquipmentCalibrationEventSchema,
   insertEquipmentUsageSchema,
   insertEquipmentNoteSchema,
+  insertPersonnelSchema,
+  insertPersonnelAssignmentSchema,
+  upsertExposureLimitSchema,
   insertOrganizationMemberSchema,
   insertOrganizationSchema,
   insertObservationSchema,
@@ -369,6 +372,74 @@ const stripUndefined = <T extends Record<string, any>>(obj: T) => {
     if (value === undefined) delete out[key];
   }
   return out as Partial<T>;
+};
+
+const parseNumeric = (value: unknown) => {
+  if (value === null || value === undefined || value === "") return null;
+  const n = typeof value === "number" ? value : Number(String(value));
+  if (!Number.isFinite(n)) return null;
+  return n;
+};
+
+const computeTwa8hr = (concentration: number | null, durationMinutes: number | null) => {
+  if (concentration === null || durationMinutes === null) return null;
+  if (!Number.isFinite(concentration) || !Number.isFinite(durationMinutes)) return null;
+  // 8-hr TWA: c * (t / 480). This is explicitly labeled as an 8-hr TWA.
+  return concentration * (durationMinutes / 480);
+};
+
+const getExposureLimitFor = async (organizationId: string, profileKey: string, analyte: string) => {
+  const limits = await storage.getExposureLimits(organizationId, profileKey);
+  const normalized = analyte.trim().toLowerCase();
+  return limits.find((l: any) => String(l.analyte || "").trim().toLowerCase() === normalized) || null;
+};
+
+const computeExposureFlags = (twa8hr: number | null, limitRow: any | null, nearMissThreshold = 0.8) => {
+  if (twa8hr === null || !limitRow) {
+    return {
+      limitType: null as string | null,
+      limitValue: null as number | null,
+      percentOfLimit: null as number | null,
+      exceedanceFlag: false,
+      nearMissFlag: false,
+    };
+  }
+
+  // Prefer PEL for exceedance checks; fall back to REL then AL if those are all that's configured.
+  const pel = parseNumeric(limitRow.pel);
+  const rel = parseNumeric(limitRow.rel);
+  const al = parseNumeric(limitRow.actionLevel);
+  let limitType: string | null = null;
+  let limitValue: number | null = null;
+  if (pel !== null) {
+    limitType = "PEL";
+    limitValue = pel;
+  } else if (rel !== null) {
+    limitType = "REL";
+    limitValue = rel;
+  } else if (al !== null) {
+    limitType = "AL";
+    limitValue = al;
+  }
+
+  if (limitValue === null || limitValue === 0) {
+    return {
+      limitType,
+      limitValue,
+      percentOfLimit: null,
+      exceedanceFlag: false,
+      nearMissFlag: false,
+    };
+  }
+
+  const percent = twa8hr / limitValue;
+  return {
+    limitType,
+    limitValue,
+    percentOfLimit: percent,
+    exceedanceFlag: percent >= 1,
+    nearMissFlag: percent >= nearMissThreshold && percent < 1,
+  };
 };
 
 const storeUpload = async (bucket: R2Bucket, file: File) => {
@@ -2491,8 +2562,37 @@ app.delete("/api/surveys/:surveyId/functional-areas/:areaId", async (c) => {
 app.get("/api/personnel", async (c) => {
   const userId = c.get("user")?.sub;
   if (!userId) return c.json({ message: "Not authenticated" }, 401);
-  const personnel = await storage.getPersonnel();
-  return c.json(personnel);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const requestedOrgId = c.req.query("orgId");
+  const orgId = resolveOrgIdForCreate(orgIds, requestedOrgId);
+  if (!orgId) return c.json({ message: "No organization access" }, 403);
+  const includeInactive = c.req.query("includeInactive") === "1";
+  const search = c.req.query("search");
+
+  const rows = await storage.getPersonnelForOrg(orgId, { includeInactive, search });
+
+  // Lightweight stats for the list view.
+  const allExposures = await Promise.all(
+    rows.map((p: any) => storage.getExposureRecordsForPerson(orgId, p.personId, {}))
+  );
+  const payload = rows.map((p: any, idx: number) => {
+    const exposures = allExposures[idx] || [];
+    const lastExposure = exposures.find((e: any) => e.date) || null;
+    const lastFlag = exposures.find((e: any) => e.exceedanceFlag || e.nearMissFlag) || null;
+    const jobIds = new Set(exposures.map((e: any) => e.jobId).filter(Boolean));
+    return {
+      ...p,
+      stats: {
+        lastJobDate: lastExposure?.date ?? null,
+        jobCount: jobIds.size,
+        sampleCount: exposures.length,
+        lastExposureFlag: lastFlag ? (lastFlag.exceedanceFlag ? "exceedance" : "near_miss") : null,
+      },
+    };
+  });
+
+  return c.json(payload);
 });
 
 app.post("/api/personnel", async (c) => {
@@ -2500,9 +2600,209 @@ app.post("/api/personnel", async (c) => {
   if (!userId) return c.json({ message: "Not authenticated" }, 401);
   const body = await parseJsonBody(c);
   if (!body) return c.json({ message: "Invalid JSON" }, 400);
-  const payload = insertPersonnelProfileSchema.parse(body);
-  const created = await storage.createPersonnelProfile(payload);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const organizationId = resolveOrgIdForCreate(orgIds, body.organizationId);
+  if (!organizationId) return c.json({ message: "No organization access" }, 403);
+  const payload = insertPersonnelSchema.parse(body);
+  const created = await storage.createPersonnel(organizationId, userId, payload);
+  await audit(c, {
+    organizationId,
+    action: "personnel.create",
+    entityType: "personnel",
+    entityId: created.personId,
+    summary: `Created personnel ${created.firstName} ${created.lastName}`,
+  });
   return c.json(created, 201);
+});
+
+app.get("/api/personnel/:id", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const person = await storage.getPersonnelById(c.req.param("id"));
+  if (!person) return c.json({ message: "Not found" }, 404);
+  if (!person.organizationId || !orgIds.includes(person.organizationId)) return c.json({ message: "No access" }, 403);
+  return c.json(person);
+});
+
+app.put("/api/personnel/:id", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const existing = await storage.getPersonnelById(c.req.param("id"));
+  if (!existing) return c.json({ message: "Not found" }, 404);
+  if (!existing.organizationId || !orgIds.includes(existing.organizationId)) return c.json({ message: "No access" }, 403);
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const payload = insertPersonnelSchema.partial().parse(body);
+  const updated = await storage.updatePersonnel(existing.personId, userId, payload);
+  if (!updated) return c.json({ message: "Not found" }, 404);
+  await audit(c, {
+    organizationId: existing.organizationId,
+    action: "personnel.update",
+    entityType: "personnel",
+    entityId: existing.personId,
+    summary: `Updated personnel ${existing.personId}`,
+  });
+  return c.json(updated);
+});
+
+app.post("/api/personnel/:id/deactivate", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const existing = await storage.getPersonnelById(c.req.param("id"));
+  if (!existing) return c.json({ message: "Not found" }, 404);
+  if (!existing.organizationId || !orgIds.includes(existing.organizationId)) return c.json({ message: "No access" }, 403);
+  const updated = await storage.deactivatePersonnel(existing.personId, userId);
+  await audit(c, {
+    organizationId: existing.organizationId,
+    action: "personnel.deactivate",
+    entityType: "personnel",
+    entityId: existing.personId,
+    summary: `Deactivated personnel ${existing.personId}`,
+  });
+  return c.json(updated);
+});
+
+app.get("/api/personnel/:id/assignments", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const person = await storage.getPersonnelById(c.req.param("id"));
+  if (!person) return c.json({ message: "Not found" }, 404);
+  if (!person.organizationId || !orgIds.includes(person.organizationId)) return c.json({ message: "No access" }, 403);
+  const assignments = await storage.getPersonnelAssignments(person.organizationId, person.personId);
+  const jobs = await storage.getAirMonitoringJobs();
+  const jobsById = new Map<string, any>();
+  for (const job of jobs || []) {
+    if (job && job.id && job.organizationId === person.organizationId) jobsById.set(job.id, job);
+  }
+  const enriched = assignments.map((a: any) => ({
+    ...a,
+    job: jobsById.get(a.jobId) || null,
+  }));
+  return c.json(enriched);
+});
+
+app.post("/api/personnel/:id/assignments", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const person = await storage.getPersonnelById(c.req.param("id"));
+  if (!person) return c.json({ message: "Not found" }, 404);
+  if (!person.organizationId || !orgIds.includes(person.organizationId)) return c.json({ message: "No access" }, 403);
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const payload = insertPersonnelAssignmentSchema.parse({ ...body, personId: person.personId });
+  // Ensure job belongs to org (defense in depth)
+  const job = await storage.getAirMonitoringJob(payload.jobId);
+  if (!job || !job.organizationId || job.organizationId !== person.organizationId) {
+    return c.json({ message: "Job not found" }, 404);
+  }
+  const created = await storage.createPersonnelAssignment(person.organizationId, userId, payload);
+  await audit(c, {
+    organizationId: person.organizationId,
+    action: "personnel.assignment.add",
+    entityType: "personnel_assignment",
+    entityId: created.assignmentId,
+    summary: `Assigned ${person.firstName} ${person.lastName} to job ${job.jobNumber || job.id}`,
+  });
+  return c.json(created, 201);
+});
+
+app.get("/api/personnel/:id/exposures", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const person = await storage.getPersonnelById(c.req.param("id"));
+  if (!person) return c.json({ message: "Not found" }, 404);
+  if (!person.organizationId || !orgIds.includes(person.organizationId)) return c.json({ message: "No access" }, 403);
+
+  const range = (c.req.query("range") || "12mo").toLowerCase();
+  const analyte = c.req.query("analyte");
+  const now = new Date();
+  let from: number | null = null;
+  if (range === "ytd") {
+    from = Date.UTC(now.getUTCFullYear(), 0, 1);
+  } else if (range === "all") {
+    from = null;
+  } else {
+    // 12 months
+    from = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 12, now.getUTCDate());
+  }
+
+  const records = await storage.getExposureRecordsForPerson(person.organizationId, person.personId, { from, analyte: analyte || null });
+
+  // Summary by analyte (max/avg TWA, counts)
+  const byAnalyte: Record<string, any> = {};
+  for (const r of records) {
+    const key = (r.analyte || "unknown").toString();
+    const twa = parseNumeric((r as any).twa8hr);
+    if (!byAnalyte[key]) {
+      byAnalyte[key] = { analyte: key, count: 0, maxTwa: null as number | null, sumTwa: 0, sumCount: 0, exceedances: 0, nearMisses: 0 };
+    }
+    byAnalyte[key].count += 1;
+    if (typeof (r as any).exceedanceFlag === "number" ? (r as any).exceedanceFlag : Boolean((r as any).exceedanceFlag)) byAnalyte[key].exceedances += 1;
+    if (typeof (r as any).nearMissFlag === "number" ? (r as any).nearMissFlag : Boolean((r as any).nearMissFlag)) byAnalyte[key].nearMisses += 1;
+    if (twa !== null) {
+      byAnalyte[key].sumTwa += twa;
+      byAnalyte[key].sumCount += 1;
+      byAnalyte[key].maxTwa = byAnalyte[key].maxTwa === null ? twa : Math.max(byAnalyte[key].maxTwa, twa);
+    }
+  }
+
+  const summary = Object.values(byAnalyte).map((row: any) => ({
+    analyte: row.analyte,
+    count: row.count,
+    maxTwa: row.maxTwa,
+    avgTwa: row.sumCount ? row.sumTwa / row.sumCount : null,
+    exceedances: row.exceedances,
+    nearMisses: row.nearMisses,
+  }));
+
+  return c.json({ records, summary });
+});
+
+app.get("/api/exposure-limits", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const requestedOrgId = c.req.query("orgId");
+  const orgId = resolveOrgIdForCreate(orgIds, requestedOrgId);
+  if (!orgId) return c.json({ message: "No organization access" }, 403);
+  const profileKey = c.req.query("profileKey");
+  const rows = await storage.getExposureLimits(orgId, profileKey || null);
+  return c.json(rows);
+});
+
+app.put("/api/exposure-limits", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const organizationId = resolveOrgIdForCreate(orgIds, body.organizationId);
+  if (!organizationId) return c.json({ message: "No organization access" }, 403);
+  const payload = upsertExposureLimitSchema.parse(body);
+  const row = await storage.upsertExposureLimit(organizationId, payload);
+  await audit(c, {
+    organizationId,
+    action: "exposure_limits.upsert",
+    entityType: "exposure_limit",
+    entityId: (row as any).limitId,
+    summary: `Upserted exposure limit ${payload.profileKey}:${payload.analyte}`,
+  });
+  return c.json(row);
 });
 
 app.get("/api/field-tools/equipment", async (c) => {
@@ -2610,6 +2910,56 @@ app.post("/api/air-samples", async (c) => {
   const organizationId = resolveOrgIdForCreate(orgIds, body.organizationId);
   const payload = insertAirSampleSchema.parse({ ...body, organizationId });
   const created = await storage.createAirSample(payload);
+
+  // Exposure snapshot: store raw inputs + computed outputs (auditable) when personnel is linked.
+  try {
+    const personId = (created as any).personnelId ? String((created as any).personnelId) : "";
+    if (personId) {
+      const person = await storage.getPersonnelById(personId);
+      if (person && person.organizationId === organizationId) {
+        const durationMinutes =
+          typeof (created as any).samplingDuration === "number"
+            ? (created as any).samplingDuration
+            : parseNumeric((created as any).samplingDuration);
+        const concentration = parseNumeric((created as any).result);
+        const twa = computeTwa8hr(concentration, typeof durationMinutes === "number" ? durationMinutes : null);
+        const profileKey = (body.profileKey || "OSHA").toString();
+        const limitRow = await getExposureLimitFor(organizationId, profileKey, (created as any).analyte || "");
+        const flags = computeExposureFlags(twa, limitRow, 0.8);
+        const dateMs = (created as any).startTime ? Number((created as any).startTime) : null;
+        await storage.upsertExposureFromAirSample({
+          organizationId,
+          userId,
+          airSampleId: created.id,
+          jobId: created.jobId,
+          personId,
+          dateMs: Number.isFinite(dateMs as any) ? dateMs : null,
+          analyte: (created as any).analyte || "unknown",
+          durationMinutes: typeof durationMinutes === "number" ? durationMinutes : null,
+          concentration: concentration === null ? null : concentration.toString(),
+          units: (created as any).resultUnit || null,
+          method: (created as any).analysisMethod || (created as any).samplingMethod || null,
+          sampleType: (created as any).sampleType || null,
+          taskActivity: (created as any).fieldNotes || null,
+          ppeLevel: null,
+          profileKey,
+          twa8hr: twa === null ? null : twa.toString(),
+          limitType: flags.limitType,
+          limitValue: flags.limitValue === null ? null : flags.limitValue.toString(),
+          percentOfLimit: flags.percentOfLimit === null ? null : flags.percentOfLimit.toString(),
+          exceedanceFlag: flags.exceedanceFlag,
+          nearMissFlag: flags.nearMissFlag,
+          sourceRefs: {
+            airSampleId: created.id,
+            labReportFilename: (created as any).labReportFilename || null,
+          },
+        });
+      }
+    }
+  } catch {
+    // Exposure snapshots are best-effort; do not block sample creation if limits/schema drift.
+  }
+
   return c.json(created, 201);
 });
 
@@ -2624,6 +2974,57 @@ app.put("/api/air-samples/:id", async (c) => {
   if (!body) return c.json({ message: "Invalid JSON" }, 400);
   const payload = insertAirSampleSchema.partial().parse(body);
   const updated = await storage.updateAirSample(c.req.param("id"), payload);
+
+  // Update exposure snapshot if still linked to personnel.
+  try {
+    const orgId = (access as any).job?.organizationId || null;
+    const personId = (updated as any)?.personnelId ? String((updated as any).personnelId) : "";
+    if (orgId && personId) {
+      const person = await storage.getPersonnelById(personId);
+      if (person && person.organizationId === orgId) {
+        const durationMinutes =
+          typeof (updated as any).samplingDuration === "number"
+            ? (updated as any).samplingDuration
+            : parseNumeric((updated as any).samplingDuration);
+        const concentration = parseNumeric((updated as any).result);
+        const twa = computeTwa8hr(concentration, typeof durationMinutes === "number" ? durationMinutes : null);
+        const profileKey = (body.profileKey || "OSHA").toString();
+        const limitRow = await getExposureLimitFor(orgId, profileKey, (updated as any).analyte || "");
+        const flags = computeExposureFlags(twa, limitRow, 0.8);
+        const dateMs = (updated as any).startTime ? Number((updated as any).startTime) : null;
+        await storage.upsertExposureFromAirSample({
+          organizationId: orgId,
+          userId,
+          airSampleId: updated.id,
+          jobId: updated.jobId,
+          personId,
+          dateMs: Number.isFinite(dateMs as any) ? dateMs : null,
+          analyte: (updated as any).analyte || "unknown",
+          durationMinutes: typeof durationMinutes === "number" ? durationMinutes : null,
+          concentration: concentration === null ? null : concentration.toString(),
+          units: (updated as any).resultUnit || null,
+          method: (updated as any).analysisMethod || (updated as any).samplingMethod || null,
+          sampleType: (updated as any).sampleType || null,
+          taskActivity: (updated as any).fieldNotes || null,
+          ppeLevel: null,
+          profileKey,
+          twa8hr: twa === null ? null : twa.toString(),
+          limitType: flags.limitType,
+          limitValue: flags.limitValue === null ? null : flags.limitValue.toString(),
+          percentOfLimit: flags.percentOfLimit === null ? null : flags.percentOfLimit.toString(),
+          exceedanceFlag: flags.exceedanceFlag,
+          nearMissFlag: flags.nearMissFlag,
+          sourceRefs: {
+            airSampleId: updated.id,
+            labReportFilename: (updated as any).labReportFilename || null,
+          },
+        });
+      }
+    }
+  } catch {
+    // best-effort
+  }
+
   return c.json(updated);
 });
 
