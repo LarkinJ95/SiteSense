@@ -102,6 +102,92 @@ const isAdminUser = (user: AuthUser | undefined, adminEmails: string[]) => {
   return Boolean(email && adminEmails.includes(email));
 };
 
+const splitName = (full?: string | null) => {
+  const name = (full || "").trim();
+  if (!name) return { firstName: "", lastName: "" };
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return { firstName: parts[0]!, lastName: "" };
+  return { firstName: parts[0]!, lastName: parts.slice(1).join(" ") };
+};
+
+const titleFromDomain = (domain: string) => {
+  const clean = domain.trim().toLowerCase();
+  const first = clean.split(".")[0] || clean;
+  if (!first) return "Organization";
+  return first.charAt(0).toUpperCase() + first.slice(1);
+};
+
+const ensureOnboarding = async (user: AuthUser, env: Env) => {
+  const userId = typeof user.sub === "string" ? user.sub : "";
+  if (!userId) return { organizationId: null as string | null };
+
+  // Ensure a profile row exists (used throughout the UI for display + lookups)
+  const existingProfile = await storage.getUserProfile(userId);
+  if (!existingProfile) {
+    const email = typeof user.email === "string" ? user.email : undefined;
+    const displayName = getDisplayName(user);
+    const { firstName, lastName } = splitName(displayName || (typeof user.name === "string" ? user.name : ""));
+    await storage.upsertUserProfile({
+      userId,
+      email,
+      firstName: (typeof user.given_name === "string" && user.given_name) || firstName,
+      lastName: (typeof user.family_name === "string" && user.family_name) || lastName,
+      role: "user",
+      status: "active",
+      preferences: JSON.stringify({}),
+    });
+  }
+
+  // If the user has no org membership, auto-create a fresh org and add them as org admin.
+  const orgIds = await storage.getOrganizationIdsForUser(userId);
+  if (orgIds.length) return { organizationId: orgIds[0] || null };
+
+  const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
+  const domain = email.includes("@") ? email.split("@")[1] || "" : "";
+
+  // Deterministic IDs make onboarding idempotent across repeated initial requests.
+  const organizationId = `org-${userId}`;
+  const memberId = `orgmem-${organizationId}-${userId}`;
+
+  try {
+    await storage.createOrganization({
+      id: organizationId,
+      name: domain ? `${titleFromDomain(domain)} Organization` : "My Organization",
+      domain: domain || null,
+      status: "active",
+    } as any);
+  } catch {
+    // If the org already exists (race), continue.
+  }
+
+  try {
+    await storage.addOrganizationMember({
+      id: memberId,
+      organizationId,
+      userId,
+      role: "admin",
+      status: "active",
+    } as any);
+  } catch {
+    // If the membership already exists (race), continue.
+  }
+
+  // Backfill the profile's organization label for display if empty.
+  try {
+    const profile = await storage.getUserProfile(userId);
+    if (profile && !profile.organization) {
+      const org = await storage.getOrganization(organizationId);
+      if (org?.name) {
+        await storage.updateUserProfile(userId, { organization: org.name });
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  return { organizationId };
+};
+
 const parseJsonBody = async <T = any>(c: { req: { json: () => Promise<T> } }) => {
   try {
     return await c.req.json();
@@ -682,13 +768,15 @@ app.use("/api/*", async (c, next) => {
   // Local dev bypass (no Access headers locally)
   const devEmail = (c.env.DEV_AUTH_EMAIL || "").trim();
   if (devEmail) {
-    c.set("user", {
+    const user = {
       sub: `dev:${devEmail.toLowerCase()}`,
       email: devEmail.toLowerCase(),
       name: devEmail,
       role: "admin",
       roles: ["admin"],
-    });
+    } satisfies AuthUser;
+    c.set("user", user);
+    await ensureOnboarding(user, c.env);
     return next();
   }
 
@@ -706,6 +794,7 @@ app.use("/api/*", async (c, next) => {
     try {
       const user = await verifyCloudflareAccessJwt(c.env, accessAssertion);
       c.set("user", user);
+      await ensureOnboarding(user, c.env);
       return next();
     } catch {
       return c.json({ message: "Not authenticated" }, 401);
@@ -733,7 +822,9 @@ app.use("/api/*", async (c, next) => {
       issuer: c.env.NEON_JWT_ISSUER || undefined,
       audience: c.env.NEON_JWT_AUDIENCE || undefined,
     });
-    c.set("user", payload as AuthUser);
+    const user = payload as AuthUser;
+    c.set("user", user);
+    await ensureOnboarding(user, c.env);
     return next();
   } catch {
     return c.json({ message: "Not authenticated" }, 401);
