@@ -46,18 +46,32 @@ export const authClient = {
   },
 
   signOut: async () => {
-    // Cloudflare Access logout endpoint (works when Access is configured on the domain)
-    window.location.href = "/cdn-cgi/access/logout";
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => null);
+    window.location.href = "/login";
   },
 };
 
-export const accessLoginUrl = (redirectUrl?: string) => {
-  const redirect = encodeURIComponent(redirectUrl || window.location.href);
-  return `/cdn-cgi/access/login?redirect_url=${redirect}`;
-};
-
-// Kept for backward compatibility with apiRequest/queryClient, but Access does not require app-issued JWTs.
 export const authApi = {
+  login: async (email: string, password: string) => {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return await res.json();
+  },
+  register: async (name: string, email: string, password: string) => {
+    const res = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ name, email, password }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return await res.json();
+  },
   getJWTToken: async () => null as string | null,
 };
 

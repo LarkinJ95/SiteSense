@@ -140,7 +140,7 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
               </h1>
             </div>
             <div className="flex items-center space-x-2">
-              <a href="/cdn-cgi/access/login">
+              <a href="/login">
                 <Button variant="ghost" className="text-sm">Sign in</Button>
               </a>
             </div>

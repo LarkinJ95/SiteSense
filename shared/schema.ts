@@ -680,6 +680,26 @@ export const userProfiles = sqliteTable('user_profiles', {
   updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Password auth (D1-backed)
+export const authUsers = sqliteTable("auth_users", {
+  userId: text("user_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  email: text("email").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  name: text("name"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  lastLoginAt: timestamp("last_login_at"),
+});
+
+export const authSessions = sqliteTable("auth_sessions", {
+  sessionId: text("session_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id").notNull().references(() => authUsers.userId, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+  userAgent: text("user_agent"),
+  ipAddress: text("ip_address"),
+});
+
 // Organizations
 export const organizations = sqliteTable('organizations', {
   id: text('id').primaryKey().$defaultFn(() => nanoid()),
@@ -875,6 +895,17 @@ export const dailyWeatherLogRelations = relations(dailyWeatherLogs, ({ one }) =>
 export const organizationRelations = relations(organizations, ({ many }) => ({
   members: many(organizationMembers),
   auditLogs: many(auditLog),
+}));
+
+export const authUserRelations = relations(authUsers, ({ many }) => ({
+  sessions: many(authSessions),
+}));
+
+export const authSessionRelations = relations(authSessions, ({ one }) => ({
+  user: one(authUsers, {
+    fields: [authSessions.userId],
+    references: [authUsers.userId],
+  }),
 }));
 
 export const organizationMemberRelations = relations(organizationMembers, ({ one }) => ({
@@ -1165,6 +1196,8 @@ export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type OrganizationMember = typeof organizationMembers.$inferSelect;
 export type InsertOrganizationMember = z.infer<typeof insertOrganizationMemberSchema>;
+export type AuthUserRow = typeof authUsers.$inferSelect;
+export type AuthSessionRow = typeof authSessions.$inferSelect;
 export type AuditLog = typeof auditLog.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type DailyWeatherLog = typeof dailyWeatherLogs.$inferSelect;

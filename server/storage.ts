@@ -19,6 +19,8 @@ import {
   personnelJobAssignments as personnelJobAssignmentsTable,
   exposureRecords as exposureRecordsTable,
   exposureLimits as exposureLimitsTable,
+  authUsers as authUsersTable,
+  authSessions as authSessionsTable,
   userProfiles,
   organizations,
   organizationMembers,
@@ -52,6 +54,8 @@ import {
   type ExposureRecord,
   type ExposureLimit,
   type UpsertExposureLimit,
+  type AuthUserRow,
+  type AuthSessionRow,
   type AirMonitoringJob,
   type InsertAirMonitoringJob,
   type AirSample,
@@ -193,6 +197,16 @@ export interface IStorage {
     nearMissFlag: boolean;
     sourceRefs?: any;
   }): Promise<ExposureRecord>;
+
+  // Password auth (D1-backed)
+  getAuthUserByEmail(email: string): Promise<AuthUserRow | undefined>;
+  getAuthUserById(userId: string): Promise<AuthUserRow | undefined>;
+  createAuthUser(params: { email: string; passwordHash: string; name?: string | null }): Promise<AuthUserRow>;
+  updateAuthUser(userId: string, patch: Partial<{ name: string | null; lastLoginAt: Date | null }>): Promise<AuthUserRow | undefined>;
+  createAuthSession(params: { userId: string; expiresAt: Date; userAgent?: string | null; ipAddress?: string | null }): Promise<AuthSessionRow>;
+  getAuthSession(sessionId: string): Promise<AuthSessionRow | undefined>;
+  deleteAuthSession(sessionId: string): Promise<boolean>;
+  deleteAuthSessionsForUser(userId: string): Promise<number>;
 
   // Air monitoring job methods
   getAirMonitoringJobs(): Promise<AirMonitoringJob[]>;
@@ -846,6 +860,70 @@ export class DatabaseStorage implements IStorage {
       .values({ ...values, createdByUserId: params.userId } as any)
       .returning();
     return created;
+  }
+
+  // Password auth (D1-backed)
+  async getAuthUserByEmail(email: string): Promise<AuthUserRow | undefined> {
+    const normalized = (email || "").trim().toLowerCase();
+    const [row] = await db().select().from(authUsersTable).where(sql`lower(${authUsersTable.email}) = ${normalized}`);
+    return row || undefined;
+  }
+
+  async getAuthUserById(userId: string): Promise<AuthUserRow | undefined> {
+    const [row] = await db().select().from(authUsersTable).where(eq(authUsersTable.userId, userId));
+    return row || undefined;
+  }
+
+  async createAuthUser(params: { email: string; passwordHash: string; name?: string | null }): Promise<AuthUserRow> {
+    const [created] = await db()
+      .insert(authUsersTable)
+      .values({
+        email: params.email.trim().toLowerCase(),
+        passwordHash: params.passwordHash,
+        name: params.name ?? null,
+      } as any)
+      .returning();
+    return created;
+  }
+
+  async updateAuthUser(userId: string, patch: Partial<{ name: string | null; lastLoginAt: Date | null }>): Promise<AuthUserRow | undefined> {
+    const [updated] = await db()
+      .update(authUsersTable)
+      .set({ ...patch, updatedAt: new Date() } as any)
+      .where(eq(authUsersTable.userId, userId))
+      .returning();
+    return updated || undefined;
+  }
+
+  async createAuthSession(params: { userId: string; expiresAt: Date; userAgent?: string | null; ipAddress?: string | null }): Promise<AuthSessionRow> {
+    const [created] = await db()
+      .insert(authSessionsTable)
+      .values({
+        userId: params.userId,
+        expiresAt: params.expiresAt,
+        userAgent: params.userAgent ?? null,
+        ipAddress: params.ipAddress ?? null,
+      } as any)
+      .returning();
+    return created;
+  }
+
+  async getAuthSession(sessionId: string): Promise<AuthSessionRow | undefined> {
+    const [row] = await db().select().from(authSessionsTable).where(eq(authSessionsTable.sessionId, sessionId));
+    return row || undefined;
+  }
+
+  async deleteAuthSession(sessionId: string): Promise<boolean> {
+    const result = await db().delete(authSessionsTable).where(eq(authSessionsTable.sessionId, sessionId));
+    return didAffectRows(result);
+  }
+
+  async deleteAuthSessionsForUser(userId: string): Promise<number> {
+    const result = await db().delete(authSessionsTable).where(eq(authSessionsTable.userId, userId));
+    if (typeof result?.changes === "number") return result.changes;
+    if (typeof result?.rowsAffected === "number") return result.rowsAffected;
+    if (typeof result?.rowCount === "number") return result.rowCount;
+    return 0;
   }
 
   // Air monitoring job methods

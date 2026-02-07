@@ -40,11 +40,6 @@ function Protected({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isPending && !session) {
-      if (import.meta.env.PROD) {
-        const redirect = encodeURIComponent(window.location.href);
-        window.location.href = `/cdn-cgi/access/login?redirect_url=${redirect}`;
-        return;
-      }
       setLocation("/login");
     }
   }, [isPending, session, setLocation]);

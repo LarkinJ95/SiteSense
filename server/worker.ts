@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+// jose previously used for Cloudflare Access / JWKS verification. Password auth no longer needs it.
 import {
   insertAsbestosSampleLayerSchema,
   insertAsbestosSampleSchema,
@@ -45,11 +45,11 @@ type D1Database = any;
 
 type Env = {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
-  // Cloudflare Access (internal-only auth)
-  CF_ACCESS_TEAM_DOMAIN?: string;
-  CF_ACCESS_AUD?: string;
   // Local dev bypass: if set, all /api/* requests are treated as authenticated as this email.
   DEV_AUTH_EMAIL?: string;
+  // Legacy variables kept in config but unused once password auth is enabled.
+  CF_ACCESS_TEAM_DOMAIN?: string;
+  CF_ACCESS_AUD?: string;
   NEON_AUTH_URL?: string;
   NEON_JWKS_URL?: string;
   NEON_JWT_ISSUER?: string;
@@ -216,53 +216,6 @@ const zodBadRequest = (c: any, error: unknown) => {
   return null;
 };
 
-const getSessionJwtFromNeon = async (c: { env: Env; req: { header: (key: string) => string | undefined } }) => {
-  const base = c.env.NEON_AUTH_URL;
-  if (!base) return null;
-  const url = new URL(base.replace(/\/$/, "") + "/get-session");
-  const headers = new Headers();
-  const cookie = c.req.header("cookie");
-  if (cookie) headers.set("cookie", cookie);
-  headers.set("accept", "application/json");
-  try {
-    const response = await fetch(url.toString(), {
-      method: "GET",
-      headers,
-    });
-    if (!response.ok) return null;
-    return response.headers.get("set-auth-jwt");
-  } catch {
-    return null;
-  }
-};
-
-let cachedAccessJwksUrl = "";
-let cachedAccessJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
-
-const getAccessJwks = (teamDomain: string) => {
-  const clean = teamDomain.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
-  const url = `https://${clean}/cdn-cgi/access/certs`;
-  if (!cachedAccessJwks || cachedAccessJwksUrl !== url) {
-    cachedAccessJwksUrl = url;
-    cachedAccessJwks = createRemoteJWKSet(new URL(url));
-  }
-  return cachedAccessJwks;
-};
-
-const verifyCloudflareAccessJwt = async (env: Env, token: string) => {
-  const teamDomain = (env.CF_ACCESS_TEAM_DOMAIN || "").trim();
-  const audience = (env.CF_ACCESS_AUD || "").trim();
-  if (!teamDomain || !audience) {
-    throw new Error("Cloudflare Access is not configured");
-  }
-  const jwks = getAccessJwks(teamDomain);
-  const { payload } = await jwtVerify(token, jwks, {
-    issuer: `https://${teamDomain.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`,
-    audience,
-  });
-  return payload as AuthUser;
-};
-
 const getUserOrgIds = async (userId: string) => {
   const orgIds = await storage.getOrganizationIdsForUser(userId);
   return orgIds || [];
@@ -372,6 +325,104 @@ const stripUndefined = <T extends Record<string, any>>(obj: T) => {
     if (value === undefined) delete out[key];
   }
   return out as Partial<T>;
+};
+
+const SESSION_COOKIE = "abateiq_session";
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
+
+const parseCookies = (cookieHeader: string | null) => {
+  const out: Record<string, string> = {};
+  if (!cookieHeader) return out;
+  const parts = cookieHeader.split(";");
+  for (const part of parts) {
+    const idx = part.indexOf("=");
+    if (idx === -1) continue;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (!key) continue;
+    out[key] = value;
+  }
+  return out;
+};
+
+const setSessionCookie = (c: any, sessionId: string, options: { secure: boolean }) => {
+  const secureFlag = options.secure ? "; Secure" : "";
+  // HttpOnly so JS can't read it. SameSite=Lax for normal navigation and to reduce CSRF risk.
+  c.header(
+    "set-cookie",
+    `${SESSION_COOKIE}=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_SECONDS}${secureFlag}`
+  );
+};
+
+const clearSessionCookie = (c: any, options: { secure: boolean }) => {
+  const secureFlag = options.secure ? "; Secure" : "";
+  c.header("set-cookie", `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secureFlag}`);
+};
+
+const b64encode = (bytes: Uint8Array) => {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+  return btoa(binary);
+};
+
+const b64decode = (b64: string) => {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+};
+
+const timingSafeEqual = (a: Uint8Array, b: Uint8Array) => {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!;
+  return diff === 0;
+};
+
+const pbkdf2HashPassword = async (password: string) => {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iterations = 310_000;
+  const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, [
+    "deriveBits",
+  ]);
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt,
+      iterations,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    256
+  );
+  const hash = new Uint8Array(bits);
+  return `pbkdf2_sha256$${iterations}$${b64encode(salt)}$${b64encode(hash)}`;
+};
+
+const pbkdf2VerifyPassword = async (password: string, stored: string) => {
+  const parts = stored.split("$");
+  if (parts.length !== 4) return false;
+  const [scheme, iterStr, saltB64, hashB64] = parts;
+  if (scheme !== "pbkdf2_sha256") return false;
+  const iterations = Number(iterStr);
+  if (!Number.isFinite(iterations) || iterations < 100_000) return false;
+  const salt = b64decode(saltB64 || "");
+  const expected = b64decode(hashB64 || "");
+  const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, [
+    "deriveBits",
+  ]);
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt,
+      iterations,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    expected.length * 8
+  );
+  const actual = new Uint8Array(bits);
+  return timingSafeEqual(actual, expected);
 };
 
 const parseNumeric = (value: unknown) => {
@@ -901,7 +952,7 @@ app.use("/api/*", async (c, next) => {
   if (c.req.path === "/api/health/db") return next();
   if (c.req.path.startsWith("/api/weather")) return next();
 
-  // Local dev bypass (no Access headers locally)
+  // Local dev bypass
   const devEmail = (c.env.DEV_AUTH_EMAIL || "").trim();
   if (devEmail) {
     const user = {
@@ -916,55 +967,28 @@ app.use("/api/*", async (c, next) => {
     return next();
   }
 
-  // Cloudflare Access (preferred for AbateIQ internal-only)
-  const accessAssertion =
-    c.req.header("CF-Access-Jwt-Assertion") ||
-    c.req.header("Cf-Access-Jwt-Assertion") ||
-    c.req.header("cf-access-jwt-assertion") ||
-    "";
-  const accessConfigured = Boolean((c.env.CF_ACCESS_TEAM_DOMAIN || "").trim() && (c.env.CF_ACCESS_AUD || "").trim());
-  if (accessConfigured) {
-    if (!accessAssertion) {
-      return c.json({ message: "Not authenticated" }, 401);
-    }
-    try {
-      const user = await verifyCloudflareAccessJwt(c.env, accessAssertion);
-      c.set("user", user);
-      await ensureOnboarding(user, c.env);
-      return next();
-    } catch {
-      return c.json({ message: "Not authenticated" }, 401);
-    }
-  }
-
-  // Legacy fallback: Neon Auth (kept for local testing / transition)
-  const jwksUrl = (c.env.NEON_JWKS_URL || "").trim();
-  if (!jwksUrl) {
-    return c.json({ message: "Auth is not configured" }, 500);
-  }
-  const header = c.req.header("Authorization") || "";
-  let token = "";
-  if (header.startsWith("Bearer ")) {
-    token = header.slice("Bearer ".length).trim();
-  }
-  if (!token) {
-    const sessionJwt = await getSessionJwtFromNeon(c);
-    if (sessionJwt) token = sessionJwt;
-  }
-  if (!token) return c.json({ message: "Not authenticated" }, 401);
-  try {
-    const jwks = createRemoteJWKSet(new URL(jwksUrl));
-    const { payload } = await jwtVerify(token, jwks, {
-      issuer: c.env.NEON_JWT_ISSUER || undefined,
-      audience: c.env.NEON_JWT_AUDIENCE || undefined,
-    });
-    const user = payload as AuthUser;
-    c.set("user", user);
-    await ensureOnboarding(user, c.env);
-    return next();
-  } catch {
+  // Password auth session cookie
+  const cookies = parseCookies(c.req.header("cookie") || null);
+  const sessionId = cookies[SESSION_COOKIE] || "";
+  if (!sessionId) return c.json({ message: "Not authenticated" }, 401);
+  const session = await storage.getAuthSession(sessionId);
+  if (!session) return c.json({ message: "Not authenticated" }, 401);
+  const expiresAt = typeof (session as any).expiresAt === "number" ? (session as any).expiresAt : (session as any).expiresAt?.getTime?.();
+  if (expiresAt && Date.now() > expiresAt) {
+    await storage.deleteAuthSession(sessionId);
     return c.json({ message: "Not authenticated" }, 401);
   }
+  const authUser = await storage.getAuthUserById((session as any).userId);
+  if (!authUser) return c.json({ message: "Not authenticated" }, 401);
+  const user = {
+    sub: (authUser as any).userId,
+    email: (authUser as any).email,
+    name: (authUser as any).name,
+    roles: [],
+  } satisfies AuthUser;
+  c.set("user", user);
+  await ensureOnboarding(user, c.env);
+  return next();
 });
 
 app.get("/api/health", (c) => c.json({ ok: true }));
@@ -1061,47 +1085,99 @@ app.get("/uploads/:key", async (c) => {
   return new Response(object.body, { headers });
 });
 
-app.all("/api/auth/*", async (c) => {
-  const base = c.env.NEON_AUTH_URL;
-  if (!base) {
-    return c.json({ message: "NEON_AUTH_URL is not configured" }, 500);
+app.post("/api/auth/register", async (c) => {
+  const body = await parseJsonBody<{ email?: string; password?: string; name?: string }>(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const email = (body.email || "").trim().toLowerCase();
+  const password = body.password || "";
+  const name = (body.name || "").trim() || null;
+  if (!email || !email.includes("@")) return c.json({ message: "Invalid email" }, 400);
+  if (typeof password !== "string" || password.length < 8) {
+    return c.json({ message: "Password must be at least 8 characters" }, 400);
   }
 
-  const incomingUrl = new URL(c.req.url);
-  const targetPath = incomingUrl.pathname.replace(/^\/api\/auth/, "");
-  const targetUrl = new URL(base.replace(/\/$/, "") + targetPath + incomingUrl.search);
+  const existing = await storage.getAuthUserByEmail(email);
+  if (existing) {
+    // Do not leak whether an email exists; still return a clear message for UX.
+    return c.json({ message: "Email already in use" }, 409);
+  }
 
-  const requestHeaders = new Headers(c.req.raw.headers);
-  requestHeaders.set("host", targetUrl.host);
+  const passwordHash = await pbkdf2HashPassword(password);
+  const user = await storage.createAuthUser({ email, passwordHash, name });
 
-  const requestInit: RequestInit = {
-    method: c.req.method,
-    headers: requestHeaders,
-    body: c.req.method === "GET" || c.req.method === "HEAD" ? undefined : await c.req.arrayBuffer(),
-    redirect: "manual",
-  };
+  const authUser: AuthUser = { sub: (user as any).userId, email: (user as any).email, name: (user as any).name || undefined };
+  // Ensure user profile + initial org exists.
+  await ensureOnboarding(authUser, c.env);
 
-  const response = await fetch(targetUrl, requestInit);
-  const responseHeaders = new Headers(response.headers);
+  const secure = new URL(c.req.url).protocol === "https:";
+  const session = await storage.createAuthSession({
+    userId: (user as any).userId,
+    expiresAt: new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000),
+    userAgent: c.req.header("user-agent") || null,
+    ipAddress: c.req.header("cf-connecting-ip") || c.req.header("x-forwarded-for") || null,
+  });
+  setSessionCookie(c, (session as any).sessionId, { secure });
 
-  const getSetCookie = (response.headers as any).getSetCookie?.bind(response.headers);
-  const setCookies: string[] = getSetCookie
-    ? getSetCookie()
-    : (responseHeaders.get("set-cookie") ? [responseHeaders.get("set-cookie") as string] : []);
+  await storage.updateAuthUser((user as any).userId, { lastLoginAt: new Date() });
 
-  if (setCookies.length) {
-    responseHeaders.delete("set-cookie");
-    for (const cookie of setCookies) {
-      const rewritten = cookie.replace(/;\s*Domain=[^;]+/i, "");
-      responseHeaders.append("set-cookie", rewritten);
+  return c.json({ id: (user as any).userId, email: (user as any).email, name: (user as any).name }, 201);
+});
+
+app.post("/api/auth/login", async (c) => {
+  const body = await parseJsonBody<{ email?: string; password?: string }>(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const email = (body.email || "").trim().toLowerCase();
+  const password = body.password || "";
+  if (!email || !password) return c.json({ message: "Invalid email or password" }, 401);
+
+  const user = await storage.getAuthUserByEmail(email);
+  if (!user) return c.json({ message: "Invalid email or password" }, 401);
+  const ok = await pbkdf2VerifyPassword(password, (user as any).passwordHash);
+  if (!ok) return c.json({ message: "Invalid email or password" }, 401);
+
+  const secure = new URL(c.req.url).protocol === "https:";
+  const session = await storage.createAuthSession({
+    userId: (user as any).userId,
+    expiresAt: new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000),
+    userAgent: c.req.header("user-agent") || null,
+    ipAddress: c.req.header("cf-connecting-ip") || c.req.header("x-forwarded-for") || null,
+  });
+  setSessionCookie(c, (session as any).sessionId, { secure });
+
+  const authUser: AuthUser = { sub: (user as any).userId, email: (user as any).email, name: (user as any).name || undefined };
+  await ensureOnboarding(authUser, c.env);
+  await storage.updateAuthUser((user as any).userId, { lastLoginAt: new Date() });
+
+  return c.json({ id: (user as any).userId, email: (user as any).email, name: (user as any).name }, 200);
+});
+
+app.post("/api/auth/logout", async (c) => {
+  const secure = new URL(c.req.url).protocol === "https:";
+  const cookies = parseCookies(c.req.header("cookie") || null);
+  const sessionId = cookies[SESSION_COOKIE] || "";
+  if (sessionId) {
+    try {
+      await storage.deleteAuthSession(sessionId);
+    } catch {
+      // ignore
     }
   }
+  clearSessionCookie(c, { secure });
+  return c.json({ ok: true });
+});
 
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: responseHeaders,
-  });
+app.get("/api/auth/session", async (c) => {
+  const cookies = parseCookies(c.req.header("cookie") || null);
+  const sessionId = cookies[SESSION_COOKIE] || "";
+  if (!sessionId) return c.json({ authenticated: false }, 200);
+  const session = await storage.getAuthSession(sessionId);
+  if (!session) return c.json({ authenticated: false }, 200);
+  const expiresAt = typeof (session as any).expiresAt === "number" ? (session as any).expiresAt : (session as any).expiresAt?.getTime?.();
+  if (expiresAt && Date.now() > expiresAt) {
+    await storage.deleteAuthSession(sessionId);
+    return c.json({ authenticated: false }, 200);
+  }
+  return c.json({ authenticated: true }, 200);
 });
 
 app.get("/api/me", (c) => {
