@@ -23,6 +23,8 @@ interface CreateAirJobModalProps {
 const formSchema = insertAirMonitoringJobSchema.extend({
   startDate: z.string().min(1, "Start date is required"),
   endDate: z.string().optional(),
+  // Make job number optional in the UI (server will auto-generate if missing/blank)
+  jobNumber: z.string().optional(),
 });
 
 type CreateAirJobFormData = z.infer<typeof formSchema>;
@@ -186,6 +188,24 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
       const startDate = form.getValues("startDate");
       const targetDate = startDate ? new Date(`${startDate}T12:00:00`) : new Date();
       const now = new Date();
+      const ageDays = (now.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24);
+
+      // OpenWeather free endpoints here provide current + 5-day forecast, not true historical by date.
+      if (ageDays > 5) {
+        form.setValue("weatherConditions", "");
+        form.setValue("temperature", "");
+        form.setValue("humidity", "");
+        form.setValue("barometricPressure", "");
+        form.setValue("windSpeed", "");
+        form.setValue("windDirection", "");
+        toast({
+          title: "Weather Not Available",
+          description:
+            "Weather auto-fill is blank because this job start date is more than 5 days in the past (no historical data in the current weather setup).",
+          variant: "destructive",
+        });
+        return;
+      }
 
       let weatherData: any | null = null;
       let usedForecast = false;
@@ -325,7 +345,7 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
                     name="jobNumber"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Job Number *</FormLabel>
+                        <FormLabel>Job Number</FormLabel>
                         <FormControl>
                           <Input placeholder="AIR-2024-001" {...field} data-testid="input-job-number" />
                         </FormControl>

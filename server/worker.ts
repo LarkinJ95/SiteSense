@@ -32,6 +32,7 @@ import type {
 import { storage } from "./storage";
 import { getDb, setD1Database } from "./db";
 import { sql } from "drizzle-orm";
+import { ZodError } from "zod";
 
 type D1Database = any;
 
@@ -107,6 +108,19 @@ const parseJsonBody = async <T = any>(c: { req: { json: () => Promise<T> } }) =>
   } catch {
     return null;
   }
+};
+
+const zodBadRequest = (c: any, error: unknown) => {
+  if (error instanceof ZodError) {
+    return c.json(
+      {
+        message: "Invalid request",
+        issues: error.issues,
+      },
+      400
+    );
+  }
+  return null;
 };
 
 const getSessionJwtFromNeon = async (c: { env: Env; req: { header: (key: string) => string | undefined } }) => {
@@ -546,6 +560,10 @@ function generateSurveyReport(
     .page:last-child { page-break-after: auto; }
     h1, h2, h3 { margin: 0 0 12px 0; }
     .cover-title { font-size: 28px; margin-bottom: 12px; }
+    .cover-header { display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; }
+    .cover-left { flex: 1 1 auto; min-width: 0; }
+    .cover-right { flex: 0 0 260px; display: flex; justify-content: flex-end; }
+    .cover-photo { width: 260px; height: 200px; object-fit: contain; border-radius: 6px; border: 1px solid #ddd; background: #fff; }
     .section { margin-bottom: 24px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ddd; padding: 8px; font-size: 12px; vertical-align: top; }
@@ -559,17 +577,18 @@ function generateSurveyReport(
 </head>
 <body>
   <div class="page">
-    <div class="section">
-      <div class="cover-title">Site Survey Report</div>
-      <div><strong>Site Name:</strong> ${survey.siteName}</div>
-      <div><strong>Survey Type:</strong> ${formatSurveyType(survey.surveyType)}</div>
-      <div><strong>Survey Date:</strong> ${formatDateLong(survey.surveyDate)}</div>
-      <div><strong>Inspector:</strong> ${survey.inspector}</div>
-      <div><strong>Status:</strong> ${formatStatus(survey.status)}</div>
-    </div>
-    <div class="section">
-      <h3>Site Overview Photo</h3>
-      ${sitePhotoSrc ? `<img src="${sitePhotoSrc}" alt="Site Overview" class="photo-thumb" />` : "<em>No site photo provided.</em>"}
+    <div class="section cover-header">
+      <div class="cover-left">
+        <div class="cover-title">Site Survey Report</div>
+        <div><strong>Site Name:</strong> ${survey.siteName}</div>
+        <div><strong>Survey Type:</strong> ${formatSurveyType(survey.surveyType)}</div>
+        <div><strong>Survey Date:</strong> ${formatDateLong(survey.surveyDate)}</div>
+        <div><strong>Inspector:</strong> ${survey.inspector}</div>
+        <div><strong>Status:</strong> ${formatStatus(survey.status)}</div>
+      </div>
+      <div class="cover-right">
+        ${sitePhotoSrc ? `<img src="${sitePhotoSrc}" alt="Site Overview" class="cover-photo" />` : ""}
+      </div>
     </div>
   </div>
 
@@ -1845,9 +1864,20 @@ app.post("/api/air-monitoring-jobs", async (c) => {
   const body = await parseJsonBody(c);
   if (!body) return c.json({ message: "Invalid JSON" }, 400);
   const organizationId = resolveOrgIdForCreate(orgIds, body.organizationId);
-  const payload = insertAirMonitoringJobSchema.parse({ ...body, organizationId });
-  const created = await storage.createAirMonitoringJob(payload);
-  return c.json(created, 201);
+  try {
+    if (typeof body.jobNumber !== "string" || !body.jobNumber.trim()) {
+      const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      const suffix = crypto.randomUUID().slice(0, 8);
+      body.jobNumber = `AM-${ymd}-${suffix}`;
+    }
+    const payload = insertAirMonitoringJobSchema.parse({ ...body, organizationId });
+    const created = await storage.createAirMonitoringJob(payload);
+    return c.json(created, 201);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
 });
 
 app.put("/api/air-monitoring-jobs/:id", async (c) => {
@@ -1857,10 +1887,16 @@ app.put("/api/air-monitoring-jobs/:id", async (c) => {
   if (!access.allowed) return c.json({ message: access.notFound ? "Job not found" : "No access" }, access.notFound ? 404 : 403);
   const body = await parseJsonBody(c);
   if (!body) return c.json({ message: "Invalid JSON" }, 400);
-  const payload = insertAirMonitoringJobSchema.partial().parse(body);
-  const updated = await storage.updateAirMonitoringJob(c.req.param("id"), payload);
-  if (!updated) return c.json({ message: "Job not found" }, 404);
-  return c.json(updated);
+  try {
+    const payload = insertAirMonitoringJobSchema.partial().parse(body);
+    const updated = await storage.updateAirMonitoringJob(c.req.param("id"), payload);
+    if (!updated) return c.json({ message: "Job not found" }, 404);
+    return c.json(updated);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
 });
 
 app.delete("/api/air-monitoring-jobs/:id", async (c) => {

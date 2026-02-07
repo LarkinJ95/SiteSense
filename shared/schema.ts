@@ -684,6 +684,27 @@ export const insertAirMonitoringJobSchema = createInsertSchema(airMonitoringJobs
   createdAt: true,
   updatedAt: true,
 }).extend({
+  // Drizzle's sqlite `numeric(...)` columns are modeled as strings. Accept number inputs from the UI and coerce.
+  temperature: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
+  humidity: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
+  barometricPressure: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
+  windSpeed: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (typeof value === "number") return value.toString();
+    return value;
+  }, z.string().nullable().optional()),
   startDate: z.preprocess((value) => {
     if (value instanceof Date) return value;
     if (typeof value === "string" && value.trim()) return new Date(value);
