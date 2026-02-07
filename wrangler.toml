@@ -3,8 +3,8 @@ main = "server/worker.ts"
 compatibility_date = "2026-02-06"
 
 routes = [
-  { pattern = "abateiq.com/*", zone_name = "abateiq.com", custom_domain = true },
-  { pattern = "www.abateiq.com/*", zone_name = "abateiq.com", custom_domain = true }
+  { pattern = "abateiq.com", zone_name = "abateiq.com", custom_domain = true },
+  { pattern = "www.abateiq.com", zone_name = "abateiq.com", custom_domain = true }
 ]
 
 [assets]
