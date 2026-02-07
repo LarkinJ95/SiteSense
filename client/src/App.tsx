@@ -10,7 +10,6 @@ import { CreateSurveyModal } from "@/components/create-survey-modal";
 import { ThemeProvider } from "@/contexts/theme-context";
 import Dashboard from "@/pages/dashboard";
 import Surveys from "@/pages/surveys";
-import Reports from "@/pages/reports";
 import SystemSettings from "@/pages/settings";
 import SurveyDetail from "@/pages/survey-detail";
 import FieldTools from "@/pages/field-tools";
@@ -92,7 +91,7 @@ function Router() {
       </Route>
       <Route path="/reports">
         <Protected>
-          <Reports />
+          <NotFound />
         </Protected>
       </Route>
       <Route path="/settings">
