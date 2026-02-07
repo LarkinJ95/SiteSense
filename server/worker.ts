@@ -373,12 +373,17 @@ function generateSurveyReport(
       })()
     : null;
 
+  const resolveAssetUrl = (src?: string | null) => {
+    if (!src) return "";
+    if (src.startsWith("data:")) return src;
+    if (src.startsWith("http://") || src.startsWith("https://")) return src;
+    if (!baseUrl) return src;
+    if (src.startsWith("/")) return `${baseUrl}${src}`;
+    return `${baseUrl}/${src}`;
+  };
+
   const sitePhotoSrc = sitePhotoDataUrl || (survey.sitePhotoUrl
-    ? (survey.sitePhotoUrl.startsWith("http://") || survey.sitePhotoUrl.startsWith("https://")
-      ? survey.sitePhotoUrl
-      : baseUrl
-        ? `${baseUrl}${survey.sitePhotoUrl.startsWith("/") ? survey.sitePhotoUrl : `/${survey.sitePhotoUrl}`}`
-        : survey.sitePhotoUrl)
+    ? resolveAssetUrl(survey.sitePhotoUrl)
     : null);
 
   const photoRows = photosByObservation
@@ -386,9 +391,11 @@ function generateSurveyReport(
     .map(entry => {
       const photoCells = entry.photos.map(photo => {
         const safeFilename = basename(photo.filename);
-        const photoSrc = photo.dataUrl || (photo.url || (baseUrl
-          ? `${baseUrl}/uploads/${safeFilename}`
-          : `/uploads/${safeFilename}`));
+        const photoSrc = resolveAssetUrl(
+          photo.dataUrl ||
+            photo.url ||
+            (safeFilename ? `/uploads/${safeFilename}` : "")
+        );
         return `<img src="${photoSrc}" alt="${photo.originalName}" class="photo-thumb" />`;
       }).join("");
       return `
@@ -469,7 +476,11 @@ function generateSurveyReport(
     const photos = asbestosPhotoMap.get(sample.id) || [];
     if (!photos.length) return "";
     const images = photos.map((photo) => {
-      const photoSrc = photo.dataUrl || photo.url || (photo.filename ? (baseUrl ? `${baseUrl}/uploads/${basename(photo.filename)}` : `/uploads/${basename(photo.filename)}`) : "");
+      const photoSrc = resolveAssetUrl(
+        photo.dataUrl ||
+          photo.url ||
+          (photo.filename ? `/uploads/${basename(photo.filename)}` : "")
+      );
       return `<img src="${photoSrc}" alt="${sample.sampleNumber}" class="photo-thumb" />`;
     }).join("");
     return `
@@ -483,7 +494,11 @@ function generateSurveyReport(
     const photos = paintPhotoMap.get(sample.id) || [];
     if (!photos.length) return "";
     const images = photos.map((photo) => {
-      const photoSrc = photo.dataUrl || photo.url || (photo.filename ? (baseUrl ? `${baseUrl}/uploads/${basename(photo.filename)}` : `/uploads/${basename(photo.filename)}`) : "");
+      const photoSrc = resolveAssetUrl(
+        photo.dataUrl ||
+          photo.url ||
+          (photo.filename ? `/uploads/${basename(photo.filename)}` : "")
+      );
       return `<img src="${photoSrc}" alt="${sample.sampleNumber}" class="photo-thumb" />`;
     }).join("");
     return `
@@ -1184,6 +1199,33 @@ app.get("/api/admin/data-management", async (c) => {
     autoBackupEnabled: true,
     retentionPeriod: 365,
   });
+});
+
+app.get("/api/inspectors", async (c) => {
+  const user = c.get("user");
+  const userId = user?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json([]);
+
+  const requestedOrgId = c.req.query("orgId");
+  const orgId = resolveOrgIdForCreate(orgIds, requestedOrgId);
+  if (!orgId) return c.json([]);
+
+  const members = await storage.getActiveOrganizationUsers(orgId);
+  const inspectors = members.map((m) => {
+    const name = `${m.firstName || ""} ${m.lastName || ""}`.trim();
+    return {
+      userId: m.userId,
+      email: m.email,
+      name: name || m.email || m.userId,
+      role: m.memberRole,
+      status: m.memberStatus,
+      createdAt: m.createdAt,
+    };
+  });
+  return c.json(inspectors);
 });
 
 app.get("/api/surveys", async (c) => {

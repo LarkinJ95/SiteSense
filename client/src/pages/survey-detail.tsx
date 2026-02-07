@@ -389,11 +389,14 @@ export default function SurveyDetail() {
     },
   });
 
-  const filteredObservations = observations.filter(observation =>
-    observation.area.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    observation.materialType.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    observation.notes?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredObservations = observations.filter((observation) => {
+    const q = searchQuery.toLowerCase();
+    return (
+      observation.area.toLowerCase().includes(q) ||
+      (observation.homogeneousArea || "").toLowerCase().includes(q) ||
+      (observation.notes || "").toLowerCase().includes(q)
+    );
+  });
 
 
   const getRiskBadge = (riskLevel: string | null) => {
@@ -505,15 +508,10 @@ export default function SurveyDetail() {
     ]);
 
     addSheet("Observations", [
-      ["Area/Location", "Material Type", "Condition", "Quantity", "Risk Level", "Sample Collected", "Sample ID", "GPS Latitude", "GPS Longitude", "Notes"],
-      ...observations.map(obs => [
+      ["Area/Location", "HA", "GPS Latitude", "GPS Longitude", "Notes"],
+      ...observations.map((obs) => [
         obs.area,
-        obs.materialType,
-        obs.condition,
-        obs.quantity || "",
-        obs.riskLevel || "",
-        obs.sampleCollected ? "Yes" : "No",
-        obs.sampleId || "",
+        obs.homogeneousArea || "",
         obs.latitude || "",
         obs.longitude || "",
         obs.notes || "",
@@ -530,19 +528,14 @@ export default function SurveyDetail() {
 
   const exportToCSV = () => {
     const csvData = [
-      ['Area/Location', 'Material Type', 'Condition', 'Quantity', 'Risk Level', 'Sample Collected', 'Sample ID', 'GPS Latitude', 'GPS Longitude', 'Notes'],
-      ...observations.map(obs => [
+      ["Area/Location", "HA", "GPS Latitude", "GPS Longitude", "Notes"],
+      ...observations.map((obs) => [
         obs.area,
-        obs.materialType,
-        obs.condition,
-        obs.quantity || '',
-        obs.riskLevel || '',
-        obs.sampleCollected ? 'Yes' : 'No',
-        obs.sampleId || '',
-        obs.latitude || '',
-        obs.longitude || '',
-        obs.notes || ''
-      ])
+        obs.homogeneousArea || "",
+        obs.latitude || "",
+        obs.longitude || "",
+        obs.notes || "",
+      ]),
     ];
 
     const csvContent = csvData.map(row => 
@@ -1203,31 +1196,16 @@ export default function SurveyDetail() {
                         </h4>
                         {observation.riskLevel && getRiskBadge(observation.riskLevel)}
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-                        <div>
-                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Material:</span>
-                          <span className="text-sm text-gray-900 dark:text-gray-100 ml-1" data-testid={`text-material-${observation.id}`}>
-                            {observation.materialType}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Condition:</span>
-                          <span className="text-sm text-gray-900 dark:text-gray-100 ml-1" data-testid={`text-condition-${observation.id}`}>
-                            {observation.condition}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Quantity:</span>
-                          <span className="text-sm text-gray-900 dark:text-gray-100 ml-1" data-testid={`text-quantity-${observation.id}`}>
-                            {observation.quantity || "Not specified"}
-                          </span>
-                        </div>
-                      </div>
                       <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
                         <div className="flex items-center">
                           <Camera className="mr-1 h-4 w-4" />
                           <span data-testid={`text-photos-${observation.id}`}>0 photos</span>
                         </div>
+                        {observation.homogeneousArea && (
+                          <div className="flex items-center" data-testid={`text-ha-${observation.id}`}>
+                            <span>HA: {observation.homogeneousArea}</span>
+                          </div>
+                        )}
                         {observation.latitude && observation.longitude && (
                           <div className="flex items-center">
                             <MapPin className="mr-1 h-4 w-4" />

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import {
   Dialog,
@@ -38,6 +38,14 @@ import { TemplateSelector } from "@/components/template-selector";
 import { Badge } from "@/components/ui/badge";
 import { X, FileText, ClipboardList, Camera, Upload } from "lucide-react";
 
+type InspectorOption = {
+  userId: string;
+  name: string;
+  email?: string | null;
+  role?: string | null;
+  status?: string | null;
+};
+
 const createSurveySchema = z.object({
   siteName: z.string().min(1, "Site name is required"),
   address: z.string().optional(),
@@ -66,6 +74,11 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   const [selectedSitePhoto, setSelectedSitePhoto] = useState<File | null>(null);
 
+  const { data: inspectors = [] } = useQuery<InspectorOption[]>({
+    queryKey: ["/api/inspectors"],
+    enabled: open,
+  });
+
   const form = useForm<CreateSurveyFormData>({
     resolver: zodResolver(createSurveySchema),
     defaultValues: {
@@ -84,8 +97,11 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
 
   const createSurveyMutation = useMutation({
     mutationFn: async (data: CreateSurveyFormData) => {
+      const selected = inspectors.find((i) => i.userId === data.inspector);
+      const inspectorLabel = selected ? `${selected.name}${selected.email ? ` (${selected.email})` : ""}` : data.inspector;
       const surveyData = {
         ...data,
+        inspector: inspectorLabel,
         // Add weather data if available
         weatherConditions: weather?.conditions,
         temperature: weather?.temperature?.toString(),
@@ -303,9 +319,18 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="john">John Inspector</SelectItem>
-                          <SelectItem value="sarah">Sarah Johnson</SelectItem>
-                          <SelectItem value="mike">Mike Chen</SelectItem>
+                          {inspectors.length ? (
+                            inspectors.map((inspector) => (
+                              <SelectItem key={inspector.userId} value={inspector.userId}>
+                                {inspector.name}
+                                {inspector.email ? ` (${inspector.email})` : ""}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="" disabled>
+                              No active users in org
+                            </SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                       <FormMessage />

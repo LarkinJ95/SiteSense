@@ -1,13 +1,13 @@
-import { AccountView } from "@neondatabase/neon-js/auth/react/ui";
-import { useLocation } from "wouter";
+import { useEffect } from "react";
+import { accessLoginUrl } from "@/lib/auth";
 
-type AccountProps = {
-  pathname?: string;
-};
+type AccountProps = { pathname?: string };
 
-export function Account({ pathname }: AccountProps) {
-  const [location] = useLocation();
-  const resolvedPathname =
-    pathname ?? (location.startsWith("/account/") ? location.slice("/account/".length) : undefined);
-  return <AccountView pathname={resolvedPathname} />;
+export function Account(_: AccountProps) {
+  useEffect(() => {
+    if (import.meta.env.PROD) {
+      window.location.href = accessLoginUrl(window.location.origin + "/");
+    }
+  }, []);
+  return null;
 }

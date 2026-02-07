@@ -51,6 +51,11 @@ export const authClient = {
   },
 };
 
+export const accessLoginUrl = (redirectUrl?: string) => {
+  const redirect = encodeURIComponent(redirectUrl || window.location.href);
+  return `/cdn-cgi/access/login?redirect_url=${redirect}`;
+};
+
 // Kept for backward compatibility with apiRequest/queryClient, but Access does not require app-issued JWTs.
 export const authApi = {
   getJWTToken: async () => null as string | null,
@@ -75,4 +80,3 @@ if (typeof window !== "undefined") {
     globalAny.__abateiqFetchPatched = true;
   }
 }
-

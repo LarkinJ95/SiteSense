@@ -181,6 +181,18 @@ export interface IStorage {
   updateOrganizationMember(id: string, member: Partial<InsertOrganizationMember>): Promise<OrganizationMember | undefined>;
   removeOrganizationMember(id: string): Promise<boolean>;
   getOrganizationIdsForUser(userId: string): Promise<string[]>;
+  getActiveOrganizationUsers(organizationId: string): Promise<
+    Array<{
+      userId: string;
+      email: string | null;
+      firstName: string | null;
+      lastName: string | null;
+      memberRole: string | null;
+      memberStatus: string | null;
+      profileStatus: string | null;
+      createdAt: number | null;
+    }>
+  >;
 
   // Air monitoring documents
   getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]>;
@@ -748,6 +760,44 @@ export class DatabaseStorage implements IStorage {
       .from(organizationMembers)
       .where(eq(organizationMembers.userId, userId));
     return memberships.map((member) => member.organizationId);
+  }
+
+  async getActiveOrganizationUsers(organizationId: string) {
+    const rows = await db()
+      .select({
+        userId: organizationMembers.userId,
+        memberRole: organizationMembers.role,
+        memberStatus: organizationMembers.status,
+        createdAt: organizationMembers.createdAt,
+        email: userProfiles.email,
+        firstName: userProfiles.firstName,
+        lastName: userProfiles.lastName,
+        profileStatus: userProfiles.status,
+      })
+      .from(organizationMembers)
+      .leftJoin(userProfiles, eq(organizationMembers.userId, userProfiles.userId))
+      .where(
+        and(
+          eq(organizationMembers.organizationId, organizationId),
+          sql`lower(coalesce(${organizationMembers.status}, '')) = 'active'`,
+          or(
+            sql`${userProfiles.userId} is null`,
+            sql`lower(coalesce(${userProfiles.status}, '')) = 'active'`
+          )
+        )
+      )
+      .orderBy(desc(organizationMembers.createdAt));
+
+    return rows.map((row) => ({
+      userId: row.userId,
+      email: row.email ?? null,
+      firstName: row.firstName ?? null,
+      lastName: row.lastName ?? null,
+      memberRole: row.memberRole ?? null,
+      memberStatus: row.memberStatus ?? null,
+      profileStatus: row.profileStatus ?? null,
+      createdAt: typeof row.createdAt === "number" ? row.createdAt : null,
+    }));
   }
 
   async getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]> {
