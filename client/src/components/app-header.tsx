@@ -25,6 +25,10 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
   const { data: session, isPending } = authClient.useSession();
   const { weather, getCurrentWeather } = useWeather();
   const [now, setNow] = useState(() => new Date());
+  const { data: me } = useQuery({
+    queryKey: ["/api/me"],
+    enabled: !!session,
+  });
   const { data: profile } = useQuery({
     queryKey: ["/api/user/profile"],
     enabled: !!session,
@@ -69,9 +73,7 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
     setLocation("/admin");
   };
 
-  // Check if user is admin (in real app, get from auth context)
-  const userRole = localStorage.getItem("userRole");
-  const isAdmin = userRole === "admin";
+  const isAdmin = Boolean(me && typeof me === "object" && (me as any).isAdmin);
 
   const navItems = [
     { key: "dashboard", label: "Dashboard", href: "/" },

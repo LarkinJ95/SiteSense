@@ -1,14 +1,59 @@
-import { createInternalNeonAuth } from "@neondatabase/neon-js/auth";
-import { BetterAuthReactAdapter } from "@neondatabase/neon-js/auth/react/adapters";
+import { useQuery } from "@tanstack/react-query";
 
-const getAuthBaseUrl = () => {
-  if (import.meta.env.VITE_NEON_AUTH_URL) {
-    return import.meta.env.VITE_NEON_AUTH_URL;
-  }
-  if (typeof window !== "undefined") {
-    return `${window.location.origin}/api/auth`;
-  }
-  return "/api/auth";
+type MeResponse = {
+  id: string;
+  email?: string;
+  name?: string;
+  isAdmin?: boolean;
+  user?: Record<string, unknown>;
+};
+
+type Session = {
+  user: {
+    id: string;
+    email?: string;
+    name?: string;
+  };
+  isAdmin?: boolean;
+};
+
+const toSession = (me: MeResponse | null | undefined): Session | null => {
+  if (!me || typeof me !== "object") return null;
+  if (!me.id) return null;
+  return {
+    user: { id: me.id, email: me.email, name: me.name },
+    isAdmin: Boolean(me.isAdmin),
+  };
+};
+
+export const authClient = {
+  useSession: () => {
+    const query = useQuery({
+      queryKey: ["/api/me"],
+      queryFn: async () => {
+        const res = await fetch("/api/me", { credentials: "include" });
+        if (res.status === 401) return null;
+        if (!res.ok) throw new Error(await res.text());
+        return (await res.json()) as MeResponse;
+      },
+      retry: false,
+      refetchOnWindowFocus: false,
+    });
+    return {
+      data: toSession(query.data as any),
+      isPending: query.isLoading,
+    };
+  },
+
+  signOut: async () => {
+    // Cloudflare Access logout endpoint (works when Access is configured on the domain)
+    window.location.href = "/cdn-cgi/access/logout";
+  },
+};
+
+// Kept for backward compatibility with apiRequest/queryClient, but Access does not require app-issued JWTs.
+export const authApi = {
+  getJWTToken: async () => null as string | null,
 };
 
 if (typeof window !== "undefined") {
@@ -16,9 +61,11 @@ if (typeof window !== "undefined") {
   if (!globalAny.__abateiqFetchPatched) {
     const nativeFetch = globalAny.fetch.bind(globalThis);
     globalAny.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       const isRelative = url.startsWith("/");
-      const isSameOrigin = !isRelative && typeof window !== "undefined" && url.startsWith(window.location.origin);
+      const isSameOrigin =
+        !isRelative && typeof window !== "undefined" && url.startsWith(window.location.origin);
       const shouldInclude = isRelative || isSameOrigin;
       if (shouldInclude) {
         return nativeFetch(input, { credentials: "include", ...(init || {}) });
@@ -29,10 +76,3 @@ if (typeof window !== "undefined") {
   }
 }
 
-const authBaseUrl = getAuthBaseUrl();
-const neonAuth = createInternalNeonAuth(authBaseUrl, {
-  adapter: BetterAuthReactAdapter(),
-});
-
-export const authClient = neonAuth.adapter;
-export const authApi = neonAuth;

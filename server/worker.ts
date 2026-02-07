@@ -37,6 +37,11 @@ type D1Database = any;
 
 type Env = {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
+  // Cloudflare Access (internal-only auth)
+  CF_ACCESS_TEAM_DOMAIN?: string;
+  CF_ACCESS_AUD?: string;
+  // Local dev bypass: if set, all /api/* requests are treated as authenticated as this email.
+  DEV_AUTH_EMAIL?: string;
   NEON_AUTH_URL?: string;
   NEON_JWKS_URL?: string;
   NEON_JWT_ISSUER?: string;
@@ -122,6 +127,33 @@ const getSessionJwtFromNeon = async (c: { env: Env; req: { header: (key: string)
   } catch {
     return null;
   }
+};
+
+let cachedAccessJwksUrl = "";
+let cachedAccessJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+
+const getAccessJwks = (teamDomain: string) => {
+  const clean = teamDomain.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const url = `https://${clean}/cdn-cgi/access/certs`;
+  if (!cachedAccessJwks || cachedAccessJwksUrl !== url) {
+    cachedAccessJwksUrl = url;
+    cachedAccessJwks = createRemoteJWKSet(new URL(url));
+  }
+  return cachedAccessJwks;
+};
+
+const verifyCloudflareAccessJwt = async (env: Env, token: string) => {
+  const teamDomain = (env.CF_ACCESS_TEAM_DOMAIN || "").trim();
+  const audience = (env.CF_ACCESS_AUD || "").trim();
+  if (!teamDomain || !audience) {
+    throw new Error("Cloudflare Access is not configured");
+  }
+  const jwks = getAccessJwks(teamDomain);
+  const { payload } = await jwtVerify(token, jwks, {
+    issuer: `https://${teamDomain.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`,
+    audience,
+  });
+  return payload as AuthUser;
 };
 
 const getUserOrgIds = async (userId: string) => {
@@ -613,7 +645,41 @@ app.use("/api/*", async (c, next) => {
   if (c.req.path === "/api/health/db") return next();
   if (c.req.path.startsWith("/api/weather")) return next();
 
-  const jwksUrl = c.env.NEON_JWKS_URL;
+  // Local dev bypass (no Access headers locally)
+  const devEmail = (c.env.DEV_AUTH_EMAIL || "").trim();
+  if (devEmail) {
+    c.set("user", {
+      sub: `dev:${devEmail.toLowerCase()}`,
+      email: devEmail.toLowerCase(),
+      name: devEmail,
+      role: "admin",
+      roles: ["admin"],
+    });
+    return next();
+  }
+
+  // Cloudflare Access (preferred for AbateIQ internal-only)
+  const accessAssertion =
+    c.req.header("CF-Access-Jwt-Assertion") ||
+    c.req.header("Cf-Access-Jwt-Assertion") ||
+    c.req.header("cf-access-jwt-assertion") ||
+    "";
+  const accessConfigured = Boolean((c.env.CF_ACCESS_TEAM_DOMAIN || "").trim() && (c.env.CF_ACCESS_AUD || "").trim());
+  if (accessConfigured) {
+    if (!accessAssertion) {
+      return c.json({ message: "Not authenticated" }, 401);
+    }
+    try {
+      const user = await verifyCloudflareAccessJwt(c.env, accessAssertion);
+      c.set("user", user);
+      return next();
+    } catch {
+      return c.json({ message: "Not authenticated" }, 401);
+    }
+  }
+
+  // Legacy fallback: Neon Auth (kept for local testing / transition)
+  const jwksUrl = (c.env.NEON_JWKS_URL || "").trim();
   if (!jwksUrl) {
     return c.json({ message: "Auth is not configured" }, 500);
   }
@@ -624,13 +690,9 @@ app.use("/api/*", async (c, next) => {
   }
   if (!token) {
     const sessionJwt = await getSessionJwtFromNeon(c);
-    if (sessionJwt) {
-      token = sessionJwt;
-    }
+    if (sessionJwt) token = sessionJwt;
   }
-  if (!token) {
-    return c.json({ message: "Not authenticated" }, 401);
-  }
+  if (!token) return c.json({ message: "Not authenticated" }, 401);
   try {
     const jwks = createRemoteJWKSet(new URL(jwksUrl));
     const { payload } = await jwtVerify(token, jwks, {
@@ -784,10 +846,15 @@ app.all("/api/auth/*", async (c) => {
 app.get("/api/me", (c) => {
   const user = c.get("user");
   if (!user) return c.json({ message: "Not authenticated" }, 401);
+  const adminEmails = (c.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
   return c.json({
     id: user.sub,
     email: user.email,
     name: getDisplayName(user),
+    isAdmin: isAdminUser(user, adminEmails),
     user,
   });
 });

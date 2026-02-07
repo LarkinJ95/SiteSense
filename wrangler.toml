@@ -10,6 +10,15 @@ routes = [
 directory = "./dist/public"
 
 [vars]
+# Cloudflare Access (internal-only auth)
+# Set these in the Cloudflare Dashboard or via `wrangler secret put` / `wrangler deploy --var ...`
+# CF_ACCESS_TEAM_DOMAIN example: "your-team.cloudflareaccess.com"
+# CF_ACCESS_AUD example: (the AUD shown on your Access Application)
+CF_ACCESS_TEAM_DOMAIN = ""
+CF_ACCESS_AUD = ""
+# Local dev bypass: set to an email to skip Access locally (do not set in production)
+DEV_AUTH_EMAIL = ""
+
 NEON_AUTH_URL = "https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech/neondb/auth"
 NEON_JWKS_URL = "https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech/neondb/auth/.well-known/jwks.json"
 NEON_JWT_ISSUER = "https://ep-square-shape-ain65e34.neonauth.c-4.us-east-1.aws.neon.tech"
