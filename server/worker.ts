@@ -75,6 +75,20 @@ type AuthUser = {
 
 const app = new Hono<{ Bindings: Env; Variables: { user?: AuthUser } }>();
 
+app.onError((err, c) => {
+  // Make failures debuggable in production without dumping stack traces to the browser.
+  try {
+    console.error("Unhandled error:", err);
+  } catch {
+    // ignore
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  if (c.req.path.startsWith("/api")) {
+    return c.json({ message: "Internal Server Error", error: message }, 500);
+  }
+  return c.text("Internal Server Error", 500);
+});
+
 const extractRoles = (user?: AuthUser) => {
   if (!user) return [];
   const roles: string[] = [];
@@ -3288,14 +3302,25 @@ app.get("*", async (c) => {
     return c.notFound();
   }
 
-  const assetResponse = await c.env.ASSETS.fetch(c.req.raw);
-  if (assetResponse.status !== 404) {
-    return assetResponse;
+  let assetResponse: Response;
+  try {
+    assetResponse = await c.env.ASSETS.fetch(c.req.raw);
+    if (assetResponse.status !== 404) {
+      return assetResponse;
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.text(`Internal Server Error (assets): ${message}`, 500);
   }
 
   const url = new URL(c.req.url);
   const indexRequest = new Request(new URL("/", url), c.req.raw);
-  return c.env.ASSETS.fetch(indexRequest);
+  try {
+    return await c.env.ASSETS.fetch(indexRequest);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.text(`Internal Server Error (index): ${message}`, 500);
+  }
 });
 
 export default { fetch: app.fetch };
