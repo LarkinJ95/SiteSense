@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -40,6 +40,24 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
     queryKey: ["/api/surveys"],
     enabled: open,
   });
+
+  const { data: personnel = [] } = useQuery<any[]>({
+    queryKey: ["/api/personnel"],
+    enabled: open,
+  });
+
+  const personnelNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of personnel) {
+      const id = (p?.personId || p?.id || "").toString();
+      if (!id) continue;
+      const first = (p?.firstName || "").toString();
+      const last = (p?.lastName || "").toString();
+      const name = `${first} ${last}`.trim();
+      map.set(id, name || (p?.email || "").toString() || id);
+    }
+    return map;
+  }, [personnel]);
 
   const form = useForm<CreateAirJobFormData>({
     resolver: zodResolver(formSchema),
@@ -375,9 +393,32 @@ export function CreateAirJobModal({ open, onOpenChange }: CreateAirJobModalProps
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Project Manager</FormLabel>
-                        <FormControl>
-                          <Input placeholder="John Smith" {...field} data-testid="input-project-manager" />
-                        </FormControl>
+                        <Select
+                          onValueChange={(value) => field.onChange(value === "__none__" ? "" : value)}
+                          value={field.value || ""}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="input-project-manager">
+                              <SelectValue placeholder="Select from personnel" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">Unassigned</SelectItem>
+                            {personnel.map((p: any) => {
+                              const id = (p?.personId || p?.id || "").toString();
+                              if (!id) return null;
+                              const name = `${(p?.firstName || "").toString()} ${(p?.lastName || "").toString()}`.trim();
+                              return (
+                                <SelectItem key={id} value={id}>
+                                  {name || p?.email || id}
+                                </SelectItem>
+                              );
+                            })}
+                            {field.value && !personnelNameById.has(field.value) ? (
+                              <SelectItem value={field.value}>Custom: {field.value}</SelectItem>
+                            ) : null}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}

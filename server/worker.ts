@@ -4,6 +4,7 @@ import {
   insertAsbestosSampleLayerSchema,
   insertAsbestosSampleSchema,
   insertAirMonitoringJobSchema,
+  insertAirMonitoringDocumentSchema,
   insertAirSampleSchema,
   insertDailyWeatherLogSchema,
   insertFieldToolsEquipmentSchema,
@@ -236,6 +237,13 @@ const normalizeAirSampleBody = (body: any) => {
   if ("startTime" in normalized) normalized.startTime = coerceDate(normalized.startTime) ?? normalized.startTime;
   if ("endTime" in normalized) normalized.endTime = coerceDate(normalized.endTime) ?? normalized.endTime;
   if ("labReportDate" in normalized) normalized.labReportDate = coerceDate(normalized.labReportDate) ?? normalized.labReportDate;
+  return normalized;
+};
+
+const normalizeWeatherLogBody = (body: any) => {
+  if (!body || typeof body !== "object") return body;
+  const normalized: any = { ...body };
+  if ("logTime" in normalized) normalized.logTime = coerceDate(normalized.logTime) ?? normalized.logTime;
   return normalized;
 };
 
@@ -3193,7 +3201,7 @@ app.get("/api/air-monitoring-jobs/:jobId/documents", async (c) => {
   const access = await assertAirJobOrgAccess(userId, c.req.param("jobId"));
   if (!access.allowed) return c.json({ message: access.notFound ? "Job not found" : "No access" }, access.notFound ? 404 : 403);
   const docs = await storage.getAirMonitoringDocuments(c.req.param("jobId"));
-  return c.json(docs.map((doc) => ({ ...doc, url: doc.url || (doc.filename ? `/uploads/${doc.filename}` : null) })));
+  return c.json(docs.map((doc) => ({ ...doc, url: doc.filename ? `/uploads/${doc.filename}` : null })));
 });
 
 app.post("/api/air-monitoring-jobs/:jobId/documents", async (c) => {
@@ -3204,15 +3212,37 @@ app.post("/api/air-monitoring-jobs/:jobId/documents", async (c) => {
   const form = await c.req.formData();
   const file = form.get("document");
   if (!(file instanceof File)) return c.json({ message: "No file uploaded" }, 400);
+  const documentTypeRaw = form.get("documentType");
+  const documentType =
+    typeof documentTypeRaw === "string"
+      ? documentTypeRaw.trim()
+      : documentTypeRaw instanceof File
+        ? ""
+        : (documentTypeRaw as any)?.toString?.()?.trim?.() || "";
   const stored = await storeUpload(c.env.ABATEIQ_UPLOADS, file);
-  const created = await storage.createAirMonitoringDocument({
-    jobId: c.req.param("jobId"),
-    filename: stored.key,
-    url: stored.url,
-    title: file.name || "Document",
-    documentType: file.type || "application/octet-stream",
-  });
-  return c.json(created, 201);
+  try {
+    const payload = insertAirMonitoringDocumentSchema.parse({
+      jobId: c.req.param("jobId"),
+      documentType: documentType || null,
+      filename: stored.key,
+      originalName: file.name || stored.key,
+      mimeType: file.type || "application/octet-stream",
+      size: typeof file.size === "number" ? file.size : 0,
+      uploadedBy: userId,
+    });
+    const created = await storage.createAirMonitoringDocument(payload);
+    return c.json({ ...created, url: created.filename ? `/uploads/${created.filename}` : null }, 201);
+  } catch (error) {
+    // Clean up the stored blob if validation fails.
+    try {
+      await c.env.ABATEIQ_UPLOADS.delete(stored.key);
+    } catch {
+      // ignore
+    }
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
 });
 
 app.delete("/api/air-monitoring-documents/:id", async (c) => {
@@ -3241,11 +3271,18 @@ app.post("/api/air-monitoring/jobs/:jobId/weather-logs", async (c) => {
   if (!userId) return c.json({ message: "Not authenticated" }, 401);
   const access = await assertAirJobOrgAccess(userId, c.req.param("jobId"));
   if (!access.allowed) return c.json({ message: access.notFound ? "Job not found" : "No access" }, access.notFound ? 404 : 403);
-  const body = await parseJsonBody(c);
-  if (!body) return c.json({ message: "Invalid JSON" }, 400);
-  const payload = insertDailyWeatherLogSchema.parse({ ...body, jobId: c.req.param("jobId") });
-  const created = await storage.createDailyWeatherLog(payload);
-  return c.json(created, 201);
+  const bodyRaw = await parseJsonBody(c);
+  if (!bodyRaw) return c.json({ message: "Invalid JSON" }, 400);
+  const body = normalizeWeatherLogBody(bodyRaw);
+  try {
+    const payload = insertDailyWeatherLogSchema.parse({ ...body, jobId: c.req.param("jobId") });
+    const created = await storage.createDailyWeatherLog(payload);
+    return c.json(created, 201);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
 });
 
 app.put("/api/air-monitoring/weather-logs/:id", async (c) => {
@@ -3255,10 +3292,167 @@ app.put("/api/air-monitoring/weather-logs/:id", async (c) => {
   if (!log) return c.json({ message: "Weather log not found" }, 404);
   const access = await assertAirJobOrgAccess(userId, log.jobId);
   if (!access.allowed) return c.json({ message: "No access" }, 403);
-  const body = await parseJsonBody(c);
-  if (!body) return c.json({ message: "Invalid JSON" }, 400);
-  const updated = await storage.updateDailyWeatherLog(c.req.param("id"), body);
-  return c.json(updated);
+  const bodyRaw = await parseJsonBody(c);
+  if (!bodyRaw) return c.json({ message: "Invalid JSON" }, 400);
+  const body = normalizeWeatherLogBody(bodyRaw);
+  try {
+    const patch = insertDailyWeatherLogSchema.partial().parse(body);
+    const updated = await storage.updateDailyWeatherLog(c.req.param("id"), patch as any);
+    return c.json(updated);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
+});
+
+app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const access = await assertAirJobOrgAccess(userId, c.req.param("jobId"));
+  if (!access.allowed) return c.json({ message: access.notFound ? "Job not found" : "No access" }, access.notFound ? 404 : 403);
+  const job = access.job!;
+  const samples = await storage.getAirMonitoringJobSamples(job.id);
+  const weatherLogs = await storage.getDailyWeatherLogs(job.id);
+  const documents = await storage.getAirMonitoringDocuments(job.id);
+
+  const esc = (s: any) =>
+    String(s ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+
+  const sampleRows = samples
+    .map((s: any) => {
+      const start = s.startTime ? new Date(s.startTime).toLocaleString() : "";
+      const end = s.endTime ? new Date(s.endTime).toLocaleString() : "";
+      return `<tr>
+        <td>${esc(s.sampleNumber)}</td>
+        <td>${esc(s.sampleType)}</td>
+        <td>${esc(s.analyte)}</td>
+        <td>${esc(s.location)}</td>
+        <td>${esc(s.pumpId)}</td>
+        <td>${esc(s.flowRate)}</td>
+        <td>${esc(s.samplingDuration)}</td>
+        <td>${esc(start)}${end ? ` - ${esc(end)}` : ""}</td>
+        <td>${esc(s.status)}</td>
+        <td>${esc(s.result)} ${esc(s.resultUnit)}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const weatherRows = weatherLogs
+    .map((w: any) => {
+      const when = w.logTime ? new Date(w.logTime).toLocaleString() : w.logDate || "";
+      return `<tr>
+        <td>${esc(when)}</td>
+        <td>${esc(w.weatherConditions)}</td>
+        <td>${esc(w.temperature)}</td>
+        <td>${esc(w.humidity)}</td>
+        <td>${esc(w.windSpeed)}</td>
+        <td>${esc(w.windDirection)}</td>
+        <td>${esc(w.barometricPressure)}</td>
+        <td>${esc(w.notes)}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const docRows = documents
+    .map((d: any) => {
+      const url = d.filename ? `/uploads/${d.filename}` : "";
+      const when = d.uploadedAt ? new Date(d.uploadedAt).toLocaleString() : "";
+      return `<tr>
+        <td>${esc(d.documentType)}</td>
+        <td>${esc(d.originalName)}</td>
+        <td>${esc(d.mimeType)}</td>
+        <td>${esc(d.size)}</td>
+        <td>${esc(when)}</td>
+        <td>${url ? `<a href="${esc(url)}">${esc(url)}</a>` : "—"}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const title = `${job.jobNumber || job.id} Air Monitoring Report`;
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>${esc(title)}</title>
+      <style>
+        body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827;margin:24px;}
+        h1{font-size:20px;margin:0 0 8px 0;}
+        .muted{color:#6b7280;font-size:12px;}
+        .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin:12px 0 18px 0;}
+        .kv{border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;}
+        .k{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;}
+        .v{font-size:13px;margin-top:4px;word-break:break-word;}
+        table{width:100%;border-collapse:collapse;font-size:12px;}
+        th,td{border:1px solid #e5e7eb;padding:8px;vertical-align:top;}
+        th{background:#f9fafb;text-align:left;font-weight:700;}
+        .section{margin-top:18px;}
+      </style>
+    </head>
+    <body>
+      <h1>${esc(title)}</h1>
+      <div class="muted">Generated: ${esc(new Date().toLocaleString())}</div>
+
+      <div class="section">
+        <div class="grid">
+          <div class="kv"><div class="k">Job Name</div><div class="v">${esc(job.jobName)}</div></div>
+          <div class="kv"><div class="k">Site</div><div class="v">${esc(job.siteName)}</div></div>
+          <div class="kv"><div class="k">Client</div><div class="v">${esc(job.clientName)}</div></div>
+          <div class="kv"><div class="k">Project Manager</div><div class="v">${esc(job.projectManager)}</div></div>
+          <div class="kv"><div class="k">Status</div><div class="v">${esc(job.status)}</div></div>
+          <div class="kv"><div class="k">Work Description</div><div class="v">${esc(job.workDescription)}</div></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Air Samples</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Sample #</th><th>Type</th><th>Analyte</th><th>Location</th><th>Pump</th><th>Flow</th><th>Minutes</th><th>Time</th><th>Status</th><th>Result</th>
+            </tr>
+          </thead>
+          <tbody>${sampleRows || `<tr><td colspan="10">No samples.</td></tr>`}</tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h2>Daily Weather Logs</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>When</th><th>Conditions</th><th>Temp</th><th>Humidity</th><th>Wind</th><th>Direction</th><th>Pressure</th><th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>${weatherRows || `<tr><td colspan="8">No weather logs.</td></tr>`}</tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h2>Documents</h2>
+        <table>
+          <thead>
+            <tr><th>Type</th><th>Name</th><th>MIME</th><th>Size</th><th>Uploaded</th><th>Link</th></tr>
+          </thead>
+          <tbody>${docRows || `<tr><td colspan="6">No documents.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </body>
+  </html>`;
+
+  const filename = sanitizeFilename(`${job.jobNumber || job.id}_Air_Monitoring_Report.html`);
+  return new Response(html, {
+    headers: {
+      "Content-Type": "text/html",
+      "Content-Disposition": `attachment; filename=\"${filename}\"`,
+    },
+  });
 });
 
 app.delete("/api/air-monitoring/weather-logs/:id", async (c) => {

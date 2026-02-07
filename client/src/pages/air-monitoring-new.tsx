@@ -16,7 +16,7 @@ import { CreateAirJobModal } from "@/components/create-air-job-modal";
 import { CreatePersonnelModal } from "@/components/create-personnel-modal";
 import { DailyWeatherLog } from "@/components/daily-weather-log";
 import { apiRequest } from "@/lib/queryClient";
-import { AirSample, PersonnelProfile, AirMonitoringJob, AirMonitoringDocument, insertAirSampleSchema, type InsertAirSample } from "@shared/schema";
+import { AirSample, AirMonitoringJob, AirMonitoringDocument, insertAirSampleSchema, type InsertAirSample } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -93,9 +93,28 @@ export default function AirMonitoringPage() {
   });
 
   // Fetch personnel for reference
-  const { data: personnel = [] } = useQuery<PersonnelProfile[]>({
+  const { data: personnel = [] } = useQuery<any[]>({
     queryKey: ["/api/personnel"],
   });
+
+  const personnelNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of personnel) {
+      const id = (p?.personId || p?.id || "").toString();
+      if (!id) continue;
+      const first = (p?.firstName || "").toString();
+      const last = (p?.lastName || "").toString();
+      const name = `${first} ${last}`.trim();
+      map.set(id, name || (p?.email || "").toString() || id);
+    }
+    return map;
+  }, [personnel]);
+
+  const formatProjectManager = (value?: string | null) => {
+    const raw = (value || "").trim();
+    if (!raw) return "";
+    return personnelNameById.get(raw) || raw;
+  };
 
   const { data: equipmentList = [] } = useQuery<
     {
@@ -606,7 +625,7 @@ export default function AirMonitoringPage() {
                       )}
                       {job.projectManager && (
                         <div className="text-sm text-gray-600 dark:text-gray-400">
-                          PM: {job.projectManager}
+                          PM: {formatProjectManager(job.projectManager)}
                         </div>
                       )}
                     </div>
@@ -717,7 +736,7 @@ export default function AirMonitoringPage() {
                     <div>
                       <h4 className="font-semibold">Job Details</h4>
                       {selectedJob.clientName && <p>Client: {selectedJob.clientName}</p>}
-                      {selectedJob.projectManager && <p>PM: {selectedJob.projectManager}</p>}
+                      {selectedJob.projectManager && <p>PM: {formatProjectManager(selectedJob.projectManager)}</p>}
                       <p>Status: <Badge className={getStatusColor(selectedJob.status)}>{selectedJob.status}</Badge></p>
                     </div>
                   </div>
@@ -1048,9 +1067,32 @@ export default function AirMonitoringPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Project Manager</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} />
-                        </FormControl>
+                        <Select
+                          onValueChange={(value) => field.onChange(value === "__none__" ? "" : value)}
+                          value={field.value || ""}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select from personnel" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">Unassigned</SelectItem>
+                            {personnel.map((p: any) => {
+                              const id = (p?.personId || p?.id || "").toString();
+                              if (!id) return null;
+                              const name = `${(p?.firstName || "").toString()} ${(p?.lastName || "").toString()}`.trim();
+                              return (
+                                <SelectItem key={id} value={id}>
+                                  {name || p?.email || id}
+                                </SelectItem>
+                              );
+                            })}
+                            {field.value && !personnelNameById.has(field.value) ? (
+                              <SelectItem value={field.value}>Custom: {field.value}</SelectItem>
+                            ) : null}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}

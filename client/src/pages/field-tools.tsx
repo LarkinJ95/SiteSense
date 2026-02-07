@@ -1,43 +1,19 @@
-import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WeatherWidget } from "@/components/weather-widget";
-import { EquipmentTracker, type Equipment } from "@/components/equipment-tracker";
 import { OfflineIndicator } from "@/components/offline-indicator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useOffline } from "@/hooks/use-offline";
-import { apiRequest } from "@/lib/queryClient";
 import { Smartphone, Wifi, WifiOff, MapPin, Compass, Clock, Battery } from "lucide-react";
 
 export default function FieldTools() {
-  const [equipment, setEquipment] = useState<Equipment[]>(() => {
-    const stored = localStorage.getItem("field-tools-equipment");
-    return stored ? JSON.parse(stored) : [];
-  });
-  const [weather, setWeather] = useState<any>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [manualLat, setManualLat] = useState("");
   const [manualLng, setManualLng] = useState("");
   const [battery, setBattery] = useState<{ level: number; charging: boolean } | null>(null);
   const { isOnline, syncOfflineData, pendingCount } = useOffline();
-  const saveTimeoutRef = useRef<number | null>(null);
-
-  const { data: equipmentData } = useQuery<Equipment[]>({
-    queryKey: ["/api/field-tools/equipment"],
-  });
-
-  const saveEquipmentMutation = useMutation({
-    mutationFn: (items: Equipment[]) => apiRequest("PUT", "/api/field-tools/equipment", items),
-  });
-
-  useEffect(() => {
-    if (equipmentData) {
-      setEquipment(equipmentData);
-      localStorage.setItem("field-tools-equipment", JSON.stringify(equipmentData));
-    }
-  }, [equipmentData]);
 
   useEffect(() => {
     const stored = localStorage.getItem("last-field-location");
@@ -54,18 +30,6 @@ export default function FieldTools() {
       }
     }
   }, []);
-
-  const handleEquipmentChange = (items: Equipment[]) => {
-    setEquipment(items);
-    localStorage.setItem("field-tools-equipment", JSON.stringify(items));
-    if (!navigator.onLine) return;
-    if (saveTimeoutRef.current) {
-      window.clearTimeout(saveTimeoutRef.current);
-    }
-    saveTimeoutRef.current = window.setTimeout(() => {
-      saveEquipmentMutation.mutate(items);
-    }, 300);
-  };
 
   useEffect(() => {
     let batteryRef: any;
@@ -315,16 +279,9 @@ export default function FieldTools() {
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Weather Conditions</h2>
         <WeatherWidget 
-          onWeatherUpdate={setWeather}
           latitude={location?.lat}
           longitude={location?.lng}
         />
-      </div>
-
-      {/* Equipment Management */}
-      <div className="space-y-4">
-        <h2 className="text-xl font-semibold">Equipment Management</h2>
-        <EquipmentTracker equipment={equipment} onEquipmentChange={handleEquipmentChange} />
       </div>
 
       {/* Offline Data Management */}

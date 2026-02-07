@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,6 +72,14 @@ export default function Personnel() {
   const [search, setSearch] = useState("");
   const [includeInactive, setIncludeInactive] = useState(false);
 
+  const { data: profile } = useQuery({
+    queryKey: ["/api/user/profile"],
+  });
+  const defaultCompany =
+    profile && typeof profile === "object" && typeof (profile as any).organization === "string"
+      ? String((profile as any).organization || "")
+      : "";
+
   const { data: rows = [], isLoading } = useQuery<PersonnelRow[]>({
     queryKey: ["/api/personnel", includeInactive ? "includeInactive=1" : "", search ? `search=${encodeURIComponent(search)}` : ""]
       .filter(Boolean)
@@ -102,6 +110,16 @@ export default function Personnel() {
     active: true,
     notes: "",
   });
+
+  // If company is blank, default to the signed-in user's org label (still editable).
+  // Only applies when opening the dialog so we don't override user input.
+  useEffect(() => {
+    if (!createOpen) return;
+    if (form.company.trim()) return;
+    if (!defaultCompany.trim()) return;
+    setForm((prev) => ({ ...prev, company: defaultCompany }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createOpen, defaultCompany]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -305,4 +323,3 @@ export default function Personnel() {
     </div>
   );
 }
-

@@ -1153,6 +1153,14 @@ export const insertDailyWeatherLogSchema = createInsertSchema(dailyWeatherLogs).
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  logTime: z.preprocess((value) => {
+    if (value === null || value === undefined || value === "") return value;
+    if (value instanceof Date) return value;
+    if (typeof value === "number" && Number.isFinite(value)) return new Date(value);
+    if (typeof value === "string" && value.trim()) return new Date(value);
+    return value;
+  }, z.date()),
 });
 
 export type InsertSurvey = z.infer<typeof insertSurveySchema>;

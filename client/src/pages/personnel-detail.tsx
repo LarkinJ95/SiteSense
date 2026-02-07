@@ -60,6 +60,14 @@ export default function PersonnelDetail() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const { data: profile } = useQuery({
+    queryKey: ["/api/user/profile"],
+  });
+  const defaultCompany =
+    profile && typeof profile === "object" && typeof (profile as any).organization === "string"
+      ? String((profile as any).organization || "")
+      : "";
+
   const { data: person, isLoading } = useQuery<Person>({
     queryKey: [`/api/personnel/${id}`],
   });
@@ -98,7 +106,7 @@ export default function PersonnelDetail() {
     setEdit({
       firstName: person.firstName || "",
       lastName: person.lastName || "",
-      company: person.company || "",
+      company: person.company || defaultCompany || "",
       tradeRole: person.tradeRole || "",
       employeeId: person.employeeId || "",
       email: person.email || "",
@@ -108,7 +116,7 @@ export default function PersonnelDetail() {
       medicalSurveillanceDate: person.medicalSurveillanceDate || "",
       active: Boolean(person.active),
     });
-  }, [person]);
+  }, [person, defaultCompany]);
 
   const updateMutation = useMutation({
     mutationFn: async () => {
@@ -482,4 +490,3 @@ export default function PersonnelDetail() {
     </div>
   );
 }
-
