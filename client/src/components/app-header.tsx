@@ -151,34 +151,55 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
   return (
     <header className="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <BrandMark className="h-7 w-auto" title="AbateIQ" />
-            </div>
-            <div className="hidden md:flex items-center space-x-6 text-xs text-gray-600 dark:text-gray-300">
-              <div className="flex flex-col items-start gap-1">
+        <div className="grid grid-cols-[auto,1fr,auto] items-center h-16 gap-4">
+          <div className="flex items-center gap-2">
+            <BrandMark className="h-7 w-auto" title="AbateIQ" />
+          </div>
+
+          <nav className="hidden md:flex items-center justify-evenly gap-2 min-w-0">
+            {navItems.map((item) => {
+              const active = location === item.href || (item.href === "/" && location === "/");
+              return (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  className={`flex-1 h-16 px-3 flex items-center justify-center text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
+                    active
+                      ? "text-primary border-primary"
+                      : "text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300"
+                  }`}
+                  data-testid={`nav-${item.key}`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="flex items-center gap-4 justify-self-end">
+            <div className="hidden xl:flex items-center text-xs text-gray-600 dark:text-gray-300">
+              <div className="flex flex-col items-end gap-1 whitespace-nowrap">
                 <div className="flex items-center gap-2">
-                {weather ? (
-                  <>
-                    {getWeatherIcon(weather.conditions)}
-                    <span className="font-medium">{weather.conditions}</span>
-                    <span className="flex items-center gap-1">
-                      <Thermometer className="h-3 w-3 text-red-400" />
-                      {weather.temperature}°F
-                    </span>
-                    <span className="flex items-center gap-1 text-gray-500">
-                      <Droplets className="h-3 w-3 text-blue-400" />
-                      {weather.humidity}%
-                    </span>
-                    <span className="flex items-center gap-1 text-gray-500">
-                      <Wind className="h-3 w-3 text-gray-400" />
-                      {weather.windSpeed} mph
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-gray-400">Weather unavailable</span>
-                )}
+                  {weather ? (
+                    <>
+                      {getWeatherIcon(weather.conditions)}
+                      <span className="font-medium">{weather.conditions}</span>
+                      <span className="flex items-center gap-1">
+                        <Thermometer className="h-3 w-3 text-red-400" />
+                        {weather.temperature}°F
+                      </span>
+                      <span className="flex items-center gap-1 text-gray-500">
+                        <Droplets className="h-3 w-3 text-blue-400" />
+                        {weather.humidity}%
+                      </span>
+                      <span className="flex items-center gap-1 text-gray-500">
+                        <Wind className="h-3 w-3 text-gray-400" />
+                        {weather.windSpeed} mph
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-gray-400">Weather unavailable</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-medium">
@@ -188,24 +209,7 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
                 </div>
               </div>
             </div>
-            <nav className="hidden md:flex space-x-8">
-              {navItems.map((item) => (
-                <Link
-                  key={item.key}
-                  href={item.href}
-                  className={`pb-4 px-1 text-sm font-medium transition-colors ${
-                    location === item.href || (item.href === "/" && location === "/")
-                      ? "text-primary border-b-2 border-primary"
-                      : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
-                  }`}
-                  data-testid={`nav-${item.key}`}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          </div>
-          <div className="flex items-center space-x-4">
+
             <Button
               onClick={onCreateSurvey}
               className="bg-primary text-white hover:bg-blue-700"
