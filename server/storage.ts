@@ -299,9 +299,17 @@ export interface IStorage {
   updateEquipment(id: string, patch: Partial<EquipmentRecord>): Promise<EquipmentRecord | undefined>;
   softDeleteEquipment(id: string): Promise<boolean>;
   getEquipmentCalibrationEvents(organizationId: string, equipmentId: string): Promise<EquipmentCalibrationEvent[]>;
+  getEquipmentCalibrationEventById(id: string): Promise<EquipmentCalibrationEvent | undefined>;
   createEquipmentCalibrationEvent(event: Partial<EquipmentCalibrationEvent> & { organizationId: string; equipmentId: string }): Promise<EquipmentCalibrationEvent>;
+  updateEquipmentCalibrationEvent(id: string, patch: Partial<EquipmentCalibrationEvent>): Promise<EquipmentCalibrationEvent | undefined>;
+  deleteEquipmentCalibrationEvent(id: string): Promise<boolean>;
   getEquipmentUsage(organizationId: string, equipmentId: string): Promise<EquipmentUsageRow[]>;
+  getEquipmentUsageById(id: string): Promise<EquipmentUsageRow | undefined>;
+  getEquipmentUsageBySampleRun(organizationId: string, equipmentId: string, sampleRunId: string): Promise<EquipmentUsageRow | undefined>;
+  getEquipmentUsageBySampleRunId(organizationId: string, sampleRunId: string): Promise<EquipmentUsageRow | undefined>;
   createEquipmentUsage(row: Partial<EquipmentUsageRow> & { organizationId: string; equipmentId: string }): Promise<EquipmentUsageRow>;
+  updateEquipmentUsage(id: string, patch: Partial<EquipmentUsageRow>): Promise<EquipmentUsageRow | undefined>;
+  deleteEquipmentUsage(id: string): Promise<boolean>;
   getEquipmentNotes(organizationId: string, equipmentId: string): Promise<EquipmentNote[]>;
   createEquipmentNote(note: Partial<EquipmentNote> & { organizationId: string; equipmentId: string; createdByUserId: string; noteText: string }): Promise<EquipmentNote>;
   getEquipmentDocuments(organizationId: string, equipmentId: string): Promise<EquipmentDocument[]>;
@@ -1369,9 +1377,28 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(equipmentCalibrationEventsTable.calDate));
   }
 
+  async getEquipmentCalibrationEventById(id: string): Promise<EquipmentCalibrationEvent | undefined> {
+    const [row] = await db().select().from(equipmentCalibrationEventsTable).where(eq(equipmentCalibrationEventsTable.calEventId, id));
+    return row || undefined;
+  }
+
   async createEquipmentCalibrationEvent(event: any): Promise<EquipmentCalibrationEvent> {
     const [created] = await db().insert(equipmentCalibrationEventsTable).values(event).returning();
     return created;
+  }
+
+  async updateEquipmentCalibrationEvent(id: string, patch: Partial<EquipmentCalibrationEvent>): Promise<EquipmentCalibrationEvent | undefined> {
+    const [updated] = await db()
+      .update(equipmentCalibrationEventsTable)
+      .set(patch as any)
+      .where(eq(equipmentCalibrationEventsTable.calEventId, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteEquipmentCalibrationEvent(id: string): Promise<boolean> {
+    const result = await db().delete(equipmentCalibrationEventsTable).where(eq(equipmentCalibrationEventsTable.calEventId, id));
+    return didAffectRows(result);
   }
 
   async getEquipmentUsage(organizationId: string, equipmentId: string): Promise<EquipmentUsageRow[]> {
@@ -1382,9 +1409,54 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(equipmentUsageTable.usedFrom));
   }
 
+  async getEquipmentUsageById(id: string): Promise<EquipmentUsageRow | undefined> {
+    const [row] = await db().select().from(equipmentUsageTable).where(eq(equipmentUsageTable.usageId, id));
+    return row || undefined;
+  }
+
+  async getEquipmentUsageBySampleRun(
+    organizationId: string,
+    equipmentId: string,
+    sampleRunId: string
+  ): Promise<EquipmentUsageRow | undefined> {
+    const [row] = await db()
+      .select()
+      .from(equipmentUsageTable)
+      .where(
+        and(
+          eq(equipmentUsageTable.organizationId, organizationId),
+          eq(equipmentUsageTable.equipmentId, equipmentId),
+          eq(equipmentUsageTable.sampleRunId, sampleRunId)
+        )
+      );
+    return row || undefined;
+  }
+
+  async getEquipmentUsageBySampleRunId(organizationId: string, sampleRunId: string): Promise<EquipmentUsageRow | undefined> {
+    const [row] = await db()
+      .select()
+      .from(equipmentUsageTable)
+      .where(and(eq(equipmentUsageTable.organizationId, organizationId), eq(equipmentUsageTable.sampleRunId, sampleRunId)));
+    return row || undefined;
+  }
+
   async createEquipmentUsage(row: any): Promise<EquipmentUsageRow> {
     const [created] = await db().insert(equipmentUsageTable).values(row).returning();
     return created;
+  }
+
+  async updateEquipmentUsage(id: string, patch: Partial<EquipmentUsageRow>): Promise<EquipmentUsageRow | undefined> {
+    const [updated] = await db()
+      .update(equipmentUsageTable)
+      .set(patch as any)
+      .where(eq(equipmentUsageTable.usageId, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteEquipmentUsage(id: string): Promise<boolean> {
+    const result = await db().delete(equipmentUsageTable).where(eq(equipmentUsageTable.usageId, id));
+    return didAffectRows(result);
   }
 
   async getEquipmentNotes(organizationId: string, equipmentId: string): Promise<EquipmentNote[]> {

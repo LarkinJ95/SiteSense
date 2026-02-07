@@ -618,6 +618,27 @@ Log rotation configuration:
 
 ## Backup and Monitoring
 
+### Cloudflare (Workers + D1 + R2) Backups
+
+Production currently runs on Cloudflare Workers + D1. Daily backups are implemented as a scheduled Worker job that performs a logical export of core D1 tables to an R2 bucket.
+
+- Backup frequency: daily at `06:00 UTC` (configured in `wrangler.toml` `[triggers].crons`)
+- Storage location: R2 bucket `abateiq-backups` (binding `ABATEIQ_BACKUPS`)
+- Backup format files:
+- `d1/logical/<YYYY-MM-DD>/<runId>/<table>/page_0000.json`
+- `d1/logical/<YYYY-MM-DD>/<runId>/manifest.json`
+- `d1/logical/<YYYY-MM-DD>/latest.json` (pointer to the most recent run for that date)
+
+#### Restore Process (High Level)
+
+1. Download the `manifest.json` and all `page_*.json` objects for the desired run from R2.
+2. Create a fresh D1 database (or an empty environment) and apply migrations.
+3. Import rows table-by-table from the JSON pages into D1.
+
+Notes:
+- The export is a "logical" dump (JSON), not a raw SQLite file.
+- Retention is controlled by R2 lifecycle rules; configure a lifecycle policy in Cloudflare if you want automatic pruning (for example, keep 30-90 days).
+
 ### Automated Backup Script
 
 Create `/opt/sitesense/scripts/backup.sh`:

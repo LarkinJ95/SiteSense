@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { ArrowLeft, CalendarClock, ClipboardList, Link2, MapPin, Plus, Printer, ShieldCheck, Trash2, User as UserIcon, Wrench } from "lucide-react";
+import { ArrowLeft, CalendarClock, ClipboardList, Edit, Link2, MapPin, Plus, Printer, ShieldCheck, Trash2, User as UserIcon, Wrench } from "lucide-react";
 
 const METHOD_STANDARD_OPTIONS = [
   "Primary Standard (DryCal/Defender)",
@@ -121,6 +121,18 @@ const statusBadge = (status: string) => {
   return <Badge variant="secondary">{status || "Unknown"}</Badge>;
 };
 
+const toDateTimeLocal = (ms?: number | null) => {
+  if (!ms) return "";
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const mm = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+};
+
 export default function EquipmentDetail() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
@@ -200,6 +212,35 @@ export default function EquipmentDetail() {
     context: "Air Sampling",
     sampleRunId: "",
   });
+
+  const airJobLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const j of airJobs || []) {
+      const id = (j as any)?.id;
+      if (!id) continue;
+      const num = ((j as any)?.jobNumber || "").toString().trim();
+      const name = ((j as any)?.jobName || "").toString().trim();
+      const label = num && name ? `${num} - ${name}` : num || name || String(id);
+      map.set(String(id), label);
+    }
+    return map;
+  }, [airJobs]);
+
+  const [editingCal, setEditingCal] = useState<CalEvent | null>(null);
+  const [editCalOpen, setEditCalOpen] = useState(false);
+  const [editCalReason, setEditCalReason] = useState("");
+  const [editCalForm, setEditCalForm] = useState({ ...calForm });
+  const [deletingCal, setDeletingCal] = useState<CalEvent | null>(null);
+  const [deleteCalOpen, setDeleteCalOpen] = useState(false);
+  const [deleteCalReason, setDeleteCalReason] = useState("");
+
+  const [editingUsage, setEditingUsage] = useState<UsageRow | null>(null);
+  const [editUsageOpen, setEditUsageOpen] = useState(false);
+  const [editUsageReason, setEditUsageReason] = useState("");
+  const [editUsageForm, setEditUsageForm] = useState({ ...usageForm });
+  const [deletingUsage, setDeletingUsage] = useState<UsageRow | null>(null);
+  const [deleteUsageOpen, setDeleteUsageOpen] = useState(false);
+  const [deleteUsageReason, setDeleteUsageReason] = useState("");
 
   useEffect(() => {
     if (!equipment) return;
@@ -353,6 +394,120 @@ export default function EquipmentDetail() {
     },
   });
 
+  const updateCalMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingCal) throw new Error("No calibration selected");
+      const reason = editCalReason.trim();
+      if (!reason) throw new Error("Reason is required");
+      const payload: any = {
+        reason,
+        calDate: editCalForm.calDate,
+        calType: editCalForm.calType,
+        performedBy: editCalForm.performedBy || null,
+        methodStandard: editCalForm.methodStandard || null,
+        targetFlowLpm: editCalForm.targetFlowLpm || null,
+        asFoundFlowLpm: editCalForm.asFoundFlowLpm || null,
+        asLeftFlowLpm: editCalForm.asLeftFlowLpm || null,
+        tolerance: editCalForm.tolerance || null,
+        toleranceUnit: editCalForm.toleranceUnit,
+        passFail: editCalForm.passFail,
+        certificateNumber: editCalForm.certificateNumber || null,
+        certificateFileUrl: editCalForm.certificateFileUrl || null,
+        notes: editCalForm.notes || null,
+      };
+      const res = await apiRequest("PUT", `/api/equipment-calibration-events/${editingCal.calEventId}`, payload);
+      return (await res.json()) as CalEvent;
+    },
+    onSuccess: () => {
+      if (!id) return;
+      queryClient.invalidateQueries({ queryKey: [`/api/equipment/${id}/calibration-events`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/equipment/${id}/notes`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/equipment/${id}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment"] });
+      setEditCalOpen(false);
+      setEditingCal(null);
+      setEditCalReason("");
+      toast({ title: "Saved", description: "Calibration record updated." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed", description: error?.message || "Unable to update calibration record.", variant: "destructive" });
+    },
+  });
+
+  const deleteCalMutation = useMutation({
+    mutationFn: async () => {
+      if (!deletingCal) throw new Error("No calibration selected");
+      const reason = deleteCalReason.trim();
+      if (!reason) throw new Error("Reason is required");
+      await apiRequest("DELETE", `/api/equipment-calibration-events/${deletingCal.calEventId}`, { reason });
+    },
+    onSuccess: () => {
+      if (!id) return;
+      queryClient.invalidateQueries({ queryKey: [`/api/equipment/${id}/calibration-events`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/equipment/${id}/notes`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/equipment/${id}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment"] });
+      setDeleteCalOpen(false);
+      setDeletingCal(null);
+      setDeleteCalReason("");
+      toast({ title: "Deleted", description: "Calibration record deleted." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed", description: error?.message || "Unable to delete calibration record.", variant: "destructive" });
+    },
+  });
+
+  const updateUsageMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingUsage) throw new Error("No usage record selected");
+      const reason = editUsageReason.trim();
+      if (!reason) throw new Error("Reason is required");
+      const payload: any = {
+        reason,
+        jobId: editUsageForm.jobId || null,
+        usedFrom: editUsageForm.usedFrom || null,
+        usedTo: editUsageForm.usedTo || null,
+        context: editUsageForm.context || null,
+        sampleRunId: editUsageForm.sampleRunId || null,
+      };
+      const res = await apiRequest("PUT", `/api/equipment-usage/${editingUsage.usageId}`, payload);
+      return (await res.json()) as UsageRow;
+    },
+    onSuccess: () => {
+      if (!id) return;
+      queryClient.invalidateQueries({ queryKey: [`/api/equipment/${id}/usage`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/equipment/${id}/notes`] });
+      setEditUsageOpen(false);
+      setEditingUsage(null);
+      setEditUsageReason("");
+      toast({ title: "Saved", description: "Usage record updated." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed", description: error?.message || "Unable to update usage record.", variant: "destructive" });
+    },
+  });
+
+  const deleteUsageMutation = useMutation({
+    mutationFn: async () => {
+      if (!deletingUsage) throw new Error("No usage record selected");
+      const reason = deleteUsageReason.trim();
+      if (!reason) throw new Error("Reason is required");
+      await apiRequest("DELETE", `/api/equipment-usage/${deletingUsage.usageId}`, { reason });
+    },
+    onSuccess: () => {
+      if (!id) return;
+      queryClient.invalidateQueries({ queryKey: [`/api/equipment/${id}/usage`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/equipment/${id}/notes`] });
+      setDeleteUsageOpen(false);
+      setDeletingUsage(null);
+      setDeleteUsageReason("");
+      toast({ title: "Deleted", description: "Usage record deleted." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed", description: error?.message || "Unable to delete usage record.", variant: "destructive" });
+    },
+  });
+
   const assignedName = useMemo(() => {
     const user = orgUsers.find((u) => u.userId === equipment?.assignedToUserId);
     return user ? (user.name || user.email || user.userId) : equipment?.assignedToUserId || "";
@@ -394,7 +549,7 @@ export default function EquipmentDetail() {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={() => window.open(`/equipment/${id}/report`, "_blank")}
+            onClick={() => window.open(`/equipment/${id}/report?print=1`, "_blank")}
           >
             <Printer className="h-4 w-4 mr-2" />
             Print Report
@@ -529,15 +684,26 @@ export default function EquipmentDetail() {
                   <Label>Note</Label>
                   <Textarea value={noteForm.noteText} onChange={(e) => setNoteForm({ ...noteForm, noteText: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Type</Label>
-                    <Input value={noteForm.noteType} onChange={(e) => setNoteForm({ ...noteForm, noteType: e.target.value })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Visibility</Label>
-                    <Select value={noteForm.visibility} onValueChange={(value) => setNoteForm({ ...noteForm, visibility: value })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+	                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+	                  <div className="space-y-2">
+	                    <Label>Type</Label>
+	                    <Select value={noteForm.noteType} onValueChange={(value) => setNoteForm({ ...noteForm, noteType: value })}>
+	                      <SelectTrigger><SelectValue /></SelectTrigger>
+	                      <SelectContent>
+	                        <SelectItem value="general">General</SelectItem>
+	                        <SelectItem value="maintenance">Maintenance</SelectItem>
+	                        <SelectItem value="calibration">Calibration</SelectItem>
+	                        <SelectItem value="usage">Usage</SelectItem>
+	                        <SelectItem value="audit">Audit</SelectItem>
+	                        <SelectItem value="issue">Issue</SelectItem>
+	                        <SelectItem value="other">Other</SelectItem>
+	                      </SelectContent>
+	                    </Select>
+	                  </div>
+	                  <div className="space-y-2">
+	                    <Label>Visibility</Label>
+	                    <Select value={noteForm.visibility} onValueChange={(value) => setNoteForm({ ...noteForm, visibility: value })}>
+	                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="org">Org</SelectItem>
                         <SelectItem value="private">Private</SelectItem>
@@ -603,13 +769,217 @@ export default function EquipmentDetail() {
                 </Button>
               </div>
             </DialogContent>
-          </Dialog>
-        </div>
-      </div>
+	          </Dialog>
+	        </div>
+	      </div>
 
-      <Card>
-        <CardContent className="p-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Dialog open={editCalOpen} onOpenChange={setEditCalOpen}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Edit Calibration Event</DialogTitle>
+              <DialogDescription>Edits require a reason and will be recorded to the Notes audit trail.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Reason</Label>
+                <Textarea value={editCalReason} onChange={(e) => setEditCalReason(e.target.value)} placeholder="Why are you editing this record?" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Date</Label>
+                  <Input type="date" value={editCalForm.calDate} onChange={(e) => setEditCalForm({ ...editCalForm, calDate: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Type</Label>
+                  <Select value={editCalForm.calType} onValueChange={(value) => setEditCalForm({ ...editCalForm, calType: value })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="annual">Annual</SelectItem>
+                      <SelectItem value="verification">Verification</SelectItem>
+                      <SelectItem value="as_found">As-Found</SelectItem>
+                      <SelectItem value="as_left">As-Left</SelectItem>
+                      <SelectItem value="repair">Repair</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Pass/Fail</Label>
+                  <Select value={editCalForm.passFail} onValueChange={(value) => setEditCalForm({ ...editCalForm, passFail: value })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unknown">Unknown</SelectItem>
+                      <SelectItem value="pass">Pass</SelectItem>
+                      <SelectItem value="fail">Fail</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Performed By</Label>
+                  <Input value={editCalForm.performedBy} onChange={(e) => setEditCalForm({ ...editCalForm, performedBy: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Method/Standard</Label>
+                  <Select value={editCalForm.methodStandard} onValueChange={(value) => setEditCalForm({ ...editCalForm, methodStandard: value })}>
+                    <SelectTrigger><SelectValue placeholder="Select a standard" /></SelectTrigger>
+                    <SelectContent>
+                      {METHOD_STANDARD_OPTIONS.map((opt) => (
+                        <SelectItem key={opt} value={opt}>
+                          {opt}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Target Flow (LPM)</Label>
+                  <Input value={editCalForm.targetFlowLpm} onChange={(e) => setEditCalForm({ ...editCalForm, targetFlowLpm: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>As-Found (LPM)</Label>
+                  <Input value={editCalForm.asFoundFlowLpm} onChange={(e) => setEditCalForm({ ...editCalForm, asFoundFlowLpm: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>As-Left (LPM)</Label>
+                  <Input value={editCalForm.asLeftFlowLpm} onChange={(e) => setEditCalForm({ ...editCalForm, asLeftFlowLpm: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Tolerance</Label>
+                  <div className="flex gap-2">
+                    <Input className="flex-1" value={editCalForm.tolerance} onChange={(e) => setEditCalForm({ ...editCalForm, tolerance: e.target.value })} />
+                    <Select value={editCalForm.toleranceUnit} onValueChange={(value) => setEditCalForm({ ...editCalForm, toleranceUnit: value })}>
+                      <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="percent">%</SelectItem>
+                        <SelectItem value="lpm">LPM</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Certificate #</Label>
+                  <Input value={editCalForm.certificateNumber} onChange={(e) => setEditCalForm({ ...editCalForm, certificateNumber: e.target.value })} />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Certificate File URL</Label>
+                  <Input value={editCalForm.certificateFileUrl} onChange={(e) => setEditCalForm({ ...editCalForm, certificateFileUrl: e.target.value })} />
+                </div>
+                <div className="space-y-2 md:col-span-3">
+                  <Label>Notes</Label>
+                  <Textarea value={editCalForm.notes} onChange={(e) => setEditCalForm({ ...editCalForm, notes: e.target.value })} />
+                </div>
+              </div>
+            </div>
+            <div className="pt-2 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditCalOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => updateCalMutation.mutate()} disabled={!editCalReason.trim() || !editCalForm.calDate || updateCalMutation.isPending}>
+                Save Changes
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={deleteCalOpen} onOpenChange={setDeleteCalOpen}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Delete Calibration Event</DialogTitle>
+              <DialogDescription>Deletion requires a reason and will be recorded to the Notes audit trail.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label>Reason</Label>
+              <Textarea value={deleteCalReason} onChange={(e) => setDeleteCalReason(e.target.value)} placeholder="Why are you deleting this record?" />
+            </div>
+            <div className="pt-2 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleteCalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={() => deleteCalMutation.mutate()} disabled={!deleteCalReason.trim() || deleteCalMutation.isPending}>
+                Delete
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={editUsageOpen} onOpenChange={setEditUsageOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit Usage Record</DialogTitle>
+              <DialogDescription>Edits require a reason and will be recorded to the Notes audit trail.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Reason</Label>
+                <Textarea value={editUsageReason} onChange={(e) => setEditUsageReason(e.target.value)} placeholder="Why are you editing this record?" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Job</Label>
+                  <Select value={editUsageForm.jobId} onValueChange={(value) => setEditUsageForm({ ...editUsageForm, jobId: value === "__none__" ? "" : value })}>
+                    <SelectTrigger><SelectValue placeholder="Select a job" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">No Job</SelectItem>
+                      {airJobs.map((job) => (
+                        <SelectItem key={job.id} value={job.id}>
+                          {(job.jobNumber || job.id).toString()} {job.siteName ? `· ${job.siteName}` : ""} {job.jobName ? `· ${job.jobName}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Used From</Label>
+                  <Input type="datetime-local" value={editUsageForm.usedFrom} onChange={(e) => setEditUsageForm({ ...editUsageForm, usedFrom: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Used To</Label>
+                  <Input type="datetime-local" value={editUsageForm.usedTo} onChange={(e) => setEditUsageForm({ ...editUsageForm, usedTo: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Context</Label>
+                  <Input value={editUsageForm.context} onChange={(e) => setEditUsageForm({ ...editUsageForm, context: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Sample Run ID</Label>
+                  <Input value={editUsageForm.sampleRunId} onChange={(e) => setEditUsageForm({ ...editUsageForm, sampleRunId: e.target.value })} />
+                </div>
+              </div>
+            </div>
+            <div className="pt-2 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditUsageOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => updateUsageMutation.mutate()} disabled={!editUsageReason.trim() || updateUsageMutation.isPending}>
+                Save Changes
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={deleteUsageOpen} onOpenChange={setDeleteUsageOpen}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Delete Usage Record</DialogTitle>
+              <DialogDescription>Deletion requires a reason and will be recorded to the Notes audit trail.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label>Reason</Label>
+              <Textarea value={deleteUsageReason} onChange={(e) => setDeleteUsageReason(e.target.value)} placeholder="Why are you deleting this record?" />
+            </div>
+            <div className="pt-2 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleteUsageOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={() => deleteUsageMutation.mutate()} disabled={!deleteUsageReason.trim() || deleteUsageMutation.isPending}>
+                Delete
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+	      <Card>
+	        <CardContent className="p-4">
+	          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="space-y-1">
               <div className="text-xs text-gray-500">Status</div>
               <div>{statusBadge(equipment.status)}</div>
@@ -744,29 +1114,65 @@ export default function EquipmentDetail() {
               {usage.length === 0 ? (
                 <div className="py-8 text-center text-gray-600">No usage linked yet.</div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Job</TableHead>
-                      <TableHead>Used From</TableHead>
-                      <TableHead>Used To</TableHead>
-                      <TableHead>Context</TableHead>
-                      <TableHead>Sample Run</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {usage.map((u) => (
-                      <TableRow key={u.usageId}>
-                        <TableCell className="font-mono text-sm">{u.jobId || "—"}</TableCell>
-                        <TableCell>{u.usedFrom ? new Date(u.usedFrom).toLocaleString() : "—"}</TableCell>
-                        <TableCell>{u.usedTo ? new Date(u.usedTo).toLocaleString() : "—"}</TableCell>
-                        <TableCell>{u.context || "—"}</TableCell>
-                        <TableCell>{u.sampleRunId || "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
+	                <Table>
+	                  <TableHeader>
+	                    <TableRow>
+	                      <TableHead>Job</TableHead>
+	                      <TableHead>Used From</TableHead>
+	                      <TableHead>Used To</TableHead>
+	                      <TableHead>Context</TableHead>
+	                      <TableHead>Sample Run</TableHead>
+	                      <TableHead className="text-right">Actions</TableHead>
+	                    </TableRow>
+	                  </TableHeader>
+	                  <TableBody>
+	                    {usage.map((u) => (
+	                      <TableRow key={u.usageId}>
+	                        <TableCell className="text-sm">
+	                          {u.jobId ? airJobLabelById.get(String(u.jobId)) || u.jobId : "—"}
+	                        </TableCell>
+	                        <TableCell>{u.usedFrom ? new Date(u.usedFrom).toLocaleString() : "—"}</TableCell>
+	                        <TableCell>{u.usedTo ? new Date(u.usedTo).toLocaleString() : "—"}</TableCell>
+	                        <TableCell>{u.context || "—"}</TableCell>
+	                        <TableCell>{u.sampleRunId || "—"}</TableCell>
+	                        <TableCell className="text-right">
+	                          <div className="flex justify-end gap-2">
+	                            <Button
+	                              variant="ghost"
+	                              size="sm"
+	                              onClick={() => {
+	                                setEditingUsage(u);
+	                                setEditUsageForm({
+	                                  jobId: u.jobId ? String(u.jobId) : "",
+	                                  usedFrom: u.usedFrom ? toDateTimeLocal(u.usedFrom) : "",
+	                                  usedTo: u.usedTo ? toDateTimeLocal(u.usedTo) : "",
+	                                  context: u.context || "",
+	                                  sampleRunId: u.sampleRunId || "",
+	                                });
+	                                setEditUsageReason("");
+	                                setEditUsageOpen(true);
+	                              }}
+	                            >
+	                              <Edit className="h-4 w-4" />
+	                            </Button>
+	                            <Button
+	                              variant="ghost"
+	                              size="sm"
+	                              onClick={() => {
+	                                setDeletingUsage(u);
+	                                setDeleteUsageReason("");
+	                                setDeleteUsageOpen(true);
+	                              }}
+	                            >
+	                              <Trash2 className="h-4 w-4" />
+	                            </Button>
+	                          </div>
+	                        </TableCell>
+	                      </TableRow>
+	                    ))}
+	                  </TableBody>
+	                </Table>
+	              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -780,43 +1186,85 @@ export default function EquipmentDetail() {
               {driftRows.length === 0 ? (
                 <div className="py-8 text-center text-gray-600">No calibration events yet.</div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Target</TableHead>
-                      <TableHead>As-Found</TableHead>
-                      <TableHead>As-Left</TableHead>
-                      <TableHead>Drift</TableHead>
-                      <TableHead>Pass/Fail</TableHead>
-                      <TableHead>Certificate</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {driftRows.map((e) => (
-                      <TableRow key={e.calEventId}>
-                        <TableCell>{e.calDate}</TableCell>
-                        <TableCell>{e.calType}</TableCell>
-                        <TableCell>{e.targetFlowLpm || "—"}</TableCell>
-                        <TableCell>{e.asFoundFlowLpm || "—"}</TableCell>
-                        <TableCell>{e.asLeftFlowLpm || "—"}</TableCell>
-                        <TableCell>{typeof (e as any).drift === "number" ? (e as any).drift.toFixed(3) : "—"}</TableCell>
-                        <TableCell>{e.passFail || "—"}</TableCell>
-                        <TableCell>
-                          {e.certificateFileUrl ? (
-                            <a className="text-primary underline" href={e.certificateFileUrl} target="_blank" rel="noreferrer">
-                              {e.certificateNumber || "Open"}
-                            </a>
-                          ) : (
-                            e.certificateNumber || "—"
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
+	                <Table>
+	                  <TableHeader>
+	                    <TableRow>
+	                      <TableHead>Date</TableHead>
+	                      <TableHead>Type</TableHead>
+	                      <TableHead>Target</TableHead>
+	                      <TableHead>As-Found</TableHead>
+	                      <TableHead>As-Left</TableHead>
+	                      <TableHead>Drift</TableHead>
+	                      <TableHead>Pass/Fail</TableHead>
+	                      <TableHead>Certificate</TableHead>
+	                      <TableHead className="text-right">Actions</TableHead>
+	                    </TableRow>
+	                  </TableHeader>
+	                  <TableBody>
+	                    {driftRows.map((e) => (
+	                      <TableRow key={e.calEventId}>
+	                        <TableCell>{e.calDate}</TableCell>
+	                        <TableCell>{e.calType}</TableCell>
+	                        <TableCell>{e.targetFlowLpm || "—"}</TableCell>
+	                        <TableCell>{e.asFoundFlowLpm || "—"}</TableCell>
+	                        <TableCell>{e.asLeftFlowLpm || "—"}</TableCell>
+	                        <TableCell>{typeof (e as any).drift === "number" ? (e as any).drift.toFixed(3) : "—"}</TableCell>
+	                        <TableCell>{e.passFail || "—"}</TableCell>
+	                        <TableCell>
+	                          {e.certificateFileUrl ? (
+	                            <a className="text-primary underline" href={e.certificateFileUrl} target="_blank" rel="noreferrer">
+	                              {e.certificateNumber || "Open"}
+	                            </a>
+	                          ) : (
+	                            e.certificateNumber || "—"
+	                          )}
+	                        </TableCell>
+	                        <TableCell className="text-right">
+	                          <div className="flex justify-end gap-2">
+	                            <Button
+	                              variant="ghost"
+	                              size="sm"
+	                              onClick={() => {
+	                                setEditingCal(e as any);
+	                                setEditCalForm({
+	                                  calDate: (e as any).calDate || "",
+	                                  calType: (e as any).calType || "annual",
+	                                  performedBy: (e as any).performedBy || "",
+	                                  methodStandard: (e as any).methodStandard || "",
+	                                  targetFlowLpm: (e as any).targetFlowLpm || "",
+	                                  asFoundFlowLpm: (e as any).asFoundFlowLpm || "",
+	                                  asLeftFlowLpm: (e as any).asLeftFlowLpm || "",
+	                                  tolerance: (e as any).tolerance || "",
+	                                  toleranceUnit: (e as any).toleranceUnit || "percent",
+	                                  passFail: (e as any).passFail || "unknown",
+	                                  certificateNumber: (e as any).certificateNumber || "",
+	                                  certificateFileUrl: (e as any).certificateFileUrl || "",
+	                                  notes: (e as any).notes || "",
+	                                });
+	                                setEditCalReason("");
+	                                setEditCalOpen(true);
+	                              }}
+	                            >
+	                              <Edit className="h-4 w-4" />
+	                            </Button>
+	                            <Button
+	                              variant="ghost"
+	                              size="sm"
+	                              onClick={() => {
+	                                setDeletingCal(e as any);
+	                                setDeleteCalReason("");
+	                                setDeleteCalOpen(true);
+	                              }}
+	                            >
+	                              <Trash2 className="h-4 w-4" />
+	                            </Button>
+	                          </div>
+	                        </TableCell>
+	                      </TableRow>
+	                    ))}
+	                  </TableBody>
+	                </Table>
+	              )}
             </CardContent>
           </Card>
         </TabsContent>

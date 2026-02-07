@@ -43,6 +43,12 @@ import {
 import { format, subDays, parseISO } from "date-fns";
 import type { AirMonitoringJob } from "@shared/schema";
 
+type OrgUser = {
+  userId: string;
+  email?: string | null;
+  name: string;
+};
+
 export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editSurvey, setEditSurvey] = useState<Survey | null>(null);
@@ -143,6 +149,28 @@ export default function Dashboard() {
   const { data: airJobs = [], isLoading: jobsLoading } = useQuery<AirMonitoringJob[]>({
     queryKey: ["/api/air-monitoring-jobs"],
   });
+
+  const { data: orgUsers = [] } = useQuery<OrgUser[]>({
+    queryKey: ["/api/inspectors"],
+  });
+
+  const userLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of orgUsers || []) {
+      const id = (u?.userId || "").toString();
+      if (!id) continue;
+      const name = (u?.name || "").toString().trim();
+      const email = (u?.email || "").toString().trim();
+      map.set(id, name || email || id);
+    }
+    return map;
+  }, [orgUsers]);
+
+  const formatProjectManager = (value?: string | null) => {
+    const raw = (value || "").toString().trim();
+    if (!raw) return "—";
+    return userLabelById.get(raw) || raw;
+  };
 
   const recentAirJobs = (airJobs || []).slice(0, 3);
 
@@ -717,9 +745,9 @@ export default function Dashboard() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                         {job.siteName}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                        {job.projectManager || "—"}
-                      </td>
+	                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+	                        {formatProjectManager((job as any).projectManager)}
+	                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {job.startDate ? new Date(job.startDate).toLocaleDateString() : "—"}
                       </td>

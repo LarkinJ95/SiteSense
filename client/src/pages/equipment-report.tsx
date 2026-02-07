@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -55,9 +55,24 @@ export default function EquipmentReport() {
     document.title = "Equipment Report - AbateIQ";
   }, []);
 
-  if (isLoading || !data) return null;
+  const printedRef = useRef(false);
+  const shouldAutoPrint =
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("print") === "1";
+
+  useEffect(() => {
+    if (!shouldAutoPrint) return;
+    if (printedRef.current) return;
+    if (!data) return;
+    printedRef.current = true;
+    // Let the browser render first so print preview isn't blank.
+    setTimeout(() => window.print(), 100);
+  }, [shouldAutoPrint, data]);
+
   if (error) {
     return <div className="p-6">Unable to load report.</div>;
+  }
+  if (isLoading || !data) {
+    return <div className="p-6">Loading report...</div>;
   }
 
   const e = data.equipment || {};

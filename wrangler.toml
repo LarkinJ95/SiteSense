@@ -9,6 +9,11 @@ routes = [
   { pattern = "www.abateiq.com", zone_name = "abateiq.com", custom_domain = true }
 ]
 
+[triggers]
+# Daily scheduled job used for logical D1 backups to the `ABATEIQ_BACKUPS` R2 bucket.
+# Cron times are in UTC.
+crons = ["0 6 * * *"]
+
 [assets]
 directory = "./dist/public"
 binding = "ASSETS"

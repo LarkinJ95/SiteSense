@@ -406,6 +406,16 @@ const changesSummary = (changes: Array<{ field: string; from: any; to: any }>) =
   return joined.length > 240 ? `${joined.slice(0, 237)}...` : joined;
 };
 
+const ymdToUtcMs = (ymd: string): number | null => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((ymd || "").trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  return Date.UTC(year, month - 1, day);
+};
+
 const resolveOrgIdForCreate = (orgIds: string[], requested?: string | null) => {
   if (requested && orgIds.includes(requested)) return requested;
   return orgIds[0];
@@ -2053,6 +2063,22 @@ app.post("/api/equipment/:id/calibration-events", async (c) => {
     notes: payload.notes ?? null,
   } as any);
 
+  // Auto-generate an equipment usage entry when a calibration is recorded (traceability).
+  try {
+    const ms = ymdToUtcMs(payload.calDate);
+    await storage.createEquipmentUsage({
+      organizationId: equipment.organizationId,
+      equipmentId: equipment.equipmentId,
+      jobId: null,
+      usedFrom: ms,
+      usedTo: ms,
+      context: `Calibration (${payload.calType || "annual"})`,
+      sampleRunId: `cal:${created.calEventId}`,
+    } as any);
+  } catch {
+    // Best-effort; do not block calibration creation.
+  }
+
   // Keep the equipment's calibration dates up to date (best-effort).
   try {
     let calibrationDueDate: string | null | undefined = undefined;
@@ -2078,6 +2104,154 @@ app.post("/api/equipment/:id/calibration-events", async (c) => {
   return c.json(created, 201);
 });
 
+app.put("/api/equipment-calibration-events/:id", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+
+  const existing = await storage.getEquipmentCalibrationEventById(c.req.param("id"));
+  if (!existing) return c.json({ message: "Not found" }, 404);
+  if (!existing.organizationId || !orgIds.includes(existing.organizationId)) return c.json({ message: "No access" }, 403);
+
+  const body = await parseJsonBody<any>(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+  if (!reason) return c.json({ message: "Reason is required" }, 400);
+  delete body.reason;
+
+  try {
+    const payload = insertEquipmentCalibrationEventSchema.partial().parse(body);
+    const patch = stripUndefined({
+      calDate: payload.calDate ?? undefined,
+      calType: payload.calType ?? undefined,
+      performedBy: payload.performedBy ?? undefined,
+      methodStandard: payload.methodStandard ?? undefined,
+      targetFlowLpm: payload.targetFlowLpm ?? undefined,
+      asFoundFlowLpm: payload.asFoundFlowLpm ?? undefined,
+      asLeftFlowLpm: payload.asLeftFlowLpm ?? undefined,
+      tolerance: payload.tolerance ?? undefined,
+      toleranceUnit: payload.toleranceUnit ?? undefined,
+      passFail: payload.passFail ?? undefined,
+      certificateNumber: payload.certificateNumber ?? undefined,
+      certificateFileUrl: payload.certificateFileUrl ?? undefined,
+      notes: payload.notes ?? undefined,
+    } as any);
+
+    const updated = await storage.updateEquipmentCalibrationEvent(existing.calEventId, patch as any);
+    if (!updated) return c.json({ message: "Not found" }, 404);
+
+    const changeKeys = Object.keys(patch || {});
+    const changes = computeAuditChanges(existing as any, updated as any, changeKeys);
+    const noteText =
+      `Calibration record edited (event ${existing.calEventId}).\n` +
+      `Reason: ${reason}\n` +
+      (changes.length ? `Changes: ${changesSummary(changes)}` : "Changes: (none)");
+    await storage.createEquipmentNote({
+      organizationId: existing.organizationId,
+      equipmentId: existing.equipmentId,
+      createdByUserId: userId,
+      noteText,
+      noteType: "audit",
+      visibility: "org",
+    } as any);
+
+    // Keep the auto-generated calibration usage record (if any) in sync.
+    try {
+      const usage = await storage.getEquipmentUsageBySampleRunId(existing.organizationId, `cal:${existing.calEventId}`);
+      if (usage) {
+        const ms = ymdToUtcMs((updated as any).calDate || "");
+        await storage.updateEquipmentUsage(usage.usageId, {
+          usedFrom: ms,
+          usedTo: ms,
+          context: `Calibration (${(updated as any).calType || "annual"})`,
+        } as any);
+      }
+    } catch {
+      // ignore
+    }
+
+    // Best-effort: recompute last calibration date based on remaining events (handles edits to older records).
+    try {
+      const events = await storage.getEquipmentCalibrationEvents(existing.organizationId, existing.equipmentId);
+      const latest = (events || []).map((e: any) => e.calDate).filter(Boolean).sort().reverse()[0] || null;
+      const equipment = await storage.getEquipmentById(existing.equipmentId);
+      if (equipment) {
+        let calibrationDueDate: string | null | undefined = undefined;
+        if (equipment.calibrationIntervalDays && latest) {
+          calibrationDueDate = addDaysToYmd(latest, equipment.calibrationIntervalDays) ?? null;
+        }
+        await storage.updateEquipment(existing.equipmentId, { lastCalibrationDate: latest, calibrationDueDate } as any);
+      }
+    } catch {
+      // ignore
+    }
+
+    return c.json(updated);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
+});
+
+app.delete("/api/equipment-calibration-events/:id", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+
+  const existing = await storage.getEquipmentCalibrationEventById(c.req.param("id"));
+  if (!existing) return c.json({ message: "Not found" }, 404);
+  if (!existing.organizationId || !orgIds.includes(existing.organizationId)) return c.json({ message: "No access" }, 403);
+
+  const body = await parseJsonBody<any>(c);
+  const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+  if (!reason) return c.json({ message: "Reason is required" }, 400);
+
+  const ok = await storage.deleteEquipmentCalibrationEvent(existing.calEventId);
+  if (!ok) return c.json({ message: "Not found" }, 404);
+
+  // Remove the corresponding auto-generated usage record (if present).
+  try {
+    const usage = await storage.getEquipmentUsageBySampleRunId(existing.organizationId, `cal:${existing.calEventId}`);
+    if (usage) await storage.deleteEquipmentUsage(usage.usageId);
+  } catch {
+    // ignore
+  }
+
+  const noteText =
+    `Calibration record deleted (event ${existing.calEventId}).\n` +
+    `Reason: ${reason}\n` +
+    `Deleted record: ${JSON.stringify(existing)}`;
+  await storage.createEquipmentNote({
+    organizationId: existing.organizationId,
+    equipmentId: existing.equipmentId,
+    createdByUserId: userId,
+    noteText,
+    noteType: "audit",
+    visibility: "org",
+  } as any);
+
+  // Best-effort: recompute last calibration date after deletion.
+  try {
+    const events = await storage.getEquipmentCalibrationEvents(existing.organizationId, existing.equipmentId);
+    const latest = (events || []).map((e: any) => e.calDate).filter(Boolean).sort().reverse()[0] || null;
+    const equipment = await storage.getEquipmentById(existing.equipmentId);
+    if (equipment) {
+      let calibrationDueDate: string | null | undefined = undefined;
+      if (equipment.calibrationIntervalDays && latest) {
+        calibrationDueDate = addDaysToYmd(latest, equipment.calibrationIntervalDays) ?? null;
+      }
+      await storage.updateEquipment(existing.equipmentId, { lastCalibrationDate: latest, calibrationDueDate } as any);
+    }
+  } catch {
+    // ignore
+  }
+
+  return c.body(null, 204);
+});
+
 app.get("/api/equipment/:id/usage", async (c) => {
   const userId = c.get("user")?.sub;
   if (!userId) return c.json({ message: "Not authenticated" }, 401);
@@ -2086,8 +2260,22 @@ app.get("/api/equipment/:id/usage", async (c) => {
   const equipment = await storage.getEquipmentById(c.req.param("id"));
   if (!equipment) return c.json({ message: "Not found" }, 404);
   if (!equipment.organizationId || !orgIds.includes(equipment.organizationId)) return c.json({ message: "No access" }, 403);
-  const rows = await storage.getEquipmentUsage(equipment.organizationId, equipment.equipmentId);
-  return c.json(rows);
+  const [rows, jobs] = await Promise.all([
+    storage.getEquipmentUsage(equipment.organizationId, equipment.equipmentId),
+    storage.getAirMonitoringJobs(),
+  ]);
+  const jobsById = new Map<string, any>();
+  for (const job of jobs || []) {
+    if (job && job.id && job.organizationId === equipment.organizationId) jobsById.set(job.id, job);
+  }
+  const enriched = (rows || []).map((u: any) => {
+    const job = u.jobId ? jobsById.get(u.jobId) : null;
+    return {
+      ...u,
+      job: job ? { id: job.id, jobNumber: job.jobNumber, jobName: job.jobName } : null,
+    };
+  });
+  return c.json(enriched);
 });
 
 app.post("/api/equipment/:id/usage", async (c) => {
@@ -2121,6 +2309,87 @@ app.post("/api/equipment/:id/usage", async (c) => {
   });
 
   return c.json(created, 201);
+});
+
+app.put("/api/equipment-usage/:id", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const existing = await storage.getEquipmentUsageById(c.req.param("id"));
+  if (!existing) return c.json({ message: "Not found" }, 404);
+  if (!existing.organizationId || !orgIds.includes(existing.organizationId)) return c.json({ message: "No access" }, 403);
+
+  const body = await parseJsonBody<any>(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+  if (!reason) return c.json({ message: "Reason is required" }, 400);
+  delete body.reason;
+
+  try {
+    const payload = insertEquipmentUsageSchema.partial().parse(body);
+    const patch = stripUndefined({
+      jobId: payload.jobId ?? undefined,
+      usedFrom: payload.usedFrom instanceof Date ? payload.usedFrom.getTime() : payload.usedFrom ?? undefined,
+      usedTo: payload.usedTo instanceof Date ? payload.usedTo.getTime() : payload.usedTo ?? undefined,
+      context: payload.context ?? undefined,
+      sampleRunId: payload.sampleRunId ?? undefined,
+    } as any);
+    const updated = await storage.updateEquipmentUsage(existing.usageId, patch as any);
+    if (!updated) return c.json({ message: "Not found" }, 404);
+
+    const changes = computeAuditChanges(existing as any, updated as any, Object.keys(patch || {}));
+    const noteText =
+      `Usage record edited (usage ${existing.usageId}).\n` +
+      `Reason: ${reason}\n` +
+      (changes.length ? `Changes: ${changesSummary(changes)}` : "Changes: (none)");
+    await storage.createEquipmentNote({
+      organizationId: existing.organizationId,
+      equipmentId: existing.equipmentId,
+      createdByUserId: userId,
+      noteText,
+      noteType: "audit",
+      visibility: "org",
+    } as any);
+
+    return c.json(updated);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
+});
+
+app.delete("/api/equipment-usage/:id", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const existing = await storage.getEquipmentUsageById(c.req.param("id"));
+  if (!existing) return c.json({ message: "Not found" }, 404);
+  if (!existing.organizationId || !orgIds.includes(existing.organizationId)) return c.json({ message: "No access" }, 403);
+
+  const body = await parseJsonBody<any>(c);
+  const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+  if (!reason) return c.json({ message: "Reason is required" }, 400);
+
+  const ok = await storage.deleteEquipmentUsage(existing.usageId);
+  if (!ok) return c.json({ message: "Not found" }, 404);
+
+  const noteText =
+    `Usage record deleted (usage ${existing.usageId}).\n` +
+    `Reason: ${reason}\n` +
+    `Deleted record: ${JSON.stringify(existing)}`;
+  await storage.createEquipmentNote({
+    organizationId: existing.organizationId,
+    equipmentId: existing.equipmentId,
+    createdByUserId: userId,
+    noteText,
+    noteType: "audit",
+    visibility: "org",
+  } as any);
+
+  return c.body(null, 204);
 });
 
 app.get("/api/equipment/:id/notes", async (c) => {
@@ -3323,8 +3592,52 @@ app.post("/api/air-samples", async (c) => {
     }
     const created = await storage.createAirSample(payload);
 
-	  // Exposure snapshot: store raw inputs + computed outputs (auditable) when personnel is linked.
+	  // Auto-generate equipment usage for the selected pump (traceability).
 	  try {
+	    const orgId = organizationId;
+	    const pumpId = (created as any).pumpId ? String((created as any).pumpId) : "";
+	    if (orgId && pumpId) {
+	      const equip = await storage.getEquipmentById(pumpId);
+	      if (equip && equip.organizationId === orgId) {
+	        const sampleRunId = created.id;
+	        const existingUsage = await storage.getEquipmentUsageBySampleRunId(orgId, sampleRunId);
+	        const usedFrom = typeof (created as any).startTime === "number" ? (created as any).startTime : Number((created as any).startTime);
+	        const usedToRaw = (created as any).endTime;
+	        const usedTo =
+	          typeof usedToRaw === "number"
+	            ? usedToRaw
+	            : usedToRaw
+	              ? Number(usedToRaw)
+	              : null;
+	        const context = `Air Sample ${((created as any).sampleNumber || "").toString().trim() || created.id}`;
+	        if (existingUsage) {
+	          await storage.updateEquipmentUsage(existingUsage.usageId, {
+	            equipmentId: equip.equipmentId,
+	            jobId: created.jobId,
+	            usedFrom: Number.isFinite(usedFrom as any) ? usedFrom : null,
+	            usedTo: Number.isFinite(usedTo as any) ? usedTo : null,
+	            context,
+	            sampleRunId,
+	          } as any);
+	        } else {
+	          await storage.createEquipmentUsage({
+	            organizationId: orgId,
+	            equipmentId: equip.equipmentId,
+	            jobId: created.jobId,
+	            usedFrom: Number.isFinite(usedFrom as any) ? usedFrom : null,
+	            usedTo: Number.isFinite(usedTo as any) ? usedTo : null,
+	            context,
+	            sampleRunId,
+	          } as any);
+	        }
+	      }
+	    }
+	  } catch {
+	    // best-effort
+	  }
+
+		  // Exposure snapshot: store raw inputs + computed outputs (auditable) when personnel is linked.
+		  try {
 	    const personId = (created as any).personId ? String((created as any).personId) : "";
 	    if (personId) {
 	      const person = await storage.getPersonnelById(personId);
@@ -3420,8 +3733,58 @@ app.put("/api/air-samples/:id", async (c) => {
     }
     const updated = await storage.updateAirSample(c.req.param("id"), payload);
 
-	  // Update exposure snapshot if still linked to personnel.
+	  // Auto-generate (or remove) equipment usage for the selected pump.
 	  try {
+	    const orgId = (access as any).job?.organizationId || null;
+	    if (orgId) {
+	      const sampleRunId = (updated as any).id;
+	      const pumpId = (updated as any).pumpId ? String((updated as any).pumpId) : "";
+	      const existingUsage = await storage.getEquipmentUsageBySampleRunId(orgId, sampleRunId);
+	      if (!pumpId) {
+	        if (existingUsage) {
+	          await storage.deleteEquipmentUsage(existingUsage.usageId);
+	        }
+	      } else {
+	        const equip = await storage.getEquipmentById(pumpId);
+	        if (equip && equip.organizationId === orgId) {
+	          const usedFrom = typeof (updated as any).startTime === "number" ? (updated as any).startTime : Number((updated as any).startTime);
+	          const usedToRaw = (updated as any).endTime;
+	          const usedTo =
+	            typeof usedToRaw === "number"
+	              ? usedToRaw
+	              : usedToRaw
+	                ? Number(usedToRaw)
+	                : null;
+	          const context = `Air Sample ${(((updated as any).sampleNumber || "") as any).toString?.().trim?.() || sampleRunId}`;
+	          if (existingUsage) {
+	            await storage.updateEquipmentUsage(existingUsage.usageId, {
+	              equipmentId: equip.equipmentId,
+	              jobId: (updated as any).jobId,
+	              usedFrom: Number.isFinite(usedFrom as any) ? usedFrom : null,
+	              usedTo: Number.isFinite(usedTo as any) ? usedTo : null,
+	              context,
+	              sampleRunId,
+	            } as any);
+	          } else {
+	            await storage.createEquipmentUsage({
+	              organizationId: orgId,
+	              equipmentId: equip.equipmentId,
+	              jobId: (updated as any).jobId,
+	              usedFrom: Number.isFinite(usedFrom as any) ? usedFrom : null,
+	              usedTo: Number.isFinite(usedTo as any) ? usedTo : null,
+	              context,
+	              sampleRunId,
+	            } as any);
+	          }
+	        }
+	      }
+	    }
+	  } catch {
+	    // best-effort
+	  }
+
+		  // Update exposure snapshot if still linked to personnel.
+		  try {
 	    const orgId = (access as any).job?.organizationId || null;
 	    const personId = (updated as any)?.personId ? String((updated as any).personId) : "";
 	    if (orgId && personId) {
@@ -3663,6 +4026,8 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
     if (!m?.userId) continue;
     userLabelById.set(String(m.userId), String(m.name || m.email || m.userId));
   }
+  const pmRaw = String((job as any).projectManager || "");
+  const pmLabel = pmRaw ? userLabelById.get(pmRaw) || pmRaw : "";
 
   const esc = (s: any) =>
     String(s ?? "")
@@ -3755,6 +4120,11 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
         .t-samples th,.t-samples td{white-space:nowrap;}
         .t-samples th.col-location,.t-samples td.col-location{white-space:normal;width:100%;}
         .row-exceed td{background:#fee2e2;}
+        @media print{
+          *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+          th{background:#f9fafb !important;}
+          .row-exceed td{background:#fee2e2 !important;}
+        }
       </style>
     </head>
     <body>
@@ -3766,7 +4136,7 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
           <div class="kv"><div class="k">Job Name</div><div class="v">${esc(job.jobName)}</div></div>
           <div class="kv"><div class="k">Site</div><div class="v">${esc(job.siteName)}</div></div>
           <div class="kv"><div class="k">Client</div><div class="v">${esc(job.clientName)}</div></div>
-          <div class="kv"><div class="k">Project Manager</div><div class="v">${esc(job.projectManager)}</div></div>
+          <div class="kv"><div class="k">Project Manager</div><div class="v">${esc(pmLabel)}</div></div>
           <div class="kv"><div class="k">Status</div><div class="v">${esc(job.status)}</div></div>
           <div class="kv"><div class="k">Work Description</div><div class="v">${esc(job.workDescription)}</div></div>
         </div>
@@ -3781,12 +4151,12 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
               <th>Type</th>
               <th>Analyte</th>
               <th class="col-location">Location</th>
-              <th>Pump SN</th>
-              <th>Technician</th>
-              <th>Flow</th>
-              <th>Minutes</th>
-              <th>Time</th>
-              <th>Status</th>
+	              <th>Pump #</th>
+	              <th>Technician</th>
+	              <th>Flow</th>
+	              <th>Minutes</th>
+	              <th>Time</th>
+	              <th>Status</th>
               <th>Result</th>
             </tr>
           </thead>
@@ -3927,4 +4297,123 @@ app.get("*", async (c) => {
   }
 });
 
-export default { fetch: app.fetch };
+const D1_BACKUP_TABLES = [
+  "organizations",
+  "organization_members",
+  "user_profiles",
+  "auth_users",
+  "auth_sessions",
+  "audit_log",
+  "surveys",
+  "observations",
+  "observation_photos",
+  "asbestos_samples",
+  "asbestos_sample_layers",
+  "asbestos_sample_photos",
+  "paint_samples",
+  "paint_sample_photos",
+  "personnel_profiles",
+  "personnel",
+  "personnel_job_assignments",
+  "exposure_limits",
+  "exposure_records",
+  "air_monitoring_jobs",
+  "air_samples",
+  "air_monitoring_documents",
+  "daily_weather_logs",
+  "equipment",
+  "equipment_calibration_events",
+  "equipment_usage",
+  "equipment_notes",
+  "equipment_documents",
+  "field_tools_equipment",
+  // These are used by older routes/features; include them to avoid partial backups.
+  "report_templates",
+  "clients",
+  "messages",
+  "notifications",
+  "chain_of_custody",
+  "compliance_rules",
+  "compliance_tracking",
+  "collaboration_sessions",
+  "collaboration_changes",
+] as const;
+
+const backupD1LogicalToR2 = async (env: any) => {
+  if (!env?.DB || !env?.ABATEIQ_BACKUPS) return;
+  setD1Database(env.DB);
+
+  const now = new Date();
+  const ymd = now.toISOString().slice(0, 10);
+  const runId = now.toISOString().replace(/[:.]/g, "-");
+  const prefix = `d1/logical/${ymd}/${runId}`;
+  const pageSize = 500;
+
+  const manifest: any = {
+    generatedAt: now.toISOString(),
+    scope: "d1_logical",
+    pageSize,
+    tables: [] as Array<{ table: string; pages: number; rows: number }>,
+  };
+
+  for (const table of D1_BACKUP_TABLES) {
+    let offset = 0;
+    let page = 0;
+    let total = 0;
+    try {
+      for (;;) {
+        // Table name is from a fixed whitelist above; safe to interpolate.
+        const res = await env.DB.prepare(`SELECT * FROM ${table} ORDER BY rowid LIMIT ? OFFSET ?`)
+          .bind(pageSize, offset)
+          .all();
+        const rows = (res as any)?.results || [];
+        if (!rows.length) break;
+
+        const key = `${prefix}/${table}/page_${String(page).padStart(4, "0")}.json`;
+        await env.ABATEIQ_BACKUPS.put(
+          key,
+          JSON.stringify({
+            table,
+            page,
+            offset,
+            pageSize,
+            generatedAt: now.toISOString(),
+            rows,
+          }),
+          { httpMetadata: { contentType: "application/json" } }
+        );
+
+        total += rows.length;
+        if (rows.length < pageSize) break;
+        offset += pageSize;
+        page += 1;
+      }
+      manifest.tables.push({ table, pages: total ? page + 1 : 0, rows: total });
+    } catch (err: any) {
+      const msg = err instanceof Error ? err.message : String(err);
+      manifest.tables.push({ table, pages: 0, rows: 0, error: msg });
+      // Continue backing up other tables.
+      continue;
+    }
+  }
+
+  await env.ABATEIQ_BACKUPS.put(`${prefix}/manifest.json`, JSON.stringify(manifest), {
+    httpMetadata: { contentType: "application/json" },
+  });
+  await env.ABATEIQ_BACKUPS.put(`d1/logical/${ymd}/latest.json`, JSON.stringify({ prefix, generatedAt: now.toISOString() }), {
+    httpMetadata: { contentType: "application/json" },
+  });
+};
+
+export default {
+  fetch: app.fetch,
+  scheduled: (event: any, env: any, ctx: any) => {
+    // Daily logical backups are best-effort: failures should not break scheduled delivery.
+    ctx.waitUntil(
+      backupD1LogicalToR2(env).catch((err: any) => {
+        // Cloudflare scheduled events surface console errors in logs.
+        console.error("backupD1LogicalToR2 failed", event?.cron, err);
+      })
+    );
+  },
+};
