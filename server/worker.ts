@@ -59,6 +59,8 @@ type Env = {
   DB: D1Database;
   OPENWEATHER_API_KEY?: string;
   ABATEIQ_UPLOADS: R2Bucket;
+  // Optional private backups bucket (do NOT expose via /uploads).
+  ABATEIQ_BACKUPS?: R2Bucket;
 };
 
 type AuthUser = {
@@ -75,6 +77,84 @@ type AuthUser = {
 };
 
 const app = new Hono<{ Bindings: Env; Variables: { user?: AuthUser } }>();
+
+const WORKER_START_MS = Date.now();
+
+const formatDurationMs = (ms: number) => {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts: string[] = [];
+  if (days) parts.push(`${days}d`);
+  if (hours || parts.length) parts.push(`${hours}h`);
+  if (minutes || parts.length) parts.push(`${minutes}m`);
+  parts.push(`${seconds}s`);
+  return parts.join(" ");
+};
+
+const toTitleCase = (value: any) => {
+  const s = String(value ?? "").trim();
+  if (!s) return "";
+  return s
+    .toLowerCase()
+    .split(/\s+/g)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+};
+
+const toLabel = (value: any) => {
+  const s = String(value ?? "").trim();
+  if (!s) return "";
+  return s
+    .replace(/[_-]+/g, " ")
+    .split(/\s+/g)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+};
+
+const fmtUnit = (value: any, unit: string) => {
+  if (value === null || value === undefined || value === "") return "";
+  return `${String(value)} ${unit}`.trim();
+};
+
+const runD1Backup = async (env: Env, reason: string) => {
+  if (!env.ABATEIQ_BACKUPS) {
+    return { ok: false as const, message: "Backups bucket not configured" };
+  }
+
+  // Dump all non-internal tables. Baseline approach; for large datasets consider incremental/export tooling.
+  const tablesRes = await env.DB.prepare(
+    "select name from sqlite_master where type='table' and name not like 'sqlite_%' order by name"
+  ).all();
+  const tableNames = ((tablesRes as any)?.results || [])
+    .map((r: any) => String(r?.name || "").trim())
+    .filter(Boolean);
+
+  const tables: Record<string, any[]> = {};
+  for (const name of tableNames) {
+    const safe = name.replaceAll('\"', '\"\"');
+    const rowsRes = await env.DB.prepare(`select * from \"${safe}\"`).all();
+    tables[name] = ((rowsRes as any)?.results || []) as any[];
+  }
+
+  const payload = {
+    version: 1,
+    reason,
+    generatedAt: Date.now(),
+    tables,
+  };
+
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const key = `d1/${ts}.json`;
+  await env.ABATEIQ_BACKUPS.put(key, JSON.stringify(payload), {
+    httpMetadata: { contentType: "application/json" },
+  });
+  return { ok: true as const, key };
+};
 
 app.onError((err, c) => {
   // Make failures debuggable in production without dumping stack traces to the browser.
@@ -1387,7 +1467,15 @@ app.delete("/api/organizations/:id", async (c) => {
 });
 
 app.get("/api/organizations/:id/members", async (c) => {
-  const members = await storage.getOrganizationMembers(c.req.param("id"));
+  const user = c.get("user");
+  const adminEmails = (c.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  if (!isAdminUser(user, adminEmails)) {
+    return c.json({ message: "Admin access required" }, 403);
+  }
+  const members = await storage.getOrganizationMembersWithUsers(c.req.param("id"));
   return c.json(members);
 });
 
@@ -1488,6 +1576,23 @@ app.get("/api/admin/stats", async (c) => {
   } catch {
     databaseSizeBytes = 0;
   }
+  let dbConnected = true;
+  try {
+    await c.env.DB.prepare("select 1 as ok").first();
+  } catch {
+    dbConnected = false;
+  }
+
+  let lastBackup: string | null = null;
+  if (c.env.ABATEIQ_BACKUPS) {
+    try {
+      const listed = await c.env.ABATEIQ_BACKUPS.list({ prefix: "d1/", limit: 50 });
+      const keys = (listed.objects || []).map((o) => o.key).filter(Boolean).sort().reverse();
+      lastBackup = keys[0] || null;
+    } catch {
+      lastBackup = null;
+    }
+  }
   return c.json({
     totalUsers: Number(totalUsersResult?.count ?? 0),
     activeUsers: Number(activeUsersResult?.count ?? 0),
@@ -1495,10 +1600,68 @@ app.get("/api/admin/stats", async (c) => {
     totalAirSamples: Number(totalAirSamplesResult?.count ?? 0),
     databaseSize: `${(databaseSizeBytes / (1024 * 1024)).toFixed(1)} MB`,
     databaseSizeBytes,
-    systemUptime: `${Math.floor(Date.now() / 1000 / 60)} minutes`,
-    lastBackup: null,
-    dbConnected: true,
+    systemUptime: formatDurationMs(Date.now() - WORKER_START_MS),
+    uptimeScope: "worker_instance",
+    lastBackup,
+    dbConnected,
   });
+});
+
+app.post("/api/admin/backups", async (c) => {
+  const user = c.get("user");
+  const adminEmails = (c.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  if (!isAdminUser(user, adminEmails)) {
+    return c.json({ message: "Admin access required" }, 403);
+  }
+  try {
+    const res = await runD1Backup(c.env, "manual");
+    if (!res.ok) return c.json({ message: res.message }, 503);
+    return c.json({ ok: true, key: res.key }, 201);
+  } catch (err: any) {
+    return c.json({ message: "Backup failed", error: err?.message || String(err) }, 500);
+  }
+});
+
+app.get("/api/admin/backups", async (c) => {
+  const user = c.get("user");
+  const adminEmails = (c.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  if (!isAdminUser(user, adminEmails)) {
+    return c.json({ message: "Admin access required" }, 403);
+  }
+  if (!c.env.ABATEIQ_BACKUPS) return c.json({ message: "Backups bucket not configured" }, 503);
+  const listed = await c.env.ABATEIQ_BACKUPS.list({ prefix: "d1/", limit: 200 });
+  const items = (listed.objects || [])
+    .map((o) => ({ key: o.key, uploaded: o.uploaded ? o.uploaded.toISOString() : null, size: o.size }))
+    .sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0));
+  return c.json(items);
+});
+
+app.get("/api/admin/backups/:key", async (c) => {
+  const user = c.get("user");
+  const adminEmails = (c.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  if (!isAdminUser(user, adminEmails)) {
+    return c.json({ message: "Admin access required" }, 403);
+  }
+  if (!c.env.ABATEIQ_BACKUPS) return c.json({ message: "Backups bucket not configured" }, 503);
+  const rawKey = c.req.param("key");
+  const key = rawKey.startsWith("d1/") ? rawKey : `d1/${rawKey}`;
+  const object = await c.env.ABATEIQ_BACKUPS.get(key);
+  if (!object) return c.json({ message: "Backup not found" }, 404);
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("Content-Type", "application/json");
+  headers.set("Content-Disposition", `attachment; filename="${sanitizeFilename(key.replaceAll("/", "_"))}"`);
+  return new Response(object.body, { headers });
 });
 
 app.get("/api/admin/users", async (c) => {
@@ -3352,6 +3515,22 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
   const samples = await storage.getAirMonitoringJobSamples(job.id);
   const weatherLogs = await storage.getDailyWeatherLogs(job.id);
   const documents = await storage.getAirMonitoringDocuments(job.id);
+  const baseUrl = new URL(c.req.url).origin;
+
+  const equipment =
+    job.organizationId ? await storage.getEquipment(job.organizationId, { includeInactive: true }) : [];
+  const pumpSnById = new Map<string, string>();
+  for (const e of equipment as any[]) {
+    if (e?.equipmentId) pumpSnById.set(String(e.equipmentId), String(e.serialNumber || ""));
+  }
+
+  const orgMembers =
+    job.organizationId ? await storage.getOrganizationMembersWithUsers(job.organizationId) : [];
+  const userLabelById = new Map<string, string>();
+  for (const m of orgMembers as any[]) {
+    if (!m?.userId) continue;
+    userLabelById.set(String(m.userId), String(m.name || m.email || m.userId));
+  }
 
   const esc = (s: any) =>
     String(s ?? "")
@@ -3365,16 +3544,27 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
     .map((s: any) => {
       const start = s.startTime ? new Date(s.startTime).toLocaleString() : "";
       const end = s.endTime ? new Date(s.endTime).toLocaleString() : "";
-      return `<tr>
+      const typeLabel =
+        s.sampleType === "other" && s.customSampleType ? toTitleCase(s.customSampleType) : toLabel(s.sampleType);
+      const analyteLabel =
+        s.analyte === "other" && s.customAnalyte ? toTitleCase(s.customAnalyte) : toLabel(s.analyte);
+      const statusLabel = toLabel(s.status);
+      const pumpSn = s.pumpId ? (pumpSnById.get(String(s.pumpId)) || "") : "";
+      const techRaw = String(s.collectedBy || "");
+      const techLabel = userLabelById.get(techRaw) || techRaw;
+      const exceeds = Boolean(s.exceedsLimit);
+      const rowClass = exceeds ? ` class="row-exceed"` : "";
+      return `<tr${rowClass}>
         <td>${esc(s.sampleNumber)}</td>
-        <td>${esc(s.sampleType)}</td>
-        <td>${esc(s.analyte)}</td>
-        <td>${esc(s.location)}</td>
-        <td>${esc(s.pumpId)}</td>
+        <td>${esc(typeLabel)}</td>
+        <td>${esc(analyteLabel)}</td>
+        <td class="col-location">${esc(s.location)}</td>
+        <td>${esc(pumpSn)}</td>
+        <td>${esc(techLabel)}</td>
         <td>${esc(s.flowRate)}</td>
         <td>${esc(s.samplingDuration)}</td>
         <td>${esc(start)}${end ? ` - ${esc(end)}` : ""}</td>
-        <td>${esc(s.status)}</td>
+        <td>${esc(statusLabel)}</td>
         <td>${esc(s.result)} ${esc(s.resultUnit)}</td>
       </tr>`;
     })
@@ -3385,12 +3575,12 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
       const when = w.logTime ? new Date(w.logTime).toLocaleString() : w.logDate || "";
       return `<tr>
         <td>${esc(when)}</td>
-        <td>${esc(w.weatherConditions)}</td>
-        <td>${esc(w.temperature)}</td>
-        <td>${esc(w.humidity)}</td>
-        <td>${esc(w.windSpeed)}</td>
+        <td>${esc(toTitleCase(w.weatherConditions))}</td>
+        <td>${esc(fmtUnit(w.temperature, "°F"))}</td>
+        <td>${esc(fmtUnit(w.humidity, "%"))}</td>
+        <td>${esc(fmtUnit(w.windSpeed, "mph"))}</td>
         <td>${esc(w.windDirection)}</td>
-        <td>${esc(w.barometricPressure)}</td>
+        <td>${esc(fmtUnit(w.barometricPressure, "inHg"))}</td>
         <td>${esc(w.notes)}</td>
       </tr>`;
     })
@@ -3398,7 +3588,7 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
 
   const docRows = documents
     .map((d: any) => {
-      const url = d.filename ? `/uploads/${d.filename}` : "";
+      const url = d.filename ? `${baseUrl}/uploads/${d.filename}` : "";
       const when = d.uploadedAt ? new Date(d.uploadedAt).toLocaleString() : "";
       return `<tr>
         <td>${esc(d.documentType)}</td>
@@ -3406,7 +3596,7 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
         <td>${esc(d.mimeType)}</td>
         <td>${esc(d.size)}</td>
         <td>${esc(when)}</td>
-        <td>${url ? `<a href="${esc(url)}">${esc(url)}</a>` : "—"}</td>
+        <td>${url ? `<a href="${esc(url)}" target="_blank" rel="noreferrer">Open</a>` : "—"}</td>
       </tr>`;
     })
     .join("");
@@ -3426,10 +3616,13 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
         .kv{border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;}
         .k{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;}
         .v{font-size:13px;margin-top:4px;word-break:break-word;}
-        table{width:100%;border-collapse:collapse;font-size:12px;}
+        table{width:100%;border-collapse:collapse;font-size:12px;table-layout:auto;}
         th,td{border:1px solid #e5e7eb;padding:8px;vertical-align:top;}
         th{background:#f9fafb;text-align:left;font-weight:700;}
         .section{margin-top:18px;}
+        .t-samples th,.t-samples td{white-space:nowrap;}
+        .t-samples th.col-location,.t-samples td.col-location{white-space:normal;width:100%;}
+        .row-exceed td{background:#fee2e2;}
       </style>
     </head>
     <body>
@@ -3449,13 +3642,23 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
 
       <div class="section">
         <h2>Air Samples</h2>
-        <table>
+        <table class="t-samples">
           <thead>
             <tr>
-              <th>Sample #</th><th>Type</th><th>Analyte</th><th>Location</th><th>Pump</th><th>Flow</th><th>Minutes</th><th>Time</th><th>Status</th><th>Result</th>
+              <th>Sample #</th>
+              <th>Type</th>
+              <th>Analyte</th>
+              <th class="col-location">Location</th>
+              <th>Pump SN</th>
+              <th>Technician</th>
+              <th>Flow</th>
+              <th>Minutes</th>
+              <th>Time</th>
+              <th>Status</th>
+              <th>Result</th>
             </tr>
           </thead>
-          <tbody>${sampleRows || `<tr><td colspan="10">No samples.</td></tr>`}</tbody>
+          <tbody>${sampleRows || `<tr><td colspan="11">No samples.</td></tr>`}</tbody>
         </table>
       </div>
 

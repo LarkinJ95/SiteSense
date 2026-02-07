@@ -251,6 +251,16 @@ export interface IStorage {
   updateOrganization(id: string, org: Partial<InsertOrganization>): Promise<Organization | undefined>;
   deleteOrganization(id: string): Promise<boolean>;
   getOrganizationMembers(organizationId: string): Promise<OrganizationMember[]>;
+  getOrganizationMembersWithUsers(organizationId: string): Promise<
+    Array<
+      OrganizationMember & {
+        name?: string | null;
+        email?: string | null;
+        firstName?: string | null;
+        lastName?: string | null;
+      }
+    >
+  >;
   addOrganizationMember(member: InsertOrganizationMember): Promise<OrganizationMember>;
   updateOrganizationMember(id: string, member: Partial<InsertOrganizationMember>): Promise<OrganizationMember | undefined>;
   removeOrganizationMember(id: string): Promise<boolean>;
@@ -1127,6 +1137,46 @@ export class DatabaseStorage implements IStorage {
       .from(organizationMembers)
       .where(eq(organizationMembers.organizationId, organizationId))
       .orderBy(desc(organizationMembers.createdAt));
+  }
+
+  async getOrganizationMembersWithUsers(organizationId: string) {
+    const rows = await db()
+      .select({
+        id: organizationMembers.id,
+        organizationId: organizationMembers.organizationId,
+        userId: organizationMembers.userId,
+        role: organizationMembers.role,
+        status: organizationMembers.status,
+        createdAt: organizationMembers.createdAt,
+        email: userProfiles.email,
+        firstName: userProfiles.firstName,
+        lastName: userProfiles.lastName,
+        authEmail: authUsersTable.email,
+        authName: authUsersTable.name,
+      })
+      .from(organizationMembers)
+      .leftJoin(userProfiles, eq(organizationMembers.userId, userProfiles.userId))
+      .leftJoin(authUsersTable, eq(organizationMembers.userId, authUsersTable.userId))
+      .where(eq(organizationMembers.organizationId, organizationId))
+      .orderBy(desc(organizationMembers.createdAt));
+
+    return rows.map((row: any) => {
+      const profileName = `${row.firstName || ""} ${row.lastName || ""}`.trim();
+      const name = profileName || row.authName || row.authEmail || row.userId;
+      const email = row.email || row.authEmail || null;
+      return {
+        id: row.id,
+        organizationId: row.organizationId,
+        userId: row.userId,
+        role: row.role ?? null,
+        status: row.status ?? null,
+        createdAt: typeof row.createdAt === "number" ? row.createdAt : null,
+        name,
+        email,
+        firstName: row.firstName ?? null,
+        lastName: row.lastName ?? null,
+      };
+    });
   }
 
   async addOrganizationMember(member: InsertOrganizationMember): Promise<OrganizationMember> {

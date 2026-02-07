@@ -41,6 +41,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { format, subDays, parseISO } from "date-fns";
+import type { AirMonitoringJob } from "@shared/schema";
 
 export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -138,6 +139,12 @@ export default function Dashboard() {
   });
 
   const recentSurveys = surveys.slice(0, 3);
+
+  const { data: airJobs = [], isLoading: jobsLoading } = useQuery<AirMonitoringJob[]>({
+    queryKey: ["/api/air-monitoring-jobs"],
+  });
+
+  const recentAirJobs = (airJobs || []).slice(0, 3);
 
   // Analytics data processing
   const analyticsData = useMemo(() => {
@@ -624,6 +631,105 @@ export default function Dashboard() {
                             <Edit className="h-4 w-4" />
                           </Button>
                         </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Recent Air Monitoring Jobs */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Recent Air Monitoring Jobs</CardTitle>
+            <Link href="/air-monitoring" className="text-primary text-sm font-medium hover:text-blue-700">
+              View All
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {jobsLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center space-x-4">
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <div className="space-y-2 flex-1">
+                    <Skeleton className="h-4 w-[200px]" />
+                    <Skeleton className="h-4 w-[100px]" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : recentAirJobs.length === 0 ? (
+            <div className="text-center py-8">
+              <TestTubeDiagonal className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" />
+              <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">No air monitoring jobs yet</h3>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Create your first air monitoring job to start tracking samples and logs.</p>
+              <div className="mt-6">
+                <Link href="/air-monitoring">
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Air Monitoring
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-800">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Job
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Site
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Project Manager
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Start Date
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                  {recentAirJobs.map((job) => (
+                    <tr key={job.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                          {job.jobNumber || job.id}
+                        </div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">
+                          {job.jobName}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        {job.siteName}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        {job.projectManager || "—"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        {job.startDate ? new Date(job.startDate).toLocaleDateString() : "—"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <Badge variant="outline">{job.status || "planning"}</Badge>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <Link href={`/air-monitoring/${job.id}`} className="text-primary hover:underline">
+                          View
+                        </Link>
                       </td>
                     </tr>
                   ))}

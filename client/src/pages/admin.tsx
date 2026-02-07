@@ -74,6 +74,8 @@ interface OrganizationMember {
   id: string;
   organizationId: string;
   userId: string;
+  name?: string | null;
+  email?: string | null;
   role?: string | null;
   status?: string | null;
   createdAt?: string;
@@ -150,6 +152,10 @@ export default function AdminDashboard() {
     queryKey: ["/api/organizations", selectedOrganization?.id, "members"],
     enabled: !!selectedOrganization?.id,
   });
+
+  const [editingMember, setEditingMember] = useState<OrganizationMember | null>(null);
+  const [isEditMemberModalOpen, setIsEditMemberModalOpen] = useState(false);
+  const [editMemberData, setEditMemberData] = useState({ id: "", role: "member", status: "active" });
 
   const databasePercent = systemStats?.databaseSizeBytes
     ? Math.min(100, (systemStats.databaseSizeBytes / (1024 ** 3)) * 100)
@@ -379,6 +385,22 @@ export default function AdminDashboard() {
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error?.message || "Failed to remove organization member.", variant: "destructive" });
+    },
+  });
+
+  const updateOrganizationMemberMutation = useMutation({
+    mutationFn: async (payload: { id: string; role: string; status: string }) => {
+      const { id, ...data } = payload;
+      return await apiRequest("PUT", `/api/organization-members/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations", selectedOrganization?.id, "members"] });
+      toast({ title: "Member Updated", description: "Organization member updated successfully." });
+      setIsEditMemberModalOpen(false);
+      setEditingMember(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to update organization member.", variant: "destructive" });
     },
   });
 
@@ -760,48 +782,67 @@ export default function AdminDashboard() {
                         </Button>
                       </div>
 
-                      <div className="border rounded-lg">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>User ID</TableHead>
-                              <TableHead>Role</TableHead>
-                              <TableHead>Status</TableHead>
-                              <TableHead>Actions</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {organizationMembers.map((member) => (
-                              <TableRow key={member.id}>
-                                <TableCell>{member.userId}</TableCell>
-                                <TableCell>{member.role || "member"}</TableCell>
-                                <TableCell>
-                                  <Badge className={getStatusColor(member.status || "active")}>
-                                    {member.status || "active"}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => removeOrganizationMemberMutation.mutate(member.id)}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
+	                      <div className="border rounded-lg">
+	                        <Table>
+	                          <TableHeader>
+	                            <TableRow>
+	                              <TableHead>Name</TableHead>
+	                              <TableHead>Email</TableHead>
+	                              <TableHead>Role</TableHead>
+	                              <TableHead>Status</TableHead>
+	                              <TableHead>Actions</TableHead>
+	                            </TableRow>
+	                          </TableHeader>
+	                          <TableBody>
+	                            {organizationMembers.map((member) => (
+	                              <TableRow key={member.id}>
+	                                <TableCell className="font-medium">{member.name || member.userId}</TableCell>
+	                                <TableCell>{member.email || "—"}</TableCell>
+	                                <TableCell>{member.role || "member"}</TableCell>
+	                                <TableCell>
+	                                  <Badge className={getStatusColor(member.status || "active")}>
+	                                    {member.status || "active"}
+	                                  </Badge>
+	                                </TableCell>
+	                                <TableCell>
+	                                  <div className="flex items-center gap-2">
+	                                    <Button
+	                                      variant="outline"
+	                                      size="sm"
+	                                      onClick={() => {
+	                                        setEditingMember(member);
+	                                        setEditMemberData({
+	                                          id: member.id,
+	                                          role: (member.role || "member") as any,
+	                                          status: (member.status || "active") as any,
+	                                        });
+	                                        setIsEditMemberModalOpen(true);
+	                                      }}
+	                                    >
+	                                      <Edit className="h-4 w-4" />
+	                                    </Button>
+	                                    <Button
+	                                      variant="outline"
+	                                      size="sm"
+	                                      onClick={() => removeOrganizationMemberMutation.mutate(member.id)}
+	                                    >
+	                                      <Trash2 className="h-4 w-4" />
+	                                    </Button>
+	                                  </div>
+	                                </TableCell>
+	                              </TableRow>
+	                            ))}
+	                          </TableBody>
+	                        </Table>
+	                      </div>
                     </div>
-                  ) : (
-                    <div className="text-sm text-gray-500">
-                      Select an organization above to manage members.
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+	                  ) : (
+	                    <div className="text-sm text-gray-500">
+	                      Select an organization above to manage members.
+	                    </div>
+	                  )}
+	                </CardContent>
+	              </Card>
             </CardContent>
           </Card>
 
@@ -884,7 +925,7 @@ export default function AdminDashboard() {
           </Dialog>
         </TabsContent>
 
-        <TabsContent value="system" className="space-y-4">
+	        <TabsContent value="system" className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
@@ -895,12 +936,15 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span>System Uptime</span>
-                  <Badge className="bg-green-100 text-green-800">
-                    <CheckCircle className="h-3 w-3 mr-1" />
-                    {systemStats?.systemUptime || "Unknown"}
-                  </Badge>
-                </div>
+	                  <span>System Uptime</span>
+	                  <Badge className="bg-green-100 text-green-800">
+	                    <CheckCircle className="h-3 w-3 mr-1" />
+	                    {systemStats?.systemUptime || "Unknown"}
+	                  </Badge>
+	                </div>
+	                <div className="text-xs text-gray-500">
+	                  Uptime reflects current worker instance runtime, not end-to-end infrastructure availability.
+	                </div>
                 <div className="flex items-center justify-between">
                   <span>Database Connection</span>
                   <Badge className={systemStats?.dbConnected ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
@@ -912,15 +956,15 @@ export default function AdminDashboard() {
                     {systemStats?.dbConnected ? "Connected" : "Disconnected"}
                   </Badge>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span>Last Backup</span>
-                  <Badge className="bg-blue-100 text-blue-800">
-                    <Clock className="h-3 w-3 mr-1" />
-                    {systemStats?.lastBackup || "Never"}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
+	                <div className="flex items-center justify-between">
+	                  <span>Last Backup</span>
+	                  <Badge className="bg-blue-100 text-blue-800">
+	                    <Clock className="h-3 w-3 mr-1" />
+	                    {systemStats?.lastBackup || "Never"}
+	                  </Badge>
+	                </div>
+	              </CardContent>
+	            </Card>
 
             <Card>
               <CardHeader>
@@ -1216,6 +1260,59 @@ export default function AdminDashboard() {
                 data-testid="button-update-user"
               >
                 {editUserMutation.isPending ? "Updating..." : "Update User"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Organization Member Modal */}
+      <Dialog open={isEditMemberModalOpen} onOpenChange={setIsEditMemberModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Member</DialogTitle>
+            <DialogDescription>
+              Update role or set a member to inactive.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm">
+              <div className="font-medium">{editingMember?.name || editingMember?.userId || "Member"}</div>
+              <div className="text-gray-500">{editingMember?.email || "—"}</div>
+            </div>
+            <Select
+              value={editMemberData.role}
+              onValueChange={(value) => setEditMemberData((prev) => ({ ...prev, role: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="member">Member</SelectItem>
+                <SelectItem value="manager">Manager</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={editMemberData.status}
+              onValueChange={(value) => setEditMemberData((prev) => ({ ...prev, status: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setIsEditMemberModalOpen(false)}>Cancel</Button>
+              <Button
+                onClick={() => updateOrganizationMemberMutation.mutate(editMemberData)}
+                disabled={!editMemberData.id || updateOrganizationMemberMutation.isPending}
+              >
+                Save
               </Button>
             </div>
           </div>

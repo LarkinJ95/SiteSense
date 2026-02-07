@@ -33,6 +33,10 @@ ADMIN_EMAILS = "larkinjason@icloud.com,jlarkin@bierlein.com"
 binding = "ABATEIQ_UPLOADS"
 bucket_name = "abateiq-uploads"
 
+[[r2_buckets]]
+binding = "ABATEIQ_BACKUPS"
+bucket_name = "abateiq-backups"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "abateiq"
