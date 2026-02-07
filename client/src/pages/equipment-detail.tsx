@@ -15,6 +15,14 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { ArrowLeft, CalendarClock, ClipboardList, Link2, MapPin, Plus, Printer, ShieldCheck, Trash2, User as UserIcon, Wrench } from "lucide-react";
 
+const METHOD_STANDARD_OPTIONS = [
+  "Primary Standard (DryCal/Defender)",
+  "NIST-Traceable Primary Standard",
+  "Bubble Meter (Field Verification)",
+  "Manufacturer Service",
+  "ISO/IEC 17025 Lab",
+] as const;
+
 type EquipmentRow = {
   equipmentId: string;
   organizationId: string;
@@ -438,7 +446,21 @@ export default function EquipmentDetail() {
                 </div>
                 <div className="space-y-2">
                   <Label>Method/Standard</Label>
-                  <Input value={calForm.methodStandard} onChange={(e) => setCalForm({ ...calForm, methodStandard: e.target.value })} />
+                  <Select
+                    value={calForm.methodStandard}
+                    onValueChange={(value) => setCalForm({ ...calForm, methodStandard: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a standard" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {METHOD_STANDARD_OPTIONS.map((opt) => (
+                        <SelectItem key={opt} value={opt}>
+                          {opt}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Target Flow (LPM)</Label>

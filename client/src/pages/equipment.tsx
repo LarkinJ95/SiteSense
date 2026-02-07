@@ -32,6 +32,14 @@ type EquipmentRow = {
   updatedAt?: number | null;
 };
 
+type OrgUser = {
+  userId: string;
+  email?: string | null;
+  name: string;
+  status?: string | null;
+  role?: string | null;
+};
+
 const daysUntil = (ymd?: string | null) => {
   if (!ymd) return null;
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
@@ -63,6 +71,18 @@ export default function Equipment() {
   const { data: rows = [], isLoading } = useQuery<EquipmentRow[]>({
     queryKey: ["/api/equipment"],
   });
+
+  const { data: orgUsers = [] } = useQuery<OrgUser[]>({
+    queryKey: ["/api/inspectors"],
+  });
+
+  const userNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of orgUsers) {
+      if (u?.userId) map.set(u.userId, u.name || u.email || u.userId);
+    }
+    return map;
+  }, [orgUsers]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({
@@ -272,7 +292,11 @@ export default function Equipment() {
                       <TableCell>
                         <div className="flex items-center gap-2 text-sm">
                           <UserIcon className="h-4 w-4 text-gray-500" />
-                          <span>{row.assignedToUserId ? row.assignedToUserId.slice(0, 8) : "—"}</span>
+                          <span title={row.assignedToUserId || undefined}>
+                            {row.assignedToUserId
+                              ? (userNameById.get(row.assignedToUserId) || row.assignedToUserId)
+                              : "—"}
+                          </span>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -286,4 +310,3 @@ export default function Equipment() {
     </div>
   );
 }
-

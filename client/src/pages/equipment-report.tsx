@@ -1,8 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Printer } from "lucide-react";
+
+type OrgUser = {
+  userId: string;
+  email?: string | null;
+  name: string;
+  status?: string | null;
+  role?: string | null;
+};
 
 type ReportData = {
   equipment: any;
@@ -39,6 +47,10 @@ export default function EquipmentReport() {
     queryKey: [`/api/equipment/${id}/report-data`],
   });
 
+  const { data: orgUsers = [] } = useQuery<OrgUser[]>({
+    queryKey: ["/api/inspectors"],
+  });
+
   useEffect(() => {
     document.title = "Equipment Report - AbateIQ";
   }, []);
@@ -53,6 +65,11 @@ export default function EquipmentReport() {
   const usage = Array.isArray(data.usage) ? data.usage : [];
   const notes = Array.isArray(data.notes) ? data.notes : [];
   const documents = Array.isArray(data.documents) ? data.documents : [];
+
+  const assignedName = useMemo(() => {
+    const user = orgUsers.find((u) => u.userId === e.assignedToUserId);
+    return user?.name || user?.email || e.assignedToUserId || "";
+  }, [orgUsers, e.assignedToUserId]);
 
   return (
     <div className="report-root">
@@ -204,7 +221,7 @@ export default function EquipmentReport() {
           <div className="kv"><div className="k">Asset Tag</div><div className="v">{fmt(e.assetTag)}</div></div>
           <div className="kv"><div className="k">Status</div><div className="v">{fmt(e.status)}</div></div>
           <div className="kv"><div className="k">Location</div><div className="v">{fmt(e.location)}</div></div>
-          <div className="kv"><div className="k">Assigned To</div><div className="v">{fmt(e.assignedToUserId)}</div></div>
+          <div className="kv"><div className="k">Assigned To</div><div className="v">{fmt(assignedName)}</div></div>
           <div className="kv"><div className="k">Calibration Interval (days)</div><div className="v">{fmt(e.calibrationIntervalDays)}</div></div>
           <div className="kv"><div className="k">Last Calibration Date</div><div className="v">{fmtDateMaybe(e.lastCalibrationDate)}</div></div>
           <div className="kv"><div className="k">Calibration Due Date</div><div className="v">{fmtDateMaybe(e.calibrationDueDate)}</div></div>
@@ -361,4 +378,3 @@ export default function EquipmentReport() {
     </div>
   );
 }
-
