@@ -355,7 +355,7 @@ export default function EquipmentDetail() {
 
   const assignedName = useMemo(() => {
     const user = orgUsers.find((u) => u.userId === equipment?.assignedToUserId);
-    return user ? user.name : equipment?.assignedToUserId || "";
+    return user ? (user.name || user.email || user.userId) : equipment?.assignedToUserId || "";
   }, [orgUsers, equipment?.assignedToUserId]);
 
   const driftRows = useMemo(() => {
@@ -696,19 +696,19 @@ export default function EquipmentDetail() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Assigned To</Label>
-                  <Select value={edit.assignedToUserId || ""} onValueChange={(value) => setEdit({ ...edit, assignedToUserId: value === "__none__" ? "" : value })}>
-                    <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">Unassigned</SelectItem>
-                      {orgUsers.map((u) => (
-                        <SelectItem key={u.userId} value={u.userId}>
-                          {u.name} {u.email ? `(${u.email})` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+	                  <Label>Assigned To</Label>
+	                  <Select value={edit.assignedToUserId || ""} onValueChange={(value) => setEdit({ ...edit, assignedToUserId: value === "__none__" ? "" : value })}>
+	                    <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
+	                    <SelectContent>
+	                      <SelectItem value="__none__">Unassigned</SelectItem>
+	                      {orgUsers.map((u) => (
+	                        <SelectItem key={u.userId} value={u.userId}>
+	                          {u.name || u.email || u.userId} {u.email ? `(${u.email})` : ""}
+	                        </SelectItem>
+	                      ))}
+	                    </SelectContent>
+	                  </Select>
+	                </div>
                 <div className="space-y-2">
                   <Label>Location</Label>
                   <Input value={edit.location} onChange={(e) => setEdit({ ...edit, location: e.target.value })} />

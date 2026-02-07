@@ -692,6 +692,7 @@ export class DatabaseStorage implements IStorage {
         fitTestDate: payload.fitTestDate ?? null,
         medicalSurveillanceDate: payload.medicalSurveillanceDate ?? null,
         active: payload.active ?? true,
+        isInspector: payload.isInspector ?? false,
         createdByUserId: userId,
         updatedByUserId: userId,
       } as any)
@@ -1223,9 +1224,12 @@ export class DatabaseStorage implements IStorage {
         firstName: userProfiles.firstName,
         lastName: userProfiles.lastName,
         profileStatus: userProfiles.status,
+        authEmail: authUsersTable.email,
+        authName: authUsersTable.name,
       })
       .from(organizationMembers)
       .leftJoin(userProfiles, eq(organizationMembers.userId, userProfiles.userId))
+      .leftJoin(authUsersTable, eq(organizationMembers.userId, authUsersTable.userId))
       .where(
         and(
           eq(organizationMembers.organizationId, organizationId),
@@ -1240,9 +1244,10 @@ export class DatabaseStorage implements IStorage {
 
     return rows.map((row) => ({
       userId: row.userId,
-      email: row.email ?? null,
+      email: (row.email ?? row.authEmail) ?? null,
       firstName: row.firstName ?? null,
       lastName: row.lastName ?? null,
+      name: row.authName ?? null,
       memberRole: row.memberRole ?? null,
       memberStatus: row.memberStatus ?? null,
       profileStatus: row.profileStatus ?? null,

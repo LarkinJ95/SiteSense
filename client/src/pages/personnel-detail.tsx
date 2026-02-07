@@ -29,6 +29,7 @@ type Person = {
   fitTestDate?: string | null;
   medicalSurveillanceDate?: string | null;
   active: boolean;
+  isInspector?: boolean;
   createdAt?: number | null;
   updatedAt?: number | null;
 };
@@ -99,6 +100,7 @@ export default function PersonnelDetail() {
     fitTestDate: "",
     medicalSurveillanceDate: "",
     active: true,
+    isInspector: false,
   });
 
   useEffect(() => {
@@ -115,6 +117,7 @@ export default function PersonnelDetail() {
       fitTestDate: person.fitTestDate || "",
       medicalSurveillanceDate: person.medicalSurveillanceDate || "",
       active: Boolean(person.active),
+      isInspector: Boolean(person.isInspector),
     });
   }, [person, defaultCompany]);
 
@@ -132,6 +135,7 @@ export default function PersonnelDetail() {
         fitTestDate: edit.fitTestDate || null,
         medicalSurveillanceDate: edit.medicalSurveillanceDate || null,
         active: edit.active,
+        isInspector: edit.isInspector,
       };
       const res = await apiRequest("PUT", `/api/personnel/${id}`, payload);
       return (await res.json()) as Person;
@@ -157,6 +161,20 @@ export default function PersonnelDetail() {
     },
     onError: (error: any) => {
       toast({ title: "Failed", description: error?.message || "Unable to deactivate.", variant: "destructive" });
+    },
+  });
+
+  const reactivateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/personnel/${id}/reactivate`, {});
+      return (await res.json()) as Person;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/personnel/${id}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/personnel"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed", description: error?.message || "Unable to reactivate.", variant: "destructive" });
     },
   });
 
@@ -229,10 +247,16 @@ export default function PersonnelDetail() {
             <Save className="h-4 w-4 mr-2" />
             Save
           </Button>
-          <Button variant="destructive" onClick={() => deactivateMutation.mutate()} disabled={deactivateMutation.isPending}>
-            <Trash2 className="h-4 w-4 mr-2" />
-            Deactivate
-          </Button>
+          {person.active ? (
+            <Button variant="destructive" onClick={() => deactivateMutation.mutate()} disabled={deactivateMutation.isPending}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Deactivate
+            </Button>
+          ) : (
+            <Button variant="secondary" onClick={() => reactivateMutation.mutate()} disabled={reactivateMutation.isPending}>
+              Reactivate
+            </Button>
+          )}
         </div>
       </div>
 
@@ -298,6 +322,16 @@ export default function PersonnelDetail() {
                     <SelectContent>
                       <SelectItem value="active">Active</SelectItem>
                       <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Inspector</Label>
+                  <Select value={edit.isInspector ? "yes" : "no"} onValueChange={(v) => setEdit({ ...edit, isInspector: v === "yes" })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="yes">Yes</SelectItem>
+                      <SelectItem value="no">No</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

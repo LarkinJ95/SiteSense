@@ -11,7 +11,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, MapPin, Calendar, Users, FileText, Wind, CloudSun, Clock, Beaker, Trash2, Edit, Download, Settings } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
+import { Plus, Search, MapPin, Calendar, Users, FileText, Wind, CloudSun, Clock, Beaker, Trash2, Edit, Download, Settings, Check, ChevronsUpDown } from "lucide-react";
 import { CreateAirJobModal } from "@/components/create-air-job-modal";
 import { CreatePersonnelModal } from "@/components/create-personnel-modal";
 import { DailyWeatherLog } from "@/components/daily-weather-log";
@@ -1230,6 +1233,20 @@ function AirSampleForm({ jobId, jobNumber, existingSamples, personnel, equipment
   const [personnelQuery, setPersonnelQuery] = useState("");
   const [lastUnitDefault, setLastUnitDefault] = useState<string>("");
   const [labReportFile, setLabReportFile] = useState<File | null>(null);
+  const [pumpOpen, setPumpOpen] = useState(false);
+
+  const pumpOptions = useMemo(() => {
+    return (equipmentList || [])
+      .filter((e) => Boolean(e?.active))
+      .map((e) => {
+        const base = `${e.manufacturer || e.category}${e.model ? ` ${e.model}` : ""}`.trim();
+        const label =
+          base +
+          (e.serialNumber ? ` (${e.serialNumber})` : "") +
+          (e.assetTag ? ` · ${e.assetTag}` : "");
+        return { id: e.equipmentId, label, serial: e.serialNumber || "" };
+      });
+  }, [equipmentList]);
 
   const getNextSampleNumber = () => {
     const prefix = jobNumber ? `${jobNumber}-` : "";
@@ -1599,33 +1616,63 @@ function AirSampleForm({ jobId, jobNumber, existingSamples, personnel, equipment
             )}
           />
 
-          <FormField
-            control={form.control}
-            name="pumpId"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Pump ID</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value || ""}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select pump from equipment list" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {equipmentList
-                      .filter((e) => e.active)
-                      .map((equipment) => (
-                        <SelectItem key={equipment.equipmentId} value={equipment.equipmentId}>
-                          {(equipment.manufacturer || equipment.category) + (equipment.model ? ` ${equipment.model}` : "")}
-                          {equipment.serialNumber ? ` (${equipment.serialNumber})` : ""}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+	          <FormField
+	            control={form.control}
+	            name="pumpId"
+	            render={({ field }) => (
+	              <FormItem>
+	                <FormLabel>Pump ID</FormLabel>
+	                <Popover open={pumpOpen} onOpenChange={setPumpOpen}>
+	                  <PopoverTrigger asChild>
+	                    <FormControl>
+	                      <Button
+	                        variant="outline"
+	                        role="combobox"
+	                        aria-expanded={pumpOpen}
+	                        className="w-full justify-between"
+	                      >
+	                        <span className="truncate">
+	                          {field.value
+	                            ? pumpOptions.find((p) => p.id === field.value)?.label || field.value
+	                            : "Select pump (search by SN)..."}
+	                        </span>
+	                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+	                      </Button>
+	                    </FormControl>
+	                  </PopoverTrigger>
+	                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+	                    <Command>
+	                      <CommandInput placeholder="Search pumps (model, SN)..." />
+	                      <CommandList>
+	                        <CommandEmpty>No pumps found.</CommandEmpty>
+	                        <CommandGroup>
+	                          {pumpOptions.map((opt) => (
+	                            <CommandItem
+	                              key={opt.id}
+	                              value={`${opt.label} ${opt.serial}`.toLowerCase()}
+	                              onSelect={() => {
+	                                field.onChange(opt.id);
+	                                setPumpOpen(false);
+	                              }}
+	                            >
+	                              <Check
+	                                className={cn(
+	                                  "mr-2 h-4 w-4",
+	                                  field.value === opt.id ? "opacity-100" : "opacity-0"
+	                                )}
+	                              />
+	                              <span className="truncate">{opt.label}</span>
+	                            </CommandItem>
+	                          ))}
+	                        </CommandGroup>
+	                      </CommandList>
+	                    </Command>
+	                  </PopoverContent>
+	                </Popover>
+	                <FormMessage />
+	              </FormItem>
+	            )}
+	          />
 
             <FormField
               control={form.control}

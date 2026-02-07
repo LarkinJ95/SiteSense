@@ -1615,11 +1615,12 @@ app.get("/api/inspectors", async (c) => {
 
   const members = await storage.getActiveOrganizationUsers(orgId);
   const inspectors = members.map((m) => {
-    const name = `${m.firstName || ""} ${m.lastName || ""}`.trim();
+    const profileName = `${m.firstName || ""} ${m.lastName || ""}`.trim();
+    const name = profileName || (m as any).name || m.email || m.userId;
     return {
       userId: m.userId,
       email: m.email,
-      name: name || m.email || m.userId,
+      name,
       role: m.memberRole,
       status: m.memberStatus,
       createdAt: m.createdAt,
@@ -2690,9 +2691,16 @@ app.get("/api/personnel", async (c) => {
   const orgId = resolveOrgIdForCreate(orgIds, requestedOrgId);
   if (!orgId) return c.json({ message: "No organization access" }, 403);
   const includeInactive = c.req.query("includeInactive") === "1";
+  const inspectorsOnly = c.req.query("inspectors") === "1";
+  const activeOnly = c.req.query("active") === "1";
+  const compact = c.req.query("compact") === "1" || inspectorsOnly;
   const search = c.req.query("search");
 
-  const rows = await storage.getPersonnelForOrg(orgId, { includeInactive, search });
+  const rowsRaw = await storage.getPersonnelForOrg(orgId, { includeInactive, search });
+  let rows = rowsRaw;
+  if (inspectorsOnly) rows = rows.filter((p: any) => Boolean((p as any).isInspector));
+  if (activeOnly) rows = rows.filter((p: any) => Boolean((p as any).active));
+  if (compact) return c.json(rows);
 
   // Lightweight stats for the list view.
   const allExposures = await Promise.all(
@@ -2762,12 +2770,13 @@ app.put("/api/personnel/:id", async (c) => {
   const payload = insertPersonnelSchema.partial().parse(body);
   const updated = await storage.updatePersonnel(existing.personId, userId, payload);
   if (!updated) return c.json({ message: "Not found" }, 404);
+  const existingName = `${existing.firstName || ""} ${existing.lastName || ""}`.trim() || existing.personId;
   await audit(c, {
     organizationId: existing.organizationId,
     action: "personnel.update",
     entityType: "personnel",
     entityId: existing.personId,
-    summary: `Updated personnel ${existing.personId}`,
+    summary: `Updated personnel ${existingName}`,
   });
   return c.json(updated);
 });
@@ -2781,12 +2790,33 @@ app.post("/api/personnel/:id/deactivate", async (c) => {
   if (!existing) return c.json({ message: "Not found" }, 404);
   if (!existing.organizationId || !orgIds.includes(existing.organizationId)) return c.json({ message: "No access" }, 403);
   const updated = await storage.deactivatePersonnel(existing.personId, userId);
+  const existingName = `${existing.firstName || ""} ${existing.lastName || ""}`.trim() || existing.personId;
   await audit(c, {
     organizationId: existing.organizationId,
     action: "personnel.deactivate",
     entityType: "personnel",
     entityId: existing.personId,
-    summary: `Deactivated personnel ${existing.personId}`,
+    summary: `Deactivated personnel ${existingName}`,
+  });
+  return c.json(updated);
+});
+
+app.post("/api/personnel/:id/reactivate", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgIds = await getUserOrgIds(userId);
+  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const existing = await storage.getPersonnelById(c.req.param("id"));
+  if (!existing) return c.json({ message: "Not found" }, 404);
+  if (!existing.organizationId || !orgIds.includes(existing.organizationId)) return c.json({ message: "No access" }, 403);
+  const updated = await storage.updatePersonnel(existing.personId, userId, { active: true } as any);
+  const existingName = `${existing.firstName || ""} ${existing.lastName || ""}`.trim() || existing.personId;
+  await audit(c, {
+    organizationId: existing.organizationId,
+    action: "personnel.reactivate",
+    entityType: "personnel",
+    entityId: existing.personId,
+    summary: `Reactivated personnel ${existingName}`,
   });
   return c.json(updated);
 });
@@ -3018,26 +3048,33 @@ app.get("/api/air-samples", async (c) => {
   if (!userId) return c.json({ message: "Not authenticated" }, 401);
   const orgIds = await getUserOrgIds(userId);
   if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
+  const jobs = await storage.getAirMonitoringJobs();
+  const allowedJobIds = new Set(
+    (jobs || []).filter((j: any) => j?.id && j.organizationId && orgIds.includes(j.organizationId)).map((j: any) => j.id)
+  );
   const samples = await storage.getAirSamples();
-  return c.json(samples.filter((sample) => sample.organizationId && orgIds.includes(sample.organizationId)));
+  return c.json(samples.filter((sample: any) => sample?.jobId && allowedJobIds.has(sample.jobId)));
 });
 
 app.post("/api/air-samples", async (c) => {
   const userId = c.get("user")?.sub;
   if (!userId) return c.json({ message: "Not authenticated" }, 401);
-  const orgIds = await getUserOrgIds(userId);
-  if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
   const bodyRaw = await parseJsonBody(c);
   if (!bodyRaw) return c.json({ message: "Invalid JSON" }, 400);
   const body = normalizeAirSampleBody(bodyRaw);
-  const organizationId = resolveOrgIdForCreate(orgIds, body.organizationId);
+  const jobId = typeof (body as any).jobId === "string" ? (body as any).jobId : "";
+  if (!jobId) return c.json({ message: "jobId is required" }, 400);
+  const access = await assertAirJobOrgAccess(userId, jobId);
+  if (!access.allowed) return c.json({ message: access.notFound ? "Job not found" : "No access" }, access.notFound ? 404 : 403);
+  const organizationId = (access as any).job?.organizationId || null;
+  if (!organizationId) return c.json({ message: "Job is missing organizationId" }, 400);
   try {
-    const payload = insertAirSampleSchema.parse({ ...body, organizationId });
+    const payload = insertAirSampleSchema.parse(body);
     const created = await storage.createAirSample(payload);
 
-  // Exposure snapshot: store raw inputs + computed outputs (auditable) when personnel is linked.
-  try {
-    const personId = (created as any).personnelId ? String((created as any).personnelId) : "";
+	  // Exposure snapshot: store raw inputs + computed outputs (auditable) when personnel is linked.
+	  try {
+	    const personId = (created as any).personnelId ? String((created as any).personnelId) : "";
     if (personId) {
       const person = await storage.getPersonnelById(personId);
       if (person && person.organizationId === organizationId) {

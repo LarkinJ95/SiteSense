@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -64,6 +64,19 @@ export function EditSurveyModal({ survey, open, onOpenChange }: EditSurveyModalP
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+
+  const { data: inspectors = [] } = useQuery<any[]>({
+    queryKey: ["/api/personnel?inspectors=1&active=1&compact=1"],
+    enabled: open,
+  });
+
+  const inspectorNames = (() => {
+    const raw = Array.isArray(inspectors) ? inspectors : [];
+    const names = raw
+      .map((p) => `${p?.firstName || ""} ${p?.lastName || ""}`.trim())
+      .filter(Boolean);
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
+  })();
 
   const form = useForm<EditSurveyFormData>({
     resolver: zodResolver(editSurveySchema),
@@ -251,24 +264,40 @@ export function EditSurveyModal({ survey, open, onOpenChange }: EditSurveyModalP
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="inspector"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Inspector Name *</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="Enter inspector name"
-                        {...field}
-                        data-testid="input-edit-inspector"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+	            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+	              <FormField
+	                control={form.control}
+	                name="inspector"
+	                render={({ field }) => (
+	                  <FormItem>
+	                    <FormLabel>Inspector *</FormLabel>
+	                    <Select onValueChange={field.onChange} value={field.value || ""}>
+	                      <FormControl>
+	                        <SelectTrigger data-testid="select-edit-inspector">
+	                          <SelectValue placeholder="Select inspector" />
+	                        </SelectTrigger>
+	                      </FormControl>
+	                      <SelectContent>
+	                        {field.value && !inspectorNames.includes(field.value) ? (
+	                          <SelectItem value={field.value}>{field.value} (current)</SelectItem>
+	                        ) : null}
+	                        {inspectorNames.length ? (
+	                          inspectorNames.map((name) => (
+	                            <SelectItem key={name} value={name}>
+	                              {name}
+	                            </SelectItem>
+	                          ))
+	                        ) : (
+	                          <SelectItem value="__none__" disabled>
+	                            No inspectors found
+	                          </SelectItem>
+	                        )}
+	                      </SelectContent>
+	                    </Select>
+	                    <FormMessage />
+	                  </FormItem>
+	                )}
+	              />
 
               <FormField
                 control={form.control}

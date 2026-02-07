@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -117,6 +117,53 @@ export default function SystemSettings() {
     queryKey: ["/api/audit-logs"],
     queryFn: async () => (await apiRequest("GET", "/api/audit-logs?limit=200")).json(),
   });
+
+  const { data: personnelCompact = [] } = useQuery<any[]>({
+    queryKey: ["/api/personnel?compact=1&includeInactive=1"],
+    queryFn: async () => (await apiRequest("GET", "/api/personnel?compact=1&includeInactive=1")).json(),
+  });
+
+  const personnelNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    const list = Array.isArray(personnelCompact) ? personnelCompact : [];
+    for (const p of list) {
+      const id = (p?.personId || p?.id || "").toString();
+      if (!id) continue;
+      const name = `${p?.firstName || ""} ${p?.lastName || ""}`.trim();
+      map.set(id, name || (p?.email || "").toString() || id);
+    }
+    return map;
+  }, [personnelCompact]);
+
+  const humanAction = (action: string) => {
+    const a = (action || "").toString();
+    const known: Record<string, string> = {
+      "personnel.create": "Personnel Create",
+      "personnel.update": "Personnel Update",
+      "personnel.deactivate": "Personnel Deactivate",
+      "personnel.reactivate": "Personnel Reactivate",
+      "personnel.assignment.add": "Personnel Assignment Add",
+      "personnel.assignment.delete": "Personnel Assignment Delete",
+    };
+    if (known[a]) return known[a];
+    const words = a.replace(/[\._]+/g, " ").trim();
+    return words
+      ? words
+          .split(" ")
+          .filter(Boolean)
+          .map((w) => w.slice(0, 1).toUpperCase() + w.slice(1))
+          .join(" ")
+      : "Event";
+  };
+
+  const humanEntity = (row: AuditLogRow) => {
+    const type = (row.entityType || "").toString();
+    const id = (row.entityId || "").toString();
+    if (type === "personnel") {
+      return personnelNameById.get(id) || id;
+    }
+    return id ? `${type}:${id}` : type || "—";
+  };
 
   const notificationSettingsList: NotificationSetting[] = Array.isArray(notificationSettings)
     ? notificationSettings
@@ -549,29 +596,27 @@ export default function SystemSettings() {
                         <TableHead>Summary</TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>
-                      {auditLogs.map((row) => {
-                        const when = row.timestamp ? new Date(row.timestamp).toLocaleString() : "—";
-                        const who =
-                          (row.details && typeof row.details === "object" && (row.details.actorName || row.details.actorEmail)) ||
-                          row.userId;
-                        const summary =
-                          row.details && typeof row.details === "object" && row.details.summary
-                            ? String(row.details.summary)
-                            : "";
-                        return (
-                          <TableRow key={row.id}>
-                            <TableCell className="whitespace-nowrap text-sm">{when}</TableCell>
-                            <TableCell className="text-sm">{who}</TableCell>
-                            <TableCell className="text-sm font-medium">{row.action}</TableCell>
-                            <TableCell className="text-sm">
-                              {row.entityType}:{row.entityId}
-                            </TableCell>
-                            <TableCell className="text-sm text-gray-600 dark:text-gray-300">{summary || "—"}</TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
+	                  <TableBody>
+	                    {auditLogs.map((row) => {
+	                        const when = row.timestamp ? new Date(row.timestamp).toLocaleString() : "—";
+	                        const who =
+	                          (row.details && typeof row.details === "object" && (row.details.actorName || row.details.actorEmail)) ||
+	                          row.userId;
+	                        const summary =
+	                          row.details && typeof row.details === "object" && row.details.summary
+	                            ? String(row.details.summary)
+	                            : "";
+	                        return (
+	                          <TableRow key={row.id}>
+	                            <TableCell className="whitespace-nowrap text-sm">{when}</TableCell>
+	                            <TableCell className="text-sm">{who}</TableCell>
+	                            <TableCell className="text-sm font-medium">{humanAction(row.action)}</TableCell>
+	                            <TableCell className="text-sm">{humanEntity(row)}</TableCell>
+	                            <TableCell className="text-sm text-gray-600 dark:text-gray-300">{summary || "—"}</TableCell>
+	                          </TableRow>
+	                        );
+	                      })}
+	                  </TableBody>
                   </Table>
                 </div>
               )}

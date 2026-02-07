@@ -7,11 +7,13 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { authApi, authClient } from "@/lib/auth";
 import { BrandMark } from "@/components/brand-mark";
+import { useTheme } from "@/contexts/theme-context";
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { data: session } = authClient.useSession();
+  const { theme } = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -42,7 +44,19 @@ export default function Login() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
           <div className="flex items-center justify-center">
-            <BrandMark className="h-10 w-auto" title="AbateIQ" />
+            <BrandMark
+              className="h-10 w-auto"
+              title="AbateIQ"
+              tone={
+                theme === "dark" ||
+                (theme === "system" &&
+                  typeof window !== "undefined" &&
+                  window.matchMedia &&
+                  window.matchMedia("(prefers-color-scheme: dark)").matches)
+                  ? "onDark"
+                  : "onLight"
+              }
+            />
           </div>
           <CardTitle className="text-2xl font-bold">Sign in</CardTitle>
           <CardDescription>Use your AbateIQ account</CardDescription>

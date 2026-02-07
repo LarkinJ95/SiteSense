@@ -13,10 +13,12 @@ import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { BrandMark } from "@/components/brand-mark";
+import { useTheme } from "@/contexts/theme-context";
 
 export function AppHeader() {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
+  const { theme } = useTheme();
   const { data: session, isPending } = authClient.useSession();
   const { data: me } = useQuery({
     queryKey: ["/api/me"],
@@ -76,6 +78,14 @@ export function AppHeader() {
 
   const isAdmin = Boolean(me && typeof me === "object" && (me as any).isAdmin);
 
+  const isDark =
+    theme === "dark" ||
+    (theme === "system" &&
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const markTone = isDark ? "onDark" : "onLight";
+
   const navItems = [
     { key: "dashboard", label: "Dashboard", href: "/" },
     { key: "surveys", label: "Surveys", href: "/surveys" },
@@ -90,7 +100,7 @@ export function AppHeader() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-2">
-              <BrandMark className="h-7 w-auto" title="AbateIQ" />
+              <BrandMark className="h-7 w-auto" title="AbateIQ" tone={markTone} />
             </div>
             <div className="flex items-center space-x-2">
               <a href="/login">
@@ -108,17 +118,17 @@ export function AppHeader() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-[auto,1fr,auto] items-center h-16 gap-4">
           <div className="flex items-center gap-2">
-            <BrandMark className="h-7 w-auto" title="AbateIQ" />
+            <BrandMark className="h-7 w-auto" title="AbateIQ" tone={markTone} />
           </div>
 
-          <nav className="hidden md:flex items-center justify-evenly gap-2 min-w-0">
+          <nav className="hidden md:grid grid-cols-5 items-center min-w-0">
             {navItems.map((item) => {
               const active = location === item.href || (item.href === "/" && location === "/");
               return (
                 <Link
                   key={item.key}
                   href={item.href}
-                  className={`flex-1 h-16 px-3 flex items-center justify-center text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
+                  className={`h-16 px-3 flex items-center justify-center text-center text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
                     active
                       ? "text-primary border-primary"
                       : "text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300"

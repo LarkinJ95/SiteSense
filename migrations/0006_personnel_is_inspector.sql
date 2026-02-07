@@ -1,0 +1,3 @@
+ALTER TABLE personnel
+ADD COLUMN is_inspector INTEGER NOT NULL DEFAULT 0;
+

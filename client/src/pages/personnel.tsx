@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Plus, Search, Users, AlertTriangle, CheckCircle, Clock } from "lucide-react";
@@ -108,6 +109,7 @@ export default function Personnel() {
     fitTestDate: "",
     medicalSurveillanceDate: "",
     active: true,
+    isInspector: false,
     notes: "",
   });
 
@@ -135,6 +137,7 @@ export default function Personnel() {
         fitTestDate: form.fitTestDate || null,
         medicalSurveillanceDate: form.medicalSurveillanceDate || null,
         active: form.active,
+        isInspector: form.isInspector,
       };
       const res = await apiRequest("POST", "/api/personnel", payload);
       return (await res.json()) as PersonnelRow;
@@ -154,6 +157,7 @@ export default function Personnel() {
         fitTestDate: "",
         medicalSurveillanceDate: "",
         active: true,
+        isInspector: false,
         notes: "",
       });
       setLocation(`/personnel/${created.personId}`);
@@ -238,6 +242,16 @@ export default function Personnel() {
                     <SelectItem value="inactive">Inactive</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2 md:col-span-3">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="is-inspector"
+                    checked={form.isInspector}
+                    onCheckedChange={(v) => setForm({ ...form, isInspector: Boolean(v) })}
+                  />
+                  <Label htmlFor="is-inspector">Is an inspector</Label>
+                </div>
               </div>
               <div className="space-y-2 md:col-span-3">
                 <Label>Notes (optional)</Label>

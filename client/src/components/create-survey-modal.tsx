@@ -39,11 +39,12 @@ import { Badge } from "@/components/ui/badge";
 import { X, FileText, ClipboardList, Camera, Upload } from "lucide-react";
 
 type InspectorOption = {
-  userId: string;
-  name: string;
+  personId: string;
+  firstName: string;
+  lastName: string;
   email?: string | null;
-  role?: string | null;
-  status?: string | null;
+  active?: boolean;
+  isInspector?: boolean;
 };
 
 const createSurveySchema = z.object({
@@ -75,7 +76,7 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
   const [selectedSitePhoto, setSelectedSitePhoto] = useState<File | null>(null);
 
   const { data: inspectors = [] } = useQuery<InspectorOption[]>({
-    queryKey: ["/api/inspectors"],
+    queryKey: ["/api/personnel?inspectors=1&active=1&compact=1"],
     enabled: open,
   });
 
@@ -97,11 +98,9 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
 
   const createSurveyMutation = useMutation({
     mutationFn: async (data: CreateSurveyFormData) => {
-      const selected = inspectors.find((i) => i.userId === data.inspector);
-      const inspectorLabel = selected ? `${selected.name}${selected.email ? ` (${selected.email})` : ""}` : data.inspector;
       const surveyData = {
         ...data,
-        inspector: inspectorLabel,
+        inspector: data.inspector,
         // Add weather data if available
         weatherConditions: weather?.conditions,
         temperature: weather?.temperature?.toString(),
@@ -308,35 +307,40 @@ export function CreateSurveyModal({ open, onOpenChange }: CreateSurveyModalProps
                 />
                 <FormField
                   control={form.control}
-                  name="inspector"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Inspector *</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-inspector">
-                            <SelectValue placeholder="Select inspector" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {inspectors.length ? (
-                            inspectors.map((inspector) => (
-                              <SelectItem key={inspector.userId} value={inspector.userId}>
-                                {inspector.name}
-                                {inspector.email ? ` (${inspector.email})` : ""}
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <SelectItem value="" disabled>
-                              No active users in org
-                            </SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+	                  name="inspector"
+	                  render={({ field }) => (
+	                    <FormItem>
+	                      <FormLabel>Inspector *</FormLabel>
+	                      <Select onValueChange={field.onChange} value={field.value}>
+	                        <FormControl>
+	                          <SelectTrigger data-testid="select-inspector">
+	                            <SelectValue placeholder="Select inspector" />
+	                          </SelectTrigger>
+	                        </FormControl>
+	                        <SelectContent>
+	                          {inspectors.length ? (
+	                            inspectors
+	                              .filter((p) => Boolean(p.active))
+	                              .map((p) => {
+	                                const name = `${p.firstName || ""} ${p.lastName || ""}`.trim();
+	                                return (
+	                                  <SelectItem key={p.personId} value={name}>
+	                                    {name}
+	                                    {p.email ? ` (${p.email})` : ""}
+	                                  </SelectItem>
+	                                );
+	                              })
+	                          ) : (
+	                            <SelectItem value="" disabled>
+	                              No inspectors found
+	                            </SelectItem>
+	                          )}
+	                        </SelectContent>
+	                      </Select>
+	                      <FormMessage />
+	                    </FormItem>
+	                  )}
+	                />
                 <FormField
                   control={form.control}
                   name="notes"

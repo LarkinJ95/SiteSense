@@ -371,6 +371,8 @@ export const personnel = sqliteTable("personnel", {
   fitTestDate: text("fit_test_date"), // YYYY-MM-DD
   medicalSurveillanceDate: text("medical_surveillance_date"), // YYYY-MM-DD
   active: bool("active").default(true),
+  // Marks whether this person should be selectable as a survey inspector.
+  isInspector: bool("is_inspector").default(false),
   createdByUserId: text("created_by_user_id"),
   updatedByUserId: text("updated_by_user_id"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -994,6 +996,7 @@ export const insertPersonnelSchema = z.object({
   fitTestDate: z.string().optional().nullable(),
   medicalSurveillanceDate: z.string().optional().nullable(),
   active: z.boolean().optional(),
+  isInspector: z.boolean().optional(),
 });
 
 export const insertPersonnelAssignmentSchema = z.object({

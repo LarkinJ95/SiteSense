@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { insertPersonnelSchema } from "@shared/schema";
@@ -36,6 +37,7 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
       fitTestDate: null,
       medicalSurveillanceDate: null,
       active: true,
+      isInspector: false,
     },
   });
 
@@ -194,6 +196,24 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
               />
             </div>
 
+            <FormField
+              control={form.control}
+              name="isInspector"
+              render={({ field }) => (
+                <FormItem>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="create-person-is-inspector"
+                      checked={Boolean(field.value)}
+                      onCheckedChange={(v) => field.onChange(Boolean(v))}
+                    />
+                    <FormLabel htmlFor="create-person-is-inspector">Is an inspector</FormLabel>
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <FormField
                 control={form.control}
@@ -250,4 +270,3 @@ export function CreatePersonnelModal({ open, onOpenChange }: CreatePersonnelModa
     </Dialog>
   );
 }
-
