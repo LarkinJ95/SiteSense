@@ -96,6 +96,8 @@ const didAffectRows = (result: any) => {
         ? result.rowsAffected
         : typeof result?.changes === "number"
           ? result.changes
+          : typeof result?.meta?.changes === "number"
+            ? result.meta.changes
           : 0;
   return count > 0;
 };

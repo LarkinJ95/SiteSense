@@ -6,7 +6,6 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppHeader } from "@/components/app-header";
 import { AppFooter } from "@/components/app-footer";
-import { CreateSurveyModal } from "@/components/create-survey-modal";
 import { ThemeProvider } from "@/contexts/theme-context";
 import Dashboard from "@/pages/dashboard";
 import Surveys from "@/pages/surveys";
@@ -175,22 +174,16 @@ function Router() {
 }
 
 function App() {
-  const [showCreateModal, setShowCreateModal] = useState(false);
-
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <div className="min-h-screen bg-background flex flex-col">
-            <AppHeader onCreateSurvey={() => setShowCreateModal(true)} />
+            <AppHeader />
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1">
               <Router />
             </main>
             <AppFooter />
-            <CreateSurveyModal
-              open={showCreateModal}
-              onOpenChange={setShowCreateModal}
-            />
           </div>
           <Toaster />
         </TooltipProvider>

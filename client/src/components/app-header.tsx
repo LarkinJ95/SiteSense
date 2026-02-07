@@ -9,18 +9,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { ClipboardList, Plus, User, Settings, LogOut, UserCircle, Shield, Cloud, Sun, CloudRain, Wind, Droplets, Thermometer, Wrench, Users } from "lucide-react";
+import { ClipboardList, User, Settings, LogOut, UserCircle, Shield, Cloud, Sun, CloudRain, Wind, Droplets, Thermometer, Wrench, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { useWeather } from "@/hooks/use-weather";
 import { BrandMark } from "@/components/brand-mark";
 
-interface AppHeaderProps {
-  onCreateSurvey: () => void;
-}
-
-export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
+export function AppHeader() {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
   const { data: session, isPending } = authClient.useSession();
@@ -210,14 +206,6 @@ export function AppHeader({ onCreateSurvey }: AppHeaderProps) {
               </div>
             </div>
 
-            <Button
-              onClick={onCreateSurvey}
-              className="bg-primary text-white hover:bg-blue-700"
-              data-testid="button-create-survey"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              New Survey
-            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button

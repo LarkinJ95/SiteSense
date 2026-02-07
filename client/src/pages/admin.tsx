@@ -199,10 +199,10 @@ export default function AdminDashboard() {
         description: "User has been removed from the system.",
       });
     },
-    onError: () => {
+    onError: (error: any) => {
       toast({
         title: "Error",
-        description: "Failed to delete user.",
+        description: error?.message || "Failed to delete user.",
         variant: "destructive",
       });
     },
@@ -331,8 +331,8 @@ export default function AdminDashboard() {
       setSelectedOrganization(null);
       toast({ title: "Organization Deleted", description: "Organization has been removed." });
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to delete organization.", variant: "destructive" });
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to delete organization.", variant: "destructive" });
     },
   });
 
@@ -377,8 +377,8 @@ export default function AdminDashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/organizations", selectedOrganization?.id, "members"] });
       toast({ title: "Member Removed", description: "Organization member removed." });
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to remove organization member.", variant: "destructive" });
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to remove organization member.", variant: "destructive" });
     },
   });
 
