@@ -16,7 +16,7 @@ import { CreateAirJobModal } from "@/components/create-air-job-modal";
 import { CreatePersonnelModal } from "@/components/create-personnel-modal";
 import { DailyWeatherLog } from "@/components/daily-weather-log";
 import { apiRequest } from "@/lib/queryClient";
-import { AirSample, PersonnelProfile, AirMonitoringJob, FieldToolsEquipment, AirMonitoringDocument, insertAirSampleSchema, type InsertAirSample } from "@shared/schema";
+import { AirSample, PersonnelProfile, AirMonitoringJob, AirMonitoringDocument, insertAirSampleSchema, type InsertAirSample } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -97,8 +97,19 @@ export default function AirMonitoringPage() {
     queryKey: ["/api/personnel"],
   });
 
-  const { data: equipmentList = [] } = useQuery<FieldToolsEquipment[]>({
-    queryKey: ["/api/field-tools/equipment"],
+  const { data: equipmentList = [] } = useQuery<
+    {
+      equipmentId: string;
+      category: string;
+      manufacturer?: string | null;
+      model?: string | null;
+      serialNumber: string;
+      assetTag?: string | null;
+      status: string;
+      active: boolean;
+    }[]
+  >({
+    queryKey: ["/api/equipment"],
   });
 
   const { data: documents = [] } = useQuery<AirMonitoringDocument[]>({
@@ -155,6 +166,18 @@ export default function AirMonitoringPage() {
     selectedJob ? airSamples.filter(sample => sample.jobId === selectedJob.id) : [],
     [airSamples, selectedJob]
   );
+
+  const equipmentLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of equipmentList) {
+      const label =
+        `${e.manufacturer || e.category}${e.model ? ` ${e.model}` : ""}`.trim() +
+        (e.serialNumber ? ` (${e.serialNumber})` : "") +
+        (e.assetTag ? ` · ${e.assetTag}` : "");
+      map.set(e.equipmentId, label);
+    }
+    return map;
+  }, [equipmentList]);
 
   // Air sample mutations
   const createSampleMutation = useMutation({
@@ -747,6 +770,14 @@ export default function AirMonitoringPage() {
                                   <p className="font-medium">Location</p>
                                   <p className="text-gray-600 dark:text-gray-400">{sample.location || 'Not specified'}</p>
                                 </div>
+                                {sample.pumpId && (
+                                  <div>
+                                    <p className="font-medium">Pump</p>
+                                    <p className="text-gray-600 dark:text-gray-400">
+                                      {equipmentLabelById.get(sample.pumpId) || sample.pumpId}
+                                    </p>
+                                  </div>
+                                )}
                                 <div>
                                   <p className="font-medium">Collected By</p>
                                   <p className="text-gray-600 dark:text-gray-400">{sample.collectedBy}</p>
@@ -1137,7 +1168,16 @@ interface AirSampleFormProps {
   jobNumber: string;
   existingSamples: AirSample[];
   personnel: PersonnelProfile[];
-  equipmentList: FieldToolsEquipment[];
+  equipmentList: {
+    equipmentId: string;
+    category: string;
+    manufacturer?: string | null;
+    model?: string | null;
+    serialNumber: string;
+    assetTag?: string | null;
+    status: string;
+    active: boolean;
+  }[];
   onSuccess: () => void;
   onSubmit: (data: InsertAirSample, file?: File | null) => void;
   isLoading: boolean;
@@ -1530,11 +1570,14 @@ function AirSampleForm({ jobId, jobNumber, existingSamples, personnel, equipment
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {equipmentList.map((equipment) => (
-                      <SelectItem key={equipment.id} value={equipment.id}>
-                        {equipment.name}{equipment.serialNumber ? ` (${equipment.serialNumber})` : ""}
-                      </SelectItem>
-                    ))}
+                    {equipmentList
+                      .filter((e) => e.active)
+                      .map((equipment) => (
+                        <SelectItem key={equipment.equipmentId} value={equipment.equipmentId}>
+                          {(equipment.manufacturer || equipment.category) + (equipment.model ? ` ${equipment.model}` : "")}
+                          {equipment.serialNumber ? ` (${equipment.serialNumber})` : ""}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
                 <FormMessage />

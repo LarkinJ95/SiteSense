@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CreateSurveyModal } from "@/components/create-survey-modal";
 import { EditSurveyModal } from "@/components/edit-survey-modal";
 import { OfflineIndicator } from "@/components/offline-indicator";
+import { useWeather } from "@/hooks/use-weather";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 import type { Survey, SurveyStats } from "@/lib/types";
 import { 
@@ -30,7 +31,14 @@ import {
   Edit,
   TrendingUp,
   BarChart3,
-  PieChart as PieChartIcon
+  PieChart as PieChartIcon,
+  Cloud,
+  Sun,
+  CloudRain,
+  Wind,
+  Thermometer,
+  Droplets,
+  RefreshCw
 } from "lucide-react";
 import { format, subDays, parseISO } from "date-fns";
 
@@ -38,6 +46,38 @@ export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editSurvey, setEditSurvey] = useState<Survey | null>(null);
   const { toast } = useToast();
+  const { weather, loading: weatherLoading, error: weatherError, getCurrentWeather } = useWeather();
+
+  useEffect(() => {
+    // Match prior behavior from the header: use stored coords if available.
+    const stored = localStorage.getItem("last-weather-coords");
+    if (stored) {
+      try {
+        const coords = JSON.parse(stored) as { lat: number; lon: number };
+        if (typeof coords?.lat === "number" && typeof coords?.lon === "number") {
+          getCurrentWeather(coords.lat, coords.lon);
+          return;
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+    getCurrentWeather();
+  }, [getCurrentWeather]);
+
+  const getWeatherIcon = (conditions: string) => {
+    const normalized = (conditions || "").toLowerCase();
+    if (normalized.includes("rain") || normalized.includes("shower") || normalized.includes("drizzle")) {
+      return <CloudRain className="h-4 w-4 text-blue-500" />;
+    }
+    if (normalized.includes("wind")) {
+      return <Wind className="h-4 w-4 text-gray-500" />;
+    }
+    if (normalized.includes("clear") || normalized.includes("sun")) {
+      return <Sun className="h-4 w-4 text-yellow-500" />;
+    }
+    return <Cloud className="h-4 w-4 text-gray-400" />;
+  };
 
   const formatSurveyType = (value?: string | null) => {
     const raw = value || "";
@@ -221,6 +261,56 @@ export default function Dashboard() {
           <p className="mt-2 text-gray-600 dark:text-gray-400" data-testid="text-welcome">
             Welcome back! Here's an overview of your recent survey activity.
           </p>
+
+          <div className="mt-4 inline-flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/40 px-3 py-2 text-sm">
+            <div className="flex items-center gap-2">
+              {weatherLoading ? (
+                <RefreshCw className="h-4 w-4 animate-spin text-gray-500" />
+              ) : weather ? (
+                getWeatherIcon(weather.conditions)
+              ) : (
+                <Cloud className="h-4 w-4 text-gray-400" />
+              )}
+              <span className="font-medium text-gray-900 dark:text-gray-100">Weather</span>
+            </div>
+
+            {weather ? (
+              <>
+                <div className="flex items-center gap-1 text-gray-700 dark:text-gray-300">
+                  <span className="font-medium">{weather.conditions}</span>
+                </div>
+                <div className="flex items-center gap-1 text-gray-700 dark:text-gray-300">
+                  <Thermometer className="h-4 w-4 text-red-400" />
+                  <span>{weather.temperature}°F</span>
+                </div>
+                <div className="flex items-center gap-1 text-gray-700 dark:text-gray-300">
+                  <Droplets className="h-4 w-4 text-blue-400" />
+                  <span>{weather.humidity}%</span>
+                </div>
+                <div className="flex items-center gap-1 text-gray-700 dark:text-gray-300">
+                  <Wind className="h-4 w-4 text-gray-400" />
+                  <span>{weather.windSpeed} mph</span>
+                </div>
+                <div className="hidden lg:block text-xs text-gray-500">{weather.location}</div>
+              </>
+            ) : (
+              <span className="text-gray-500">Unavailable</span>
+            )}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => getCurrentWeather()}
+              data-testid="button-refresh-dashboard-weather"
+            >
+              <RefreshCw className={"h-4 w-4" + (weatherLoading ? " animate-spin" : "")} />
+            </Button>
+
+            {weatherError ? (
+              <span className="text-xs text-gray-500">{weatherError}</span>
+            ) : null}
+          </div>
         </div>
         <div className="mt-4 md:mt-0 flex items-center space-x-3">
           <OfflineIndicator />

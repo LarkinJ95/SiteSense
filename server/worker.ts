@@ -217,6 +217,28 @@ const parseJsonBody = async <T = any>(c: { req: { json: () => Promise<T> } }) =>
   }
 };
 
+const coerceDate = (value: unknown) => {
+  if (value instanceof Date) return value;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  }
+  return undefined;
+};
+
+const normalizeAirSampleBody = (body: any) => {
+  if (!body || typeof body !== "object") return body;
+  const normalized: any = { ...body };
+  if ("startTime" in normalized) normalized.startTime = coerceDate(normalized.startTime) ?? normalized.startTime;
+  if ("endTime" in normalized) normalized.endTime = coerceDate(normalized.endTime) ?? normalized.endTime;
+  if ("labReportDate" in normalized) normalized.labReportDate = coerceDate(normalized.labReportDate) ?? normalized.labReportDate;
+  return normalized;
+};
+
 const zodBadRequest = (c: any, error: unknown) => {
   if (error instanceof ZodError) {
     return c.json(
@@ -2997,11 +3019,13 @@ app.post("/api/air-samples", async (c) => {
   if (!userId) return c.json({ message: "Not authenticated" }, 401);
   const orgIds = await getUserOrgIds(userId);
   if (!orgIds.length) return c.json({ message: "No organization access" }, 403);
-  const body = await parseJsonBody(c);
-  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const bodyRaw = await parseJsonBody(c);
+  if (!bodyRaw) return c.json({ message: "Invalid JSON" }, 400);
+  const body = normalizeAirSampleBody(bodyRaw);
   const organizationId = resolveOrgIdForCreate(orgIds, body.organizationId);
-  const payload = insertAirSampleSchema.parse({ ...body, organizationId });
-  const created = await storage.createAirSample(payload);
+  try {
+    const payload = insertAirSampleSchema.parse({ ...body, organizationId });
+    const created = await storage.createAirSample(payload);
 
   // Exposure snapshot: store raw inputs + computed outputs (auditable) when personnel is linked.
   try {
@@ -3052,7 +3076,12 @@ app.post("/api/air-samples", async (c) => {
     // Exposure snapshots are best-effort; do not block sample creation if limits/schema drift.
   }
 
-  return c.json(created, 201);
+    return c.json(created, 201);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
 });
 
 app.put("/api/air-samples/:id", async (c) => {
@@ -3062,10 +3091,12 @@ app.put("/api/air-samples/:id", async (c) => {
   if (!sample) return c.json({ message: "Air sample not found" }, 404);
   const access = await assertAirJobOrgAccess(userId, sample.jobId);
   if (!access.allowed) return c.json({ message: "No access" }, 403);
-  const body = await parseJsonBody(c);
-  if (!body) return c.json({ message: "Invalid JSON" }, 400);
-  const payload = insertAirSampleSchema.partial().parse(body);
-  const updated = await storage.updateAirSample(c.req.param("id"), payload);
+  const bodyRaw = await parseJsonBody(c);
+  if (!bodyRaw) return c.json({ message: "Invalid JSON" }, 400);
+  const body = normalizeAirSampleBody(bodyRaw);
+  try {
+    const payload = insertAirSampleSchema.partial().parse(body);
+    const updated = await storage.updateAirSample(c.req.param("id"), payload);
 
   // Update exposure snapshot if still linked to personnel.
   try {
@@ -3117,7 +3148,12 @@ app.put("/api/air-samples/:id", async (c) => {
     // best-effort
   }
 
-  return c.json(updated);
+    return c.json(updated);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
 });
 
 app.delete("/api/air-samples/:id", async (c) => {

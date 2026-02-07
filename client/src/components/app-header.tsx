@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -9,19 +8,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { ClipboardList, User, Settings, LogOut, UserCircle, Shield, Cloud, Sun, CloudRain, Wind, Droplets, Thermometer, Wrench, Users } from "lucide-react";
+import { User, Settings, LogOut, UserCircle, Shield, Wrench, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { authClient } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
-import { useWeather } from "@/hooks/use-weather";
 import { BrandMark } from "@/components/brand-mark";
 
 export function AppHeader() {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
   const { data: session, isPending } = authClient.useSession();
-  const { weather, getCurrentWeather } = useWeather();
-  const [now, setNow] = useState(() => new Date());
   const { data: me } = useQuery({
     queryKey: ["/api/me"],
     enabled: !!session,
@@ -88,43 +84,6 @@ export function AppHeader() {
     { key: "templates", label: "Templates", href: "/templates" },
   ];
 
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setNow(new Date());
-    }, 60_000);
-    return () => window.clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    const stored = localStorage.getItem("last-weather-coords");
-    if (stored) {
-      try {
-        const coords = JSON.parse(stored) as { lat: number; lon: number };
-        if (typeof coords?.lat === "number" && typeof coords?.lon === "number") {
-          getCurrentWeather(coords.lat, coords.lon);
-          return;
-        }
-      } catch {
-        // ignore parse errors
-      }
-    }
-    getCurrentWeather();
-  }, [getCurrentWeather]);
-
-  const getWeatherIcon = (conditions: string) => {
-    const normalized = conditions.toLowerCase();
-    if (normalized.includes("rain") || normalized.includes("shower") || normalized.includes("drizzle")) {
-      return <CloudRain className="h-4 w-4 text-blue-500" />;
-    }
-    if (normalized.includes("wind")) {
-      return <Wind className="h-4 w-4 text-gray-500" />;
-    }
-    if (normalized.includes("clear") || normalized.includes("sun")) {
-      return <Sun className="h-4 w-4 text-yellow-500" />;
-    }
-    return <Cloud className="h-4 w-4 text-gray-400" />;
-  };
-
   if (!session && !isPending) {
     return (
       <header className="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
@@ -173,39 +132,6 @@ export function AppHeader() {
           </nav>
 
           <div className="flex items-center gap-4 justify-self-end">
-            <div className="hidden xl:flex items-center text-xs text-gray-600 dark:text-gray-300">
-              <div className="flex flex-col items-end gap-1 whitespace-nowrap">
-                <div className="flex items-center gap-2">
-                  {weather ? (
-                    <>
-                      {getWeatherIcon(weather.conditions)}
-                      <span className="font-medium">{weather.conditions}</span>
-                      <span className="flex items-center gap-1">
-                        <Thermometer className="h-3 w-3 text-red-400" />
-                        {weather.temperature}°F
-                      </span>
-                      <span className="flex items-center gap-1 text-gray-500">
-                        <Droplets className="h-3 w-3 text-blue-400" />
-                        {weather.humidity}%
-                      </span>
-                      <span className="flex items-center gap-1 text-gray-500">
-                        <Wind className="h-3 w-3 text-gray-400" />
-                        {weather.windSpeed} mph
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-gray-400">Weather unavailable</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">
-                    {now.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                  </span>
-                  <span>{now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</span>
-                </div>
-              </div>
-            </div>
-
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
