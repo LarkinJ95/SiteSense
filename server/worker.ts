@@ -2556,13 +2556,24 @@ app.get("/api/equipment/:id/report-data", async (c) => {
   if (!equipment) return c.json({ message: "Not found" }, 404);
   if (!equipment.organizationId || !orgIds.includes(equipment.organizationId)) return c.json({ message: "No access" }, 403);
 
-  const [calibrationEvents, usage, notes, docs, jobs] = await Promise.all([
+  const [calibrationEvents, usage, notes, docs] = await Promise.all([
     storage.getEquipmentCalibrationEvents(equipment.organizationId, equipment.equipmentId),
     storage.getEquipmentUsage(equipment.organizationId, equipment.equipmentId),
     storage.getEquipmentNotes(equipment.organizationId, equipment.equipmentId),
     storage.getEquipmentDocuments(equipment.organizationId, equipment.equipmentId),
-    storage.getAirMonitoringJobs(),
   ]);
+
+  // Avoid scanning all jobs in large orgs: only load the jobs referenced by usage rows.
+  const uniqueJobIds = Array.from(new Set((usage || []).map((u: any) => u.jobId).filter(Boolean)));
+  const jobs = await Promise.all(
+    uniqueJobIds.map(async (jobId) => {
+      try {
+        return await storage.getAirMonitoringJob(String(jobId));
+      } catch {
+        return undefined;
+      }
+    })
+  );
 
   const jobsById = new Map<string, any>();
   for (const job of jobs || []) {
