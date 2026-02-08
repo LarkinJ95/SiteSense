@@ -37,11 +37,13 @@ import {
   asbestosInspections as asbestosInspectionsTable,
   asbestosInspectionInventoryChanges as asbestosInspectionInventoryChangesTable,
   asbestosInspectionSamples as asbestosInspectionSamplesTable,
+  asbestosBuildingSamples as asbestosBuildingSamplesTable,
   asbestosInspectionDocuments as asbestosInspectionDocumentsTable,
   buildingInventoryChanges as buildingInventoryChangesTable,
   buildingDocuments as buildingDocumentsTable,
   abatementProjects as abatementProjectsTable,
   abatementProjectItems as abatementProjectItemsTable,
+  abatementRepairLogs as abatementRepairLogsTable,
   buildingBudgets as buildingBudgetsTable,
   buildingBudgetChanges as buildingBudgetChangesTable,
   type Survey, 
@@ -108,6 +110,8 @@ import {
   type InsertAsbestosInspectionSample,
   type AsbestosInspectionDocument,
   type InsertAsbestosInspectionDocument,
+  type AsbestosBuildingSample,
+  type AbatementRepairLog,
   type BuildingInventoryChange,
   type InsertBuildingInventoryChange,
   type BuildingDocument,
@@ -401,6 +405,16 @@ export interface IStorage {
   updateAsbestosInspectionSample(id: string, patch: Partial<InsertAsbestosInspectionSample>): Promise<AsbestosInspectionSample | undefined>;
   deleteAsbestosInspectionSample(id: string): Promise<boolean>;
 
+  // Building-level samples (not necessarily tied to inspections)
+  getAsbestosBuildingSamples(organizationId: string, buildingId: string, sampleType?: string | null): Promise<AsbestosBuildingSample[]>;
+  getAsbestosBuildingSampleById(id: string): Promise<AsbestosBuildingSample | undefined>;
+  getAsbestosBuildingSamplesByInspection(organizationId: string, inspectionId: string): Promise<AsbestosBuildingSample[]>;
+  createAsbestosBuildingSample(
+    row: Partial<AsbestosBuildingSample> & { organizationId: string; clientId: string; buildingId: string; sampleType: string }
+  ): Promise<AsbestosBuildingSample>;
+  updateAsbestosBuildingSample(id: string, patch: Partial<AsbestosBuildingSample>): Promise<AsbestosBuildingSample | undefined>;
+  deleteAsbestosBuildingSample(id: string): Promise<boolean>;
+
   getAsbestosInspectionDocuments(organizationId: string, inspectionId: string): Promise<AsbestosInspectionDocument[]>;
   getAsbestosInspectionDocumentById(id: string): Promise<AsbestosInspectionDocument | undefined>;
   createAsbestosInspectionDocument(
@@ -446,12 +460,21 @@ export interface IStorage {
     row: Partial<InsertAbatementProjectItem> & { organizationId: string; projectId: string; itemId: string }
   ): Promise<AbatementProjectItem>;
 
+  // Abatement/Repair log (building-level)
+  getAbatementRepairLogs(organizationId: string, buildingId: string): Promise<AbatementRepairLog[]>;
+  createAbatementRepairLog(
+    row: Partial<AbatementRepairLog> & { organizationId: string; clientId: string; buildingId: string }
+  ): Promise<AbatementRepairLog>;
+  updateAbatementRepairLog(id: string, patch: Partial<AbatementRepairLog>): Promise<AbatementRepairLog | undefined>;
+  deleteAbatementRepairLog(id: string): Promise<boolean>;
+
   getBuildingBudget(organizationId: string, buildingId: string): Promise<BuildingBudget | undefined>;
   upsertBuildingBudget(row: Partial<InsertBuildingBudget> & { organizationId: string; buildingId: string }): Promise<BuildingBudget>;
   createBuildingBudgetChange(row: Partial<InsertBuildingBudgetChange> & { organizationId: string; budgetId: string }): Promise<BuildingBudgetChange>;
   getBuildingBudgetChanges(organizationId: string, budgetId: string): Promise<BuildingBudgetChange[]>;
 
-  getInspectionSamplesForBuilding(organizationId: string, buildingId: string, sampleType?: string | null): Promise<AsbestosInspectionSample[]>;
+  // Legacy helper used by exports. Prefer `getAsbestosBuildingSamples(...)` going forward.
+  getInspectionSamplesForBuilding(organizationId: string, buildingId: string, sampleType?: string | null): Promise<any[]>;
 
   // Air monitoring documents
   getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]>;
@@ -991,13 +1014,29 @@ export class DatabaseStorage implements IStorage {
           .where(and(eq(exposureRecordsTable.organizationId, params.organizationId), eq(exposureRecordsTable.airSampleId, params.airSampleId)))
       : [null];
 
+    // Drizzle `timestamp_ms` columns map to `Date`. Callers often pass ms numbers or strings;
+    // normalize here so we don't silently fail inserts/updates.
+    const toDateOrNull = (value: any): Date | null => {
+      if (value === null || value === undefined || value === "") return null;
+      if (value instanceof Date) return value;
+      if (typeof value === "number" && Number.isFinite(value)) {
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+      if (typeof value === "string" && value.trim()) {
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+      return null;
+    };
+
     const values: any = {
       organizationId: params.organizationId,
       personId: params.personId,
       jobId: params.jobId,
       airSampleId: params.airSampleId ?? null,
       sampleRunId: params.sampleRunId ?? null,
-      date: params.dateMs ?? null,
+      date: toDateOrNull(params.dateMs),
       analyte: params.analyte,
       durationMinutes: params.durationMinutes ?? null,
       concentration: params.concentration ?? null,
@@ -1883,6 +1922,54 @@ export class DatabaseStorage implements IStorage {
     return didAffectRows(result);
   }
 
+  async getAsbestosBuildingSamples(organizationId: string, buildingId: string, sampleType?: string | null): Promise<AsbestosBuildingSample[]> {
+    const where =
+      sampleType && sampleType.trim()
+        ? and(
+            eq(asbestosBuildingSamplesTable.organizationId, organizationId),
+            eq(asbestosBuildingSamplesTable.buildingId, buildingId),
+            eq(asbestosBuildingSamplesTable.sampleType, sampleType.trim())
+          )
+        : and(eq(asbestosBuildingSamplesTable.organizationId, organizationId), eq(asbestosBuildingSamplesTable.buildingId, buildingId));
+    return await db()
+      .select()
+      .from(asbestosBuildingSamplesTable)
+      .where(where as any)
+      .orderBy(desc(asbestosBuildingSamplesTable.collectedAt), desc(asbestosBuildingSamplesTable.updatedAt));
+  }
+
+  async getAsbestosBuildingSampleById(id: string): Promise<AsbestosBuildingSample | undefined> {
+    const [row] = await db().select().from(asbestosBuildingSamplesTable).where(eq(asbestosBuildingSamplesTable.sampleId, id));
+    return row || undefined;
+  }
+
+  async getAsbestosBuildingSamplesByInspection(organizationId: string, inspectionId: string): Promise<AsbestosBuildingSample[]> {
+    return await db()
+      .select()
+      .from(asbestosBuildingSamplesTable)
+      .where(and(eq(asbestosBuildingSamplesTable.organizationId, organizationId), eq(asbestosBuildingSamplesTable.inspectionId, inspectionId)))
+      .orderBy(desc(asbestosBuildingSamplesTable.collectedAt), desc(asbestosBuildingSamplesTable.updatedAt));
+  }
+
+  async createAsbestosBuildingSample(row: any): Promise<AsbestosBuildingSample> {
+    const [created] = await db().insert(asbestosBuildingSamplesTable).values(row).returning();
+    return created;
+  }
+
+  async updateAsbestosBuildingSample(id: string, patch: any): Promise<AsbestosBuildingSample | undefined> {
+    const [updated] = await db()
+      .update(asbestosBuildingSamplesTable)
+      .set({ ...patch, updatedAt: new Date() } as any)
+      .where(eq(asbestosBuildingSamplesTable.sampleId, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteAsbestosBuildingSample(id: string): Promise<boolean> {
+    const result = await db().delete(asbestosBuildingSamplesTable).where(eq(asbestosBuildingSamplesTable.sampleId, id));
+    return didAffectRows(result);
+  }
+
   async getAsbestosInspectionDocuments(organizationId: string, inspectionId: string): Promise<AsbestosInspectionDocument[]> {
     return await db()
       .select()
@@ -1985,6 +2072,33 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  async getAbatementRepairLogs(organizationId: string, buildingId: string): Promise<AbatementRepairLog[]> {
+    return await db()
+      .select()
+      .from(abatementRepairLogsTable)
+      .where(and(eq(abatementRepairLogsTable.organizationId, organizationId), eq(abatementRepairLogsTable.buildingId, buildingId)))
+      .orderBy(desc(abatementRepairLogsTable.abatementDate), desc(abatementRepairLogsTable.updatedAt));
+  }
+
+  async createAbatementRepairLog(row: any): Promise<AbatementRepairLog> {
+    const [created] = await db().insert(abatementRepairLogsTable).values(row).returning();
+    return created;
+  }
+
+  async updateAbatementRepairLog(id: string, patch: any): Promise<AbatementRepairLog | undefined> {
+    const [updated] = await db()
+      .update(abatementRepairLogsTable)
+      .set({ ...patch, updatedAt: new Date() } as any)
+      .where(eq(abatementRepairLogsTable.logId, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteAbatementRepairLog(id: string): Promise<boolean> {
+    const result = await db().delete(abatementRepairLogsTable).where(eq(abatementRepairLogsTable.logId, id));
+    return didAffectRows(result);
+  }
+
   async getBuildingBudget(organizationId: string, buildingId: string): Promise<BuildingBudget | undefined> {
     const [row] = await db()
       .select()
@@ -2021,27 +2135,54 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(buildingBudgetChangesTable.createdAt));
   }
 
-  async getInspectionSamplesForBuilding(organizationId: string, buildingId: string, sampleType?: string | null): Promise<AsbestosInspectionSample[]> {
-    const where =
-      sampleType && sampleType.trim()
+  async getInspectionSamplesForBuilding(organizationId: string, buildingId: string, sampleType?: string | null): Promise<any[]> {
+    const st = sampleType && sampleType.trim() ? sampleType.trim() : null;
+
+    const whereBuilding =
+      st
+        ? and(
+            eq(asbestosBuildingSamplesTable.organizationId, organizationId),
+            eq(asbestosBuildingSamplesTable.buildingId, buildingId),
+            eq(asbestosBuildingSamplesTable.sampleType, st)
+          )
+        : and(eq(asbestosBuildingSamplesTable.organizationId, organizationId), eq(asbestosBuildingSamplesTable.buildingId, buildingId));
+
+    const buildingRows = await db()
+      .select()
+      .from(asbestosBuildingSamplesTable)
+      .where(whereBuilding as any)
+      .orderBy(desc(asbestosBuildingSamplesTable.collectedAt), desc(asbestosBuildingSamplesTable.updatedAt));
+
+    // Back-compat: include legacy inspection samples if they still exist in the DB and haven't been migrated.
+    const whereLegacy =
+      st
         ? and(
             eq(asbestosInspectionsTable.organizationId, organizationId),
             eq(asbestosInspectionsTable.buildingId, buildingId),
-            eq(asbestosInspectionSamplesTable.sampleType, sampleType.trim())
+            eq(asbestosInspectionSamplesTable.sampleType, st)
           )
         : and(eq(asbestosInspectionsTable.organizationId, organizationId), eq(asbestosInspectionsTable.buildingId, buildingId));
 
-    // Join samples -> inspections so we can filter by building.
-    const rows = await db()
+    const legacyRows = await db()
       .select({
         sample: asbestosInspectionSamplesTable,
       })
       .from(asbestosInspectionSamplesTable)
       .innerJoin(asbestosInspectionsTable, eq(asbestosInspectionSamplesTable.inspectionId, asbestosInspectionsTable.inspectionId))
-      .where(where as any)
+      .where(whereLegacy as any)
       .orderBy(desc(asbestosInspectionSamplesTable.updatedAt));
 
-    return rows.map((r: any) => r.sample);
+    const byId = new Map<string, any>();
+    for (const s of buildingRows as any[]) {
+      if (s?.sampleId) byId.set(String(s.sampleId), s);
+    }
+    for (const r of legacyRows as any[]) {
+      const s = r?.sample;
+      if (s?.sampleId && !byId.has(String(s.sampleId))) {
+        byId.set(String(s.sampleId), s);
+      }
+    }
+    return Array.from(byId.values());
   }
 
   async getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]> {

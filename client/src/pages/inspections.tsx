@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -69,6 +69,14 @@ export default function Inspections() {
     queryKey: ["/api/asbestos/clients"],
   });
 
+  const { data: inspectors = [] } = useQuery<any[]>({
+    queryKey: ["/api/personnel", "inspectors=1", "compact=1"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/personnel?inspectors=1&compact=1");
+      return (await res.json()) as any[];
+    },
+  });
+
   const [open, setOpen] = useState(false);
   const [creatingClient, setCreatingClient] = useState(false);
   const [creatingBuilding, setCreatingBuilding] = useState(false);
@@ -79,6 +87,14 @@ export default function Inspections() {
   const [status, setStatus] = useState<"draft" | "in_progress" | "final">("draft");
   const [recurrenceYears, setRecurrenceYears] = useState("3");
   const [notes, setNotes] = useState("");
+  const [inspectorId, setInspectorId] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    if (inspectorId) return;
+    const first = (inspectors as any[])?.[0]?.personId;
+    if (first) setInspectorId(String(first));
+  }, [open, inspectorId, inspectors]);
 
   const [newClient, setNewClient] = useState({ name: "", contactEmail: "", contactPhone: "", address: "" });
   const [newBuilding, setNewBuilding] = useState({ name: "", address: "", notes: "" });
@@ -134,7 +150,7 @@ export default function Inspections() {
       if (!selectedBuildingId) throw new Error("Building is required");
       if (!inspectionDate) throw new Error("Inspection date is required");
       const years = recurrenceYears.trim() ? Number(recurrenceYears) : undefined;
-      const inspectors = session?.user?.id ? [session.user.id] : [];
+      const inspectors = inspectorId ? [inspectorId] : [];
       const res = await apiRequest("POST", `/api/asbestos/buildings/${selectedBuildingId}/inspections`, {
         inspectionDate,
         inspectors,
@@ -175,7 +191,7 @@ export default function Inspections() {
               <DialogDescription>Select client/building (or create inline), set recurrence, then save.</DialogDescription>
             </DialogHeader>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+	            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Client</Label>
@@ -289,10 +305,24 @@ export default function Inspections() {
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Label>Inspection Date</Label>
-                <Input type="date" value={inspectionDate} onChange={(e) => setInspectionDate(e.target.value)} />
-              </div>
+	              <div className="space-y-2">
+	                <Label>Inspection Date</Label>
+	                <Input type="date" value={inspectionDate} onChange={(e) => setInspectionDate(e.target.value)} />
+	              </div>
+
+	              <div className="space-y-2">
+	                <Label>Inspector</Label>
+	                <Select value={inspectorId} onValueChange={setInspectorId}>
+	                  <SelectTrigger><SelectValue placeholder="Select inspector" /></SelectTrigger>
+	                  <SelectContent>
+	                    {inspectors.map((p: any) => (
+	                      <SelectItem key={p.personId} value={p.personId}>
+	                        {p.firstName} {p.lastName}
+	                      </SelectItem>
+	                    ))}
+	                  </SelectContent>
+	                </Select>
+	              </div>
 
               <div className="space-y-2">
                 <Label>Status</Label>
@@ -326,12 +356,12 @@ export default function Inspections() {
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button onClick={() => createInspectionMutation.mutate()} disabled={!canCreateInspection || createInspectionMutation.isPending}>
-                Create Inspection
-              </Button>
-            </div>
+	            <div className="pt-2 flex justify-end gap-2">
+	              <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+	              <Button onClick={() => createInspectionMutation.mutate()} disabled={!canCreateInspection || !inspectorId || createInspectionMutation.isPending}>
+	                Create Inspection
+	              </Button>
+	            </div>
           </DialogContent>
         </Dialog>
       </div>

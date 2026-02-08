@@ -1351,6 +1351,7 @@ export const asbestosInventoryItems = sqliteTable("asbestos_inventory_items", {
   quantity: numeric("quantity"),
   uom: text("uom"),
   status: text("status"),
+  notes: text("notes"),
   lastInspectedAt: timestamp("last_inspected_at"),
   lastUpdatedAt: timestamp("last_updated_at"),
   active: bool("active").default(true),
@@ -1409,6 +1410,30 @@ export const asbestosInspectionSamples = sqliteTable("asbestos_inspection_sample
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Building-level samples (not necessarily tied to inspections)
+export const asbestosBuildingSamples = sqliteTable("asbestos_building_samples", {
+  sampleId: text("sample_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  buildingId: text("building_id").notNull().references(() => asbestosBuildings.buildingId, { onDelete: "cascade" }),
+  inspectionId: text("inspection_id").references(() => asbestosInspections.inspectionId, { onDelete: "set null" }),
+  sampleType: text("sample_type").notNull(), // acm | paint_metals
+  itemId: text("item_id").references(() => asbestosInventoryItems.itemId, { onDelete: "set null" }),
+  sampleNumber: text("sample_number"),
+  collectedAt: timestamp("collected_at"),
+  material: text("material"),
+  location: text("location"),
+  lab: text("lab"),
+  tat: text("tat"),
+  coc: text("coc"),
+  result: text("result"),
+  resultUnit: text("result_unit"),
+  notes: text("notes"),
+  createdByUserId: text("created_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const asbestosInspectionDocuments = sqliteTable("asbestos_inspection_documents", {
   documentId: text("document_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -1420,6 +1445,30 @@ export const asbestosInspectionDocuments = sqliteTable("asbestos_inspection_docu
   docType: text("doc_type"),
   uploadedAt: timestamp("uploaded_at").defaultNow(),
   uploadedByUserId: text("uploaded_by_user_id"),
+});
+
+export const abatementRepairLogs = sqliteTable("abatement_repair_logs", {
+  logId: text("log_id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  buildingId: text("building_id").notNull().references(() => asbestosBuildings.buildingId, { onDelete: "cascade" }),
+  itemId: text("item_id").references(() => asbestosInventoryItems.itemId, { onDelete: "set null" }),
+  associatedItemNumber: text("associated_item_number"),
+  associatedSampleNumber: text("associated_sample_number"),
+  materialDescription: text("material_description"),
+  location: text("location"),
+  abatementDate: timestamp("abatement_date"),
+  contractor: text("contractor"),
+  method: text("method"), // Encapsulation | Enclosure | Removal | Other
+  wasteShipmentId: text("waste_shipment_id"),
+  disposalSite: text("disposal_site"),
+  clearanceDate: timestamp("clearance_date"),
+  clearanceResult: text("clearance_result"),
+  cost: numeric("cost"),
+  notes: text("notes"),
+  createdByUserId: text("created_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const buildingInventoryChanges = sqliteTable("building_inventory_changes", {
@@ -1819,6 +1868,8 @@ export type AsbestosInspectionSample = typeof asbestosInspectionSamples.$inferSe
 export type InsertAsbestosInspectionSample = z.infer<typeof insertAsbestosInspectionSampleSchema>;
 export type AsbestosInspectionDocument = typeof asbestosInspectionDocuments.$inferSelect;
 export type InsertAsbestosInspectionDocument = z.infer<typeof insertAsbestosInspectionDocumentSchema>;
+export type AsbestosBuildingSample = typeof asbestosBuildingSamples.$inferSelect;
+export type AbatementRepairLog = typeof abatementRepairLogs.$inferSelect;
 export type BuildingInventoryChange = typeof buildingInventoryChanges.$inferSelect;
 export type InsertBuildingInventoryChange = z.infer<typeof insertBuildingInventoryChangeSchema>;
 export type BuildingDocument = typeof buildingDocuments.$inferSelect;

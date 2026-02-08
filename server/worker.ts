@@ -3264,13 +3264,15 @@ app.get("/api/personnel", async (c) => {
 
   const payload = rows.map((p: any, idx: number) => {
     const st = statsByPerson.get(String(p.personId)) || { lastJobDate: null, jobCount: 0, sampleCount: 0 };
-    const nameKey = `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.trim().toLowerCase();
-    const ns = nameKey ? statsByMonitorName.get(nameKey) : null;
+    const nameKeyA = `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.trim().toLowerCase();
+    const nameKeyB = `${String(p.lastName || "").trim()}, ${String(p.firstName || "").trim()}`.trim().toLowerCase();
+    const nsA = nameKeyA ? statsByMonitorName.get(nameKeyA) : null;
+    const nsB = nameKeyB ? statsByMonitorName.get(nameKeyB) : null;
     const merged = {
       // Prefer explicit `personId` linkage. If absent, fall back to monitorWornBy-based counts.
-      sampleCount: st.sampleCount || ns?.sampleCount || 0,
-      jobCount: st.jobCount || ns?.jobCount || 0,
-      lastJobDate: Math.max(st.lastJobDate || 0, ns?.lastJobDate || 0) || null,
+      sampleCount: st.sampleCount || nsA?.sampleCount || nsB?.sampleCount || 0,
+      jobCount: st.jobCount || nsA?.jobCount || nsB?.jobCount || 0,
+      lastJobDate: Math.max(st.lastJobDate || 0, nsA?.lastJobDate || 0, nsB?.lastJobDate || 0) || null,
     };
     return {
       ...p,
@@ -3457,15 +3459,18 @@ app.get("/api/personnel/:id/exposures", async (c) => {
   }
 
   const fullName = `${String((person as any).firstName || "").trim()} ${String((person as any).lastName || "").trim()}`.trim();
+  const altName = `${String((person as any).lastName || "").trim()}, ${String((person as any).firstName || "").trim()}`.trim();
   const records = await storage.getExposureRecordsForPerson(person.organizationId, person.personId, { from, analyte: analyte || null });
 
   // Self-heal: if exposure records are missing (historical samples created before exposure backfill),
   // upsert exposure snapshots for any air samples linked to this person.
   try {
     // If prior samples were created with only monitorWornBy populated (no personId),
-    // link them to this person by exact full-name match so exposures can be generated.
-    if (fullName) {
-      const orphans = await storage.getAirSamplesForMonitorNameInOrg(person.organizationId, fullName);
+    // link them to this person by exact name match so exposures can be generated.
+    // Support both "First Last" and "Last, First" formats.
+    const nameCandidates = Array.from(new Set([fullName, altName].map((s) => String(s || "").trim()).filter(Boolean)));
+    for (const name of nameCandidates) {
+      const orphans = await storage.getAirSamplesForMonitorNameInOrg(person.organizationId, name);
       for (const s of orphans as any[]) {
         if (!s?.id) continue;
         await storage.updateAirSample(String(s.id), { personId: person.personId } as any);
@@ -4463,6 +4468,7 @@ const asbestosUpdateInventoryItemSchema = z.object({
     quantity: z.string().or(z.number()).optional().nullable(),
     uom: z.string().optional().nullable(),
     status: z.string().optional().nullable(),
+    notes: z.string().optional().nullable(),
     active: z.boolean().optional(),
   }),
 });
@@ -4479,6 +4485,34 @@ const asbestosCreateInspectionSampleSchema = z.object({
   coc: z.string().optional().nullable(),
   result: z.string().optional().nullable(),
   resultUnit: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
+const asbestosCreateBuildingSampleSchema = asbestosCreateInspectionSampleSchema.extend({
+  inspectionId: z.string().optional().nullable(),
+});
+
+const asbestosCreateAbatementRepairLogSchema = z.object({
+  itemId: z.string().optional().nullable(),
+  associatedItemNumber: z.string().optional().nullable(),
+  associatedSampleNumber: z.string().optional().nullable(),
+  materialDescription: z.string().optional().nullable(),
+  location: z.string().optional().nullable(),
+  abatementDate: z.preprocess((v) => (v === "" || v === null || v === undefined ? undefined : coerceDate(v)), z.date().optional()),
+  contractor: z.string().optional().nullable(),
+  method: z.string().optional().nullable(),
+  wasteShipmentId: z.string().optional().nullable(),
+  disposalSite: z.string().optional().nullable(),
+  clearanceDate: z.preprocess((v) => (v === "" || v === null || v === undefined ? undefined : coerceDate(v)), z.date().optional()),
+  clearanceResult: z.string().optional().nullable(),
+  // Drizzle sqlite `numeric(...)` values are modeled as strings.
+  cost: z
+    .preprocess((v) => {
+      if (v === "" || v === null || v === undefined) return undefined;
+      if (typeof v === "number" && Number.isFinite(v)) return v.toString();
+      return v;
+    }, z.string().optional())
+    .optional(),
   notes: z.string().optional().nullable(),
 });
 
@@ -4616,6 +4650,17 @@ app.post("/api/asbestos/buildings/:buildingId/inventory", async (c) => {
   if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
   const body = await parseJsonBody<any>(c);
   if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const quantityRaw = body.quantity ?? null;
+  const quantity =
+    typeof quantityRaw === "string"
+      ? (() => {
+          const n = Number(quantityRaw);
+          return Number.isFinite(n) ? n : null;
+        })()
+      : typeof quantityRaw === "number"
+        ? quantityRaw
+        : null;
+
   const created = await storage.createAsbestosInventoryItem({
     organizationId: orgId,
     clientId: building.clientId,
@@ -4626,9 +4671,10 @@ app.post("/api/asbestos/buildings/:buildingId/inventory", async (c) => {
     category: (body.category || "").toString().trim() || null,
     acmStatus: (body.acmStatus || "").toString().trim() || null,
     condition: (body.condition || "").toString().trim() || null,
-    quantity: body.quantity ?? null,
+    quantity,
     uom: (body.uom || "").toString().trim() || null,
     status: (body.status || "").toString().trim() || null,
+    notes: (body.notes || "").toString().trim() || null,
     lastUpdatedAt: new Date(),
     active: body.active === false ? false : true,
   } as any);
@@ -4900,6 +4946,52 @@ app.get("/api/asbestos/buildings/:buildingId/samples", async (c) => {
   return c.json(enriched);
 });
 
+app.post("/api/asbestos/buildings/:buildingId/samples", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  try {
+    const payload = asbestosCreateBuildingSampleSchema.parse(body);
+    const inspectionId = payload.inspectionId ? String(payload.inspectionId) : null;
+    if (inspectionId) {
+      const ins = await storage.getAsbestosInspectionById(inspectionId);
+      if (!ins || ins.organizationId !== orgId || ins.buildingId !== building.buildingId) {
+        return c.json({ message: "Inspection not found" }, 404);
+      }
+    }
+    const created = await storage.createAsbestosBuildingSample({
+      organizationId: orgId,
+      clientId: building.clientId,
+      buildingId: building.buildingId,
+      inspectionId,
+      sampleType: payload.sampleType,
+      itemId: payload.itemId ?? null,
+      sampleNumber: payload.sampleNumber ?? null,
+      collectedAt: payload.collectedAt ?? null,
+      material: payload.material ?? null,
+      location: payload.location ?? null,
+      lab: payload.lab ?? null,
+      tat: payload.tat ?? null,
+      coc: payload.coc ?? null,
+      result: payload.result ?? null,
+      resultUnit: payload.resultUnit ?? null,
+      notes: payload.notes ?? null,
+      createdByUserId: userId,
+      updatedAt: new Date(),
+    } as any);
+    return c.json(created, 201);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
+});
+
 app.get("/api/asbestos/buildings/:buildingId/samples/export", async (c) => {
   const userId = c.get("user")?.sub;
   if (!userId) return c.json({ message: "Not authenticated" }, 401);
@@ -4993,6 +5085,90 @@ app.delete("/api/asbestos/building-documents/:documentId", async (c) => {
     // ignore
   }
   return c.body(null, 204);
+});
+
+app.get("/api/asbestos/buildings/:buildingId/abatement-logs", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+
+  const [logs, inventory] = await Promise.all([
+    storage.getAbatementRepairLogs(orgId, building.buildingId),
+    storage.getAsbestosInventoryItems(orgId, building.buildingId),
+  ]);
+
+  const itemById = new Map<string, any>();
+  for (const it of inventory || []) itemById.set(String((it as any).itemId), it);
+
+  const enriched = (logs || []).map((r: any) => {
+    const item = r.itemId ? itemById.get(String(r.itemId)) || null : null;
+    return {
+      ...r,
+      item: item
+        ? {
+            itemId: item.itemId,
+            externalItemId: item.externalItemId,
+            material: item.material,
+            location: item.location,
+            category: item.category,
+          }
+        : null,
+    };
+  });
+
+  return c.json(enriched);
+});
+
+app.post("/api/asbestos/buildings/:buildingId/abatement-logs", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  try {
+    const payload = asbestosCreateAbatementRepairLogSchema.parse(body);
+
+    const itemId = payload.itemId ? String(payload.itemId).trim() : "";
+    if (itemId) {
+      const item = await storage.getAsbestosInventoryItemById(itemId);
+      if (!item || item.organizationId !== orgId || item.buildingId !== building.buildingId) {
+        return c.json({ message: "Inventory item not found" }, 404);
+      }
+    }
+
+    const created = await storage.createAbatementRepairLog({
+      organizationId: orgId,
+      clientId: building.clientId,
+      buildingId: building.buildingId,
+      itemId: itemId || null,
+      associatedItemNumber: payload.associatedItemNumber ?? null,
+      associatedSampleNumber: payload.associatedSampleNumber ?? null,
+      materialDescription: payload.materialDescription ?? null,
+      location: payload.location ?? null,
+      abatementDate: payload.abatementDate ?? null,
+      contractor: payload.contractor ?? null,
+      method: payload.method ?? null,
+      wasteShipmentId: payload.wasteShipmentId ?? null,
+      disposalSite: payload.disposalSite ?? null,
+      clearanceDate: payload.clearanceDate ?? null,
+      clearanceResult: payload.clearanceResult ?? null,
+      cost: (payload as any).cost ?? null,
+      notes: payload.notes ?? null,
+      createdByUserId: userId,
+      updatedAt: new Date(),
+    } as any);
+
+    return c.json(created, 201);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
 });
 
 app.get("/api/asbestos/buildings/:buildingId/abatement-projects", async (c) => {
@@ -5115,8 +5291,14 @@ app.get("/api/asbestos/inspections/:inspectionId/samples", async (c) => {
   const orgId = await getOrgIdForUserOrThrow(userId);
   const inspection = await storage.getAsbestosInspectionById(c.req.param("inspectionId"));
   if (!inspection || inspection.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
-  const rows = await storage.getAsbestosInspectionSamples(orgId, inspection.inspectionId);
-  return c.json(rows);
+  const [rowsNew, rowsLegacy] = await Promise.all([
+    storage.getAsbestosBuildingSamplesByInspection(orgId, inspection.inspectionId),
+    storage.getAsbestosInspectionSamples(orgId, inspection.inspectionId),
+  ]);
+  const byId = new Map<string, any>();
+  for (const s of rowsNew || []) if ((s as any)?.sampleId) byId.set(String((s as any).sampleId), s);
+  for (const s of rowsLegacy || []) if ((s as any)?.sampleId && !byId.has(String((s as any).sampleId))) byId.set(String((s as any).sampleId), s);
+  return c.json(Array.from(byId.values()));
 });
 
 app.post("/api/asbestos/inspections/:inspectionId/samples", async (c) => {
@@ -5129,8 +5311,10 @@ app.post("/api/asbestos/inspections/:inspectionId/samples", async (c) => {
   if (!body) return c.json({ message: "Invalid JSON" }, 400);
   try {
     const payload = asbestosCreateInspectionSampleSchema.parse(body);
-    const created = await storage.createAsbestosInspectionSample({
+    const created = await storage.createAsbestosBuildingSample({
       organizationId: orgId,
+      clientId: inspection.clientId,
+      buildingId: inspection.buildingId,
       inspectionId: inspection.inspectionId,
       sampleType: payload.sampleType,
       itemId: payload.itemId ?? null,
@@ -5145,6 +5329,7 @@ app.post("/api/asbestos/inspections/:inspectionId/samples", async (c) => {
       resultUnit: payload.resultUnit ?? null,
       notes: payload.notes ?? null,
       createdByUserId: userId,
+      updatedAt: new Date(),
     } as any);
     return c.json(created, 201);
   } catch (error) {
@@ -5160,7 +5345,14 @@ app.get("/api/asbestos/inspections/:inspectionId/samples/export", async (c) => {
   const orgId = await getOrgIdForUserOrThrow(userId);
   const inspection = await storage.getAsbestosInspectionById(c.req.param("inspectionId"));
   if (!inspection || inspection.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
-  const samples = await storage.getAsbestosInspectionSamples(orgId, inspection.inspectionId);
+  const [rowsNew, rowsLegacy] = await Promise.all([
+    storage.getAsbestosBuildingSamplesByInspection(orgId, inspection.inspectionId),
+    storage.getAsbestosInspectionSamples(orgId, inspection.inspectionId),
+  ]);
+  const byId = new Map<string, any>();
+  for (const s of rowsNew || []) if ((s as any)?.sampleId) byId.set(String((s as any).sampleId), s);
+  for (const s of rowsLegacy || []) if ((s as any)?.sampleId && !byId.has(String((s as any).sampleId))) byId.set(String((s as any).sampleId), s);
+  const samples = Array.from(byId.values());
 
   const separate = c.req.query("separateSheets") === "1";
   const wb = XLSX.utils.book_new();
@@ -5226,7 +5418,10 @@ app.put("/api/asbestos/inspection-samples/:sampleId", async (c) => {
   const userId = c.get("user")?.sub;
   if (!userId) return c.json({ message: "Not authenticated" }, 401);
   const orgId = await getOrgIdForUserOrThrow(userId);
-  const existing = await storage.getAsbestosInspectionSampleById(c.req.param("sampleId"));
+  const id = c.req.param("sampleId");
+  const existingNew = await storage.getAsbestosBuildingSampleById(id);
+  const existingLegacy = existingNew ? null : await storage.getAsbestosInspectionSampleById(id);
+  const existing = existingNew || existingLegacy;
   if (!existing) return c.json({ message: "Not found" }, 404);
   if ((existing as any).organizationId !== orgId) return c.json({ message: "No access" }, 403);
 
@@ -5234,9 +5429,9 @@ app.put("/api/asbestos/inspection-samples/:sampleId", async (c) => {
   if (!body) return c.json({ message: "Invalid JSON" }, 400);
   try {
     const payload = asbestosCreateInspectionSampleSchema.partial().parse(body);
-    const updated = await storage.updateAsbestosInspectionSample(c.req.param("sampleId"), {
-      ...payload,
-    } as any);
+    const updated = existingNew
+      ? await storage.updateAsbestosBuildingSample(id, { ...payload } as any)
+      : await storage.updateAsbestosInspectionSample(id, { ...payload } as any);
     if (!updated) return c.json({ message: "Not found" }, 404);
     return c.json(updated);
   } catch (error) {
@@ -5250,10 +5445,13 @@ app.delete("/api/asbestos/inspection-samples/:sampleId", async (c) => {
   const userId = c.get("user")?.sub;
   if (!userId) return c.json({ message: "Not authenticated" }, 401);
   const orgId = await getOrgIdForUserOrThrow(userId);
-  const existing = await storage.getAsbestosInspectionSampleById(c.req.param("sampleId"));
+  const id = c.req.param("sampleId");
+  const existingNew = await storage.getAsbestosBuildingSampleById(id);
+  const existingLegacy = existingNew ? null : await storage.getAsbestosInspectionSampleById(id);
+  const existing = existingNew || existingLegacy;
   if (!existing) return c.json({ message: "Not found" }, 404);
   if ((existing as any).organizationId !== orgId) return c.json({ message: "No access" }, 403);
-  const ok = await storage.deleteAsbestosInspectionSample(existing.sampleId);
+  const ok = existingNew ? await storage.deleteAsbestosBuildingSample(id) : await storage.deleteAsbestosInspectionSample(id);
   return ok ? c.body(null, 204) : c.json({ message: "Not found" }, 404);
 });
 
