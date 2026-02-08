@@ -1019,7 +1019,9 @@ export default function BuildingHub() {
                     New Log Entry
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+                <DialogContent
+                  className="max-w-2xl w-[calc(100vw-2rem)] sm:w-full top-6 translate-y-0 max-h-[calc(100dvh-3rem)] overflow-hidden flex flex-col"
+                >
                   <DialogHeader>
                     <DialogTitle>Create Log Entry</DialogTitle>
                     <DialogDescription>Tracks abatement/repair work at this building.</DialogDescription>
