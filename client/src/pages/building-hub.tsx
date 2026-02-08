@@ -460,9 +460,14 @@ export default function BuildingHub() {
     itemId: "",
     sampleNumber: "",
     collectedAt: "",
+    materialKind: "Drywall joint compound",
+    materialOther: "",
     material: "",
+    description: "",
     location: "",
     analyte: "Lead (Pb)",
+    asbestosType: "Chrysotile",
+    asbestosPercent: "",
     lab: "",
     tat: "",
     coc: "",
@@ -476,7 +481,14 @@ export default function BuildingHub() {
     mutationFn: async () => {
       if (!id) throw new Error("Missing buildingId");
       const isPaintMetals = sampleType === "paint_metals";
+      const isAcm = sampleType === "acm";
       const normalizedResultUnit = isPaintMetals ? "mg/kg" : sampleForm.resultUnit.trim();
+      const resolvedMaterial =
+        isAcm && sampleForm.materialKind === "Other"
+          ? sampleForm.materialOther.trim()
+          : isAcm
+            ? sampleForm.materialKind.trim()
+            : sampleForm.material.trim();
       const payload: any = {
         sampleType,
         // Paint/Metals samples shouldn't be tied to inspections/items in this workflow.
@@ -484,14 +496,17 @@ export default function BuildingHub() {
         itemId: isPaintMetals ? null : (sampleForm.itemId || null),
         sampleNumber: sampleForm.sampleNumber.trim() || null,
         collectedAt: sampleForm.collectedAt || null,
-        material: sampleForm.material.trim() || null,
+        material: resolvedMaterial || null,
+        description: sampleForm.description.trim() || null,
         location: sampleForm.location.trim() || null,
         analyte: isPaintMetals ? sampleForm.analyte.trim() || null : null,
+        asbestosType: isAcm ? (sampleForm.asbestosType.trim() || null) : null,
+        asbestosPercent: isAcm ? (sampleForm.asbestosPercent.trim() || null) : null,
         lab: sampleForm.lab.trim() || null,
         tat: sampleForm.tat.trim() || null,
-        coc: isPaintMetals ? null : (sampleForm.coc.trim() || null),
-        result: sampleForm.result.trim() || null,
-        resultUnit: normalizedResultUnit || null,
+        coc: null,
+        result: isAcm ? null : (sampleForm.result.trim() || null),
+        resultUnit: isAcm ? null : (normalizedResultUnit || null),
         notes: sampleForm.notes.trim() || null,
       };
       const res = await apiRequest("POST", `/api/asbestos/buildings/${id}/samples`, payload);
@@ -525,9 +540,14 @@ export default function BuildingHub() {
         itemId: "",
         sampleNumber: "",
         collectedAt: "",
+        materialKind: "Drywall joint compound",
+        materialOther: "",
         material: "",
+        description: "",
         location: "",
         analyte: "Lead (Pb)",
+        asbestosType: "Chrysotile",
+        asbestosPercent: "",
         lab: "",
         tat: "",
         coc: "",
@@ -977,7 +997,9 @@ export default function BuildingHub() {
                       <TableHead>Collector</TableHead>
                       <TableHead>Location</TableHead>
                       <TableHead>Material</TableHead>
-                      <TableHead>Result</TableHead>
+                      <TableHead>Asbestos Type</TableHead>
+                      <TableHead>Asbestos %</TableHead>
+                      <TableHead>Description</TableHead>
                       <TableHead>Item</TableHead>
                       <TableHead>Inspection</TableHead>
                     </TableRow>
@@ -989,7 +1011,13 @@ export default function BuildingHub() {
                         <TableCell>{s.collector || "—"}</TableCell>
                         <TableCell>{s.location || "—"}</TableCell>
                         <TableCell>{s.material || "—"}</TableCell>
-                        <TableCell>{(s.result || "").toString()} {s.resultUnit || ""}</TableCell>
+                        <TableCell>{s.asbestosType || "—"}</TableCell>
+                        <TableCell>
+                          {s.asbestosPercent !== null && s.asbestosPercent !== undefined && String(s.asbestosPercent).trim() !== ""
+                            ? `${s.asbestosPercent}%`
+                            : (s.result ? `${s.result}%` : "—")}
+                        </TableCell>
+                        <TableCell>{s.description || "—"}</TableCell>
                         <TableCell className="font-mono text-xs">{s.item?.externalItemId || s.itemId || "—"}</TableCell>
                         <TableCell>
                           {s.inspection?.inspectionId ? (
@@ -1661,7 +1689,39 @@ export default function BuildingHub() {
             </div>
             <div className="space-y-2">
               <Label>{sampleType === "paint_metals" ? "Substrate" : "Material"}</Label>
-              <Input value={sampleForm.material} onChange={(e) => setSampleForm({ ...sampleForm, material: e.target.value })} />
+              {sampleType === "acm" ? (
+                <>
+                  <Select
+                    value={sampleForm.materialKind}
+                    onValueChange={(v) => setSampleForm({ ...sampleForm, materialKind: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select material" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Drywall joint compound">Drywall joint compound</SelectItem>
+                      <SelectItem value="Textured ceiling / popcorn">Textured ceiling / popcorn</SelectItem>
+                      <SelectItem value="Floor tile">Floor tile</SelectItem>
+                      <SelectItem value="Mastic / adhesive">Mastic / adhesive</SelectItem>
+                      <SelectItem value="Pipe insulation">Pipe insulation</SelectItem>
+                      <SelectItem value="Boiler / tank insulation">Boiler / tank insulation</SelectItem>
+                      <SelectItem value="Transite / cement board">Transite / cement board</SelectItem>
+                      <SelectItem value="Roofing (shingle/felt)">Roofing (shingle/felt)</SelectItem>
+                      <SelectItem value="Vermiculite">Vermiculite</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {sampleForm.materialKind === "Other" ? (
+                    <Input
+                      placeholder="Enter material"
+                      value={sampleForm.materialOther}
+                      onChange={(e) => setSampleForm({ ...sampleForm, materialOther: e.target.value })}
+                    />
+                  ) : null}
+                </>
+              ) : (
+                <Input value={sampleForm.material} onChange={(e) => setSampleForm({ ...sampleForm, material: e.target.value })} />
+              )}
             </div>
             <div className="space-y-2">
               <Label>Location</Label>
@@ -1699,19 +1759,49 @@ export default function BuildingHub() {
             </div>
             {sampleType === "acm" ? (
               <div className="space-y-2">
-                <Label>CoC</Label>
-                <Input value={sampleForm.coc} onChange={(e) => setSampleForm({ ...sampleForm, coc: e.target.value })} />
+                <Label>Asbestos Type</Label>
+                <Select value={sampleForm.asbestosType} onValueChange={(v) => setSampleForm({ ...sampleForm, asbestosType: v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Chrysotile">Chrysotile</SelectItem>
+                    <SelectItem value="Amosite">Amosite</SelectItem>
+                    <SelectItem value="Crocidolite">Crocidolite</SelectItem>
+                    <SelectItem value="Tremolite">Tremolite</SelectItem>
+                    <SelectItem value="Anthophyllite">Anthophyllite</SelectItem>
+                    <SelectItem value="Actinolite">Actinolite</SelectItem>
+                    <SelectItem value="Mixed">Mixed</SelectItem>
+                    <SelectItem value="None Detected">None Detected</SelectItem>
+                    <SelectItem value="Unknown">Unknown</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             ) : null}
-            <div className="space-y-2">
-              <Label>{sampleType === "paint_metals" ? "Result (mg/kg)" : "Result"}</Label>
-              <Input
-                inputMode="decimal"
-                value={sampleForm.result}
-                onChange={(e) => setSampleForm({ ...sampleForm, result: e.target.value })}
-                placeholder={sampleType === "paint_metals" ? "e.g., 2500" : ""}
-              />
-            </div>
+            {sampleType === "acm" ? (
+              <div className="space-y-2">
+                <Label>Asbestos Content (%)</Label>
+                <Input
+                  inputMode="decimal"
+                  value={sampleForm.asbestosPercent}
+                  onChange={(e) => setSampleForm({ ...sampleForm, asbestosPercent: e.target.value })}
+                  placeholder="e.g., 5"
+                />
+              </div>
+            ) : null}
+
+            {sampleType === "paint_metals" ? (
+              <div className="space-y-2">
+                <Label>Result (mg/kg)</Label>
+                <Input
+                  inputMode="decimal"
+                  value={sampleForm.result}
+                  onChange={(e) => setSampleForm({ ...sampleForm, result: e.target.value })}
+                  placeholder="e.g., 2500"
+                />
+              </div>
+            ) : null}
+
             {sampleType === "paint_metals" ? (
               <div className="space-y-2">
                 <Label>% by weight</Label>
@@ -1724,12 +1814,14 @@ export default function BuildingHub() {
                   readOnly
                 />
               </div>
-            ) : (
-              <div className="space-y-2">
-                <Label>Units</Label>
-                <Input value={sampleForm.resultUnit} onChange={(e) => setSampleForm({ ...sampleForm, resultUnit: e.target.value })} />
+            ) : null}
+
+            {sampleType === "acm" ? (
+              <div className="space-y-2 md:col-span-3">
+                <Label>Description</Label>
+                <Input value={sampleForm.description} onChange={(e) => setSampleForm({ ...sampleForm, description: e.target.value })} placeholder="Optional description" />
               </div>
-            )}
+            ) : null}
 
             {sampleType === "paint_metals" ? (
               <div className="space-y-2 md:col-span-3">
