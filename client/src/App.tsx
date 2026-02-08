@@ -23,6 +23,9 @@ import EquipmentDetail from "@/pages/equipment-detail";
 import EquipmentReport from "@/pages/equipment-report";
 import Personnel from "@/pages/personnel";
 import PersonnelDetail from "@/pages/personnel-detail";
+import Inspections from "@/pages/inspections";
+import InspectionDetail from "@/pages/inspection-detail";
+import InspectionReport from "@/pages/inspection-report";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
 import ForgotPassword from "@/pages/forgot-password";
@@ -126,6 +129,21 @@ function Router() {
       <Route path="/personnel/:id">
         <Protected>
           <PersonnelDetail />
+        </Protected>
+      </Route>
+      <Route path="/inspections">
+        <Protected>
+          <Inspections />
+        </Protected>
+      </Route>
+      <Route path="/inspections/:id">
+        <Protected>
+          <InspectionDetail />
+        </Protected>
+      </Route>
+      <Route path="/inspections/:id/report">
+        <Protected>
+          <InspectionReport />
         </Protected>
       </Route>
       <Route path="/templates">

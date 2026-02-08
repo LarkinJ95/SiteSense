@@ -40,7 +40,8 @@ import type {
 import { storage } from "./storage";
 import { getDb, setD1Database } from "./db";
 import { sql } from "drizzle-orm";
-import { ZodError } from "zod";
+import { ZodError, z } from "zod";
+import * as XLSX from "xlsx";
 
 type D1Database = any;
 
@@ -325,6 +326,24 @@ const normalizeWeatherLogBody = (body: any) => {
   const normalized: any = { ...body };
   if ("logTime" in normalized) normalized.logTime = coerceDate(normalized.logTime) ?? normalized.logTime;
   return normalized;
+};
+
+const addYears = (date: Date, years: number) => {
+  const d = new Date(date.getTime());
+  d.setFullYear(d.getFullYear() + years);
+  return d;
+};
+
+const xlsxResponse = (workbook: XLSX.WorkBook, filename: string) => {
+  const safe = sanitizeFilename(filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`);
+  const out = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+  return new Response(out, {
+    headers: {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename=\"${safe}\"`,
+      "Cache-Control": "no-store",
+    },
+  });
 };
 
 const zodBadRequest = (c: any, error: unknown) => {
@@ -658,9 +677,10 @@ const computeExposureFlags = (twa8hr: number | null, limitRow: any | null, nearM
   };
 };
 
-const storeUpload = async (bucket: R2Bucket, file: File) => {
+const storeUpload = async (bucket: R2Bucket, file: File, opts?: { prefix?: string | null }) => {
   const safeName = sanitizeFilename(file.name || "upload");
-  const key = `${crypto.randomUUID()}-${safeName}`;
+  const prefix = (opts?.prefix || "").toString().replace(/^\/+|\/+$/g, "");
+  const key = prefix ? `${prefix}/${crypto.randomUUID()}-${safeName}` : `${crypto.randomUUID()}-${safeName}`;
   await bucket.put(key, file.stream(), {
     httpMetadata: { contentType: file.type || "application/octet-stream" },
   });
@@ -4269,6 +4289,704 @@ app.get("/api/air-samples/pel-analysis", async (c) => {
   if (!userId) return c.json({ message: "Not authenticated" }, 401);
   const samples = await storage.getAirSamplesWithPELAnalysis();
   return c.json(samples);
+});
+
+// ---------------------------------------------------------------------------
+// Asbestos Inspections (Client -> Building -> Inventory) + Excel exports
+// ---------------------------------------------------------------------------
+
+const asbestosCreateClientSchema = z.object({
+  name: z.string().min(1),
+  contactEmail: z.string().min(3),
+  contactPhone: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
+});
+
+const asbestosCreateBuildingSchema = z.object({
+  clientId: z.string().min(1),
+  name: z.string().min(1),
+  address: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
+const asbestosCreateInspectionSchema = z.object({
+  clientId: z.string().min(1),
+  buildingId: z.string().min(1),
+  inspectionDate: z.preprocess((v) => coerceDate(v), z.date()),
+  inspectors: z.array(z.string()).optional().default([]),
+  status: z.enum(["draft", "in_progress", "final"]).optional().default("draft"),
+  recurrenceYears: z
+    .preprocess((v) => {
+      if (v === "" || v === null || v === undefined) return undefined;
+      if (typeof v === "string") return Number(v);
+      return v;
+    }, z.number().int().min(1).max(5).optional()),
+  notes: z.string().optional().nullable(),
+});
+
+const asbestosUpdateInventoryItemSchema = z.object({
+  inspectionId: z.string().min(1),
+  reason: z.string().min(1),
+  patch: z.object({
+    externalItemId: z.string().optional().nullable(),
+    material: z.string().optional().nullable(),
+    location: z.string().optional().nullable(),
+    category: z.string().optional().nullable(),
+    acmStatus: z.string().optional().nullable(),
+    condition: z.string().optional().nullable(),
+    quantity: z.string().or(z.number()).optional().nullable(),
+    uom: z.string().optional().nullable(),
+    status: z.string().optional().nullable(),
+    active: z.boolean().optional(),
+  }),
+});
+
+const asbestosCreateInspectionSampleSchema = z.object({
+  sampleType: z.enum(["acm", "paint_metals"]),
+  itemId: z.string().optional().nullable(),
+  sampleNumber: z.string().optional().nullable(),
+  collectedAt: z.preprocess((v) => (v === "" || v === null || v === undefined ? undefined : coerceDate(v)), z.date().optional()),
+  material: z.string().optional().nullable(),
+  location: z.string().optional().nullable(),
+  lab: z.string().optional().nullable(),
+  tat: z.string().optional().nullable(),
+  coc: z.string().optional().nullable(),
+  result: z.string().optional().nullable(),
+  resultUnit: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
+app.get("/api/asbestos/clients", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const rows = await storage.getClientsByOrg(orgId);
+  return c.json(rows);
+});
+
+app.post("/api/asbestos/clients", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  try {
+    const payload = asbestosCreateClientSchema.parse(body);
+    const created = await storage.createClient({
+      organizationId: orgId,
+      name: payload.name,
+      contactEmail: payload.contactEmail,
+      contactPhone: payload.contactPhone ?? null,
+      address: payload.address ?? null,
+      portalAccess: false,
+    } as any);
+    return c.json(created, 201);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
+});
+
+app.get("/api/asbestos/clients/:clientId/buildings", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const client = await storage.getClientById(c.req.param("clientId"));
+  if (!client || (client as any).organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const buildings = await storage.getAsbestosBuildings(orgId, client.id);
+  return c.json(buildings);
+});
+
+app.post("/api/asbestos/clients/:clientId/buildings", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  try {
+    const payload = asbestosCreateBuildingSchema.parse({ ...body, clientId: c.req.param("clientId") });
+    const client = await storage.getClientById(payload.clientId);
+    if (!client || (client as any).organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+    const created = await storage.createAsbestosBuilding({
+      organizationId: orgId,
+      clientId: payload.clientId,
+      name: payload.name,
+      address: payload.address ?? null,
+      notes: payload.notes ?? null,
+      active: true,
+    } as any);
+    return c.json(created, 201);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
+});
+
+app.get("/api/asbestos/buildings/:buildingId", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const client = await storage.getClientById(building.clientId);
+  return c.json({ building, client });
+});
+
+app.get("/api/asbestos/buildings/:buildingId/inventory", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const items = await storage.getAsbestosInventoryItems(orgId, building.buildingId);
+  return c.json(items);
+});
+
+app.post("/api/asbestos/buildings/:buildingId/inventory", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const body = await parseJsonBody<any>(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const created = await storage.createAsbestosInventoryItem({
+    organizationId: orgId,
+    clientId: building.clientId,
+    buildingId: building.buildingId,
+    externalItemId: (body.externalItemId || "").toString().trim() || null,
+    material: (body.material || "").toString().trim() || null,
+    location: (body.location || "").toString().trim() || null,
+    category: (body.category || "").toString().trim() || null,
+    acmStatus: (body.acmStatus || "").toString().trim() || null,
+    condition: (body.condition || "").toString().trim() || null,
+    quantity: body.quantity ?? null,
+    uom: (body.uom || "").toString().trim() || null,
+    status: (body.status || "").toString().trim() || null,
+    lastUpdatedAt: new Date(),
+    active: body.active === false ? false : true,
+  } as any);
+  return c.json(created, 201);
+});
+
+app.get("/api/asbestos/buildings/:buildingId/inspections", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const rows = await storage.getAsbestosInspections(orgId, building.buildingId);
+  return c.json(rows);
+});
+
+app.get("/api/asbestos/inspections", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const rows = await storage.getAsbestosInspections(orgId, null);
+  const buildings = await storage.getAsbestosBuildings(orgId, null);
+  const clients = await storage.getClientsByOrg(orgId);
+  const bById = new Map(buildings.map((b) => [b.buildingId, b]));
+  const cById = new Map(clients.map((cl) => [cl.id, cl]));
+  const enriched = rows.map((ins: any) => {
+    const building = bById.get(ins.buildingId) || null;
+    const client = building ? (cById.get(building.clientId) || null) : null;
+    const nextDue = ins.nextDueDate ? new Date(ins.nextDueDate).getTime() : null;
+    return {
+      ...ins,
+      buildingName: building?.name || "",
+      clientName: client?.name || "",
+      nextDueMs: nextDue,
+      overdue: typeof nextDue === "number" ? nextDue < Date.now() : false,
+    };
+  });
+  enriched.sort((a: any, b: any) => {
+    const ad = a.inspectionDate ? new Date(a.inspectionDate).getTime() : 0;
+    const bd = b.inspectionDate ? new Date(b.inspectionDate).getTime() : 0;
+    return bd - ad;
+  });
+  return c.json(enriched);
+});
+
+app.post("/api/asbestos/buildings/:buildingId/inspections", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  try {
+    const payload = asbestosCreateInspectionSchema.parse({
+      ...body,
+      clientId: building.clientId,
+      buildingId: building.buildingId,
+    });
+    const nextDueDate = payload.recurrenceYears ? addYears(payload.inspectionDate, payload.recurrenceYears) : null;
+    const created = await storage.createAsbestosInspection({
+      organizationId: orgId,
+      clientId: payload.clientId,
+      buildingId: payload.buildingId,
+      inspectionDate: payload.inspectionDate,
+      inspectors: payload.inspectors,
+      status: payload.status,
+      recurrenceYears: payload.recurrenceYears ?? null,
+      nextDueDate,
+      notes: payload.notes ?? null,
+      createdByUserId: userId,
+      updatedByUserId: userId,
+    } as any);
+    return c.json(created, 201);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
+});
+
+app.get("/api/asbestos/inspections/:inspectionId", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const inspection = await storage.getAsbestosInspectionById(c.req.param("inspectionId"));
+  if (!inspection || inspection.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const building = await storage.getAsbestosBuildingById(inspection.buildingId);
+  const client = building ? await storage.getClientById(building.clientId) : null;
+  return c.json({ inspection, building, client });
+});
+
+app.put("/api/asbestos/inventory-items/:itemId", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const item = await storage.getAsbestosInventoryItemById(c.req.param("itemId"));
+  if (!item || item.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  try {
+    const payload = asbestosUpdateInventoryItemSchema.parse(body);
+    const inspection = await storage.getAsbestosInspectionById(payload.inspectionId);
+    if (!inspection || inspection.organizationId !== orgId) return c.json({ message: "Inspection not found" }, 404);
+    if (inspection.buildingId !== item.buildingId) return c.json({ message: "Invalid inspection for item" }, 400);
+
+    const patch: any = { ...payload.patch, lastUpdatedAt: new Date() };
+    if (typeof patch.quantity === "string") {
+      const n = Number(patch.quantity);
+      patch.quantity = Number.isFinite(n) ? n : null;
+    }
+    const updated = await storage.updateAsbestosInventoryItem(item.itemId, patch);
+    if (!updated) return c.json({ message: "Not found" }, 404);
+
+    const keys = Object.keys(payload.patch || {});
+    const changes = computeAuditChanges(item as any, updated as any, keys);
+    await Promise.all(
+      changes.map((ch) =>
+        storage.createAsbestosInspectionInventoryChange({
+          organizationId: orgId,
+          inspectionId: inspection.inspectionId,
+          itemId: item.itemId,
+          fieldName: ch.field,
+          oldValue: ch.from === null ? null : String(ch.from),
+          newValue: ch.to === null ? null : String(ch.to),
+          reason: payload.reason,
+          createdByUserId: userId,
+        } as any)
+      )
+    );
+
+    // Update last-inspected when an inspection updates inventory.
+    try {
+      await storage.updateAsbestosInventoryItem(item.itemId, { lastInspectedAt: inspection.inspectionDate } as any);
+    } catch {
+      // ignore
+    }
+
+    return c.json(updated);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
+});
+
+app.get("/api/asbestos/inspections/:inspectionId/changes", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const inspection = await storage.getAsbestosInspectionById(c.req.param("inspectionId"));
+  if (!inspection || inspection.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const rows = await storage.getAsbestosInspectionInventoryChanges(orgId, inspection.inspectionId);
+  return c.json(rows);
+});
+
+app.get("/api/asbestos/inspections/:inspectionId/samples", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const inspection = await storage.getAsbestosInspectionById(c.req.param("inspectionId"));
+  if (!inspection || inspection.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const rows = await storage.getAsbestosInspectionSamples(orgId, inspection.inspectionId);
+  return c.json(rows);
+});
+
+app.post("/api/asbestos/inspections/:inspectionId/samples", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const inspection = await storage.getAsbestosInspectionById(c.req.param("inspectionId"));
+  if (!inspection || inspection.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  try {
+    const payload = asbestosCreateInspectionSampleSchema.parse(body);
+    const created = await storage.createAsbestosInspectionSample({
+      organizationId: orgId,
+      inspectionId: inspection.inspectionId,
+      sampleType: payload.sampleType,
+      itemId: payload.itemId ?? null,
+      sampleNumber: payload.sampleNumber ?? null,
+      collectedAt: payload.collectedAt ?? null,
+      material: payload.material ?? null,
+      location: payload.location ?? null,
+      lab: payload.lab ?? null,
+      tat: payload.tat ?? null,
+      coc: payload.coc ?? null,
+      result: payload.result ?? null,
+      resultUnit: payload.resultUnit ?? null,
+      notes: payload.notes ?? null,
+      createdByUserId: userId,
+    } as any);
+    return c.json(created, 201);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
+});
+
+app.get("/api/asbestos/inspections/:inspectionId/samples/export", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const inspection = await storage.getAsbestosInspectionById(c.req.param("inspectionId"));
+  if (!inspection || inspection.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const samples = await storage.getAsbestosInspectionSamples(orgId, inspection.inspectionId);
+
+  const separate = c.req.query("separateSheets") === "1";
+  const wb = XLSX.utils.book_new();
+  if (separate) {
+    const acm = samples.filter((s: any) => s.sampleType === "acm").map((s: any) => ({
+      sample_id: s.sampleId,
+      inspection_id: s.inspectionId,
+      sample_type: s.sampleType,
+      item_id: s.itemId || "",
+      sample_number: s.sampleNumber || "",
+      collected_at: s.collectedAt ? new Date(s.collectedAt).toISOString() : "",
+      material: s.material || "",
+      location: s.location || "",
+      lab: s.lab || "",
+      tat: s.tat || "",
+      coc: s.coc || "",
+      result: s.result || "",
+      result_unit: s.resultUnit || "",
+      notes: s.notes || "",
+    }));
+    const pm = samples.filter((s: any) => s.sampleType === "paint_metals").map((s: any) => ({
+      sample_id: s.sampleId,
+      inspection_id: s.inspectionId,
+      sample_type: s.sampleType,
+      item_id: s.itemId || "",
+      sample_number: s.sampleNumber || "",
+      collected_at: s.collectedAt ? new Date(s.collectedAt).toISOString() : "",
+      material: s.material || "",
+      location: s.location || "",
+      lab: s.lab || "",
+      tat: s.tat || "",
+      coc: s.coc || "",
+      result: s.result || "",
+      result_unit: s.resultUnit || "",
+      notes: s.notes || "",
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(acm), "ACM");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pm), "Paint_Metals");
+  } else {
+    const rows = samples.map((s: any) => ({
+      sample_id: s.sampleId,
+      inspection_id: s.inspectionId,
+      sample_type: s.sampleType,
+      item_id: s.itemId || "",
+      sample_number: s.sampleNumber || "",
+      collected_at: s.collectedAt ? new Date(s.collectedAt).toISOString() : "",
+      material: s.material || "",
+      location: s.location || "",
+      lab: s.lab || "",
+      tat: s.tat || "",
+      coc: s.coc || "",
+      result: s.result || "",
+      result_unit: s.resultUnit || "",
+      notes: s.notes || "",
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Sample Logs");
+  }
+
+  return xlsxResponse(wb, `Inspection_${inspection.inspectionId}_Sample_Logs`);
+});
+
+app.put("/api/asbestos/inspection-samples/:sampleId", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const existing = await storage.getAsbestosInspectionSampleById(c.req.param("sampleId"));
+  if (!existing) return c.json({ message: "Not found" }, 404);
+  if ((existing as any).organizationId !== orgId) return c.json({ message: "No access" }, 403);
+
+  const body = await parseJsonBody(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  try {
+    const payload = asbestosCreateInspectionSampleSchema.partial().parse(body);
+    const updated = await storage.updateAsbestosInspectionSample(c.req.param("sampleId"), {
+      ...payload,
+    } as any);
+    if (!updated) return c.json({ message: "Not found" }, 404);
+    return c.json(updated);
+  } catch (error) {
+    const bad = zodBadRequest(c, error);
+    if (bad) return bad;
+    throw error;
+  }
+});
+
+app.delete("/api/asbestos/inspection-samples/:sampleId", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const existing = await storage.getAsbestosInspectionSampleById(c.req.param("sampleId"));
+  if (!existing) return c.json({ message: "Not found" }, 404);
+  if ((existing as any).organizationId !== orgId) return c.json({ message: "No access" }, 403);
+  const ok = await storage.deleteAsbestosInspectionSample(existing.sampleId);
+  return ok ? c.body(null, 204) : c.json({ message: "Not found" }, 404);
+});
+
+app.get("/api/asbestos/inspections/:inspectionId/documents", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const inspection = await storage.getAsbestosInspectionById(c.req.param("inspectionId"));
+  if (!inspection || inspection.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const docs = await storage.getAsbestosInspectionDocuments(orgId, inspection.inspectionId);
+  return c.json(docs.map((d: any) => ({ ...d, url: d.filename ? `/uploads/${d.filename}` : null })));
+});
+
+app.post("/api/asbestos/inspections/:inspectionId/documents", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const inspection = await storage.getAsbestosInspectionById(c.req.param("inspectionId"));
+  if (!inspection || inspection.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const form = await c.req.formData();
+  const file = form.get("document");
+  if (!(file instanceof File)) return c.json({ message: "No file uploaded" }, 400);
+  const docType = (form.get("docType") || "").toString().trim() || null;
+
+  const stored = await storeUpload(c.env.ABATEIQ_UPLOADS, file, { prefix: `inspections/${inspection.inspectionId}` });
+  try {
+    const created = await storage.createAsbestosInspectionDocument({
+      organizationId: orgId,
+      inspectionId: inspection.inspectionId,
+      filename: stored.key,
+      originalName: file.name || stored.key,
+      mimeType: file.type || "application/octet-stream",
+      size: typeof file.size === "number" ? file.size : 0,
+      docType,
+      uploadedByUserId: userId,
+    } as any);
+    return c.json({ ...created, url: `/uploads/${created.filename}` }, 201);
+  } catch (error) {
+    try {
+      await c.env.ABATEIQ_UPLOADS.delete(stored.key);
+    } catch {
+      // ignore
+    }
+    throw error;
+  }
+});
+
+app.delete("/api/asbestos/inspection-documents/:documentId", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const doc = await storage.getAsbestosInspectionDocumentById(c.req.param("documentId"));
+  if (!doc) return c.json({ message: "Not found" }, 404);
+  if ((doc as any).organizationId !== orgId) return c.json({ message: "No access" }, 403);
+  await storage.deleteAsbestosInspectionDocument(doc.documentId);
+  try {
+    if (doc.filename) await c.env.ABATEIQ_UPLOADS.delete(doc.filename);
+  } catch {
+    // ignore
+  }
+  return c.body(null, 204);
+});
+
+app.get("/api/asbestos/inspections/:inspectionId/report-data", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const inspection = await storage.getAsbestosInspectionById(c.req.param("inspectionId"));
+  if (!inspection || inspection.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const building = await storage.getAsbestosBuildingById(inspection.buildingId);
+  const client = building ? await storage.getClientById(building.clientId) : null;
+  const [inventory, changes, samples, docs] = await Promise.all([
+    building ? storage.getAsbestosInventoryItems(orgId, building.buildingId) : Promise.resolve([]),
+    storage.getAsbestosInspectionInventoryChanges(orgId, inspection.inspectionId),
+    storage.getAsbestosInspectionSamples(orgId, inspection.inspectionId),
+    storage.getAsbestosInspectionDocuments(orgId, inspection.inspectionId),
+  ]);
+  return c.json({
+    inspection,
+    building,
+    client,
+    inventory,
+    changes,
+    samples,
+    documents: docs.map((d: any) => ({ ...d, url: d.filename ? `/uploads/${d.filename}` : null })),
+    generatedAt: new Date().toISOString(),
+  });
+});
+
+app.get("/api/asbestos/inspections/:inspectionId/export", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const inspection = await storage.getAsbestosInspectionById(c.req.param("inspectionId"));
+  if (!inspection || inspection.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const building = await storage.getAsbestosBuildingById(inspection.buildingId);
+  const client = building ? await storage.getClientById(building.clientId) : null;
+  const [inventory, changes, samples, docs] = await Promise.all([
+    building ? storage.getAsbestosInventoryItems(orgId, building.buildingId) : Promise.resolve([]),
+    storage.getAsbestosInspectionInventoryChanges(orgId, inspection.inspectionId),
+    storage.getAsbestosInspectionSamples(orgId, inspection.inspectionId),
+    storage.getAsbestosInspectionDocuments(orgId, inspection.inspectionId),
+  ]);
+
+  const wb = XLSX.utils.book_new();
+
+  const summaryRows = [
+    {
+      inspection_id: inspection.inspectionId,
+      client_id: inspection.clientId,
+      client_name: client?.name || "",
+      building_id: inspection.buildingId,
+      building_name: building?.name || "",
+      inspection_date: inspection.inspectionDate ? new Date(inspection.inspectionDate).toISOString() : "",
+      inspectors: Array.isArray((inspection as any).inspectors) ? (inspection as any).inspectors.join(",") : "",
+      status: inspection.status,
+      recurrence_years: inspection.recurrenceYears ?? "",
+      next_due_date: inspection.nextDueDate ? new Date(inspection.nextDueDate).toISOString() : "",
+      generated_at: new Date().toISOString(),
+    },
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), "Inspection Summary");
+
+  const invRows = (inventory || []).map((i: any) => ({
+    client: client?.name || "",
+    building: building?.name || "",
+    item_id: i.itemId,
+    external_item_id: i.externalItemId || "",
+    material: i.material || "",
+    location: i.location || "",
+    category: i.category || "",
+    acm_pacm: i.acmStatus || "",
+    condition: i.condition || "",
+    quantity: i.quantity ?? "",
+    uom: i.uom || "",
+    status: i.status || "",
+    last_inspected: i.lastInspectedAt ? new Date(i.lastInspectedAt).toISOString() : "",
+    last_updated: i.lastUpdatedAt ? new Date(i.lastUpdatedAt).toISOString() : "",
+    active: i.active ? "true" : "false",
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(invRows), "Inventory Snapshot");
+
+  const changeRows = (changes || []).map((ch: any) => ({
+    change_id: ch.changeId,
+    inspection_id: ch.inspectionId,
+    item_id: ch.itemId || "",
+    field: ch.fieldName,
+    old_value: ch.oldValue ?? "",
+    new_value: ch.newValue ?? "",
+    reason: ch.reason ?? "",
+    user_id: ch.createdByUserId ?? "",
+    created_at: ch.createdAt ? new Date(ch.createdAt).toISOString() : "",
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(changeRows), "Inventory Changes");
+
+  const sampleRows = (samples || []).map((s: any) => ({
+    sample_id: s.sampleId,
+    inspection_id: s.inspectionId,
+    sample_type: s.sampleType,
+    item_id: s.itemId || "",
+    sample_number: s.sampleNumber || "",
+    collected_at: s.collectedAt ? new Date(s.collectedAt).toISOString() : "",
+    material: s.material || "",
+    location: s.location || "",
+    lab: s.lab || "",
+    tat: s.tat || "",
+    coc: s.coc || "",
+    result: s.result || "",
+    result_unit: s.resultUnit || "",
+    notes: s.notes || "",
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sampleRows), "Sample Logs");
+
+  const docRows = (docs || []).map((d: any) => ({
+    document_id: d.documentId,
+    inspection_id: d.inspectionId,
+    doc_type: d.docType || "",
+    original_name: d.originalName || "",
+    filename: d.filename || "",
+    mime_type: d.mimeType || "",
+    size: d.size ?? "",
+    uploaded_at: d.uploadedAt ? new Date(d.uploadedAt).toISOString() : "",
+    url: d.filename ? `/uploads/${d.filename}` : "",
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(docRows), "Documents Index");
+
+  const fnameBase = `${(client?.name || "Client").replace(/\s+/g, "_")}_${(building?.name || "Building").replace(/\s+/g, "_")}_Inspection_${inspection.inspectionId}`;
+  return xlsxResponse(wb, fnameBase);
+});
+
+app.get("/api/asbestos/buildings/:buildingId/inventory/export", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const client = await storage.getClientById(building.clientId);
+  const items = await storage.getAsbestosInventoryItems(orgId, building.buildingId);
+
+  const wb = XLSX.utils.book_new();
+  const rows = (items || []).map((i: any) => ({
+    client: client?.name || "",
+    building: building.name,
+    item_id: i.itemId,
+    external_item_id: i.externalItemId || "",
+    material: i.material || "",
+    location: i.location || "",
+    category: i.category || "",
+    acm_pacm: i.acmStatus || "",
+    condition: i.condition || "",
+    quantity: i.quantity ?? "",
+    uom: i.uom || "",
+    status: i.status || "",
+    last_inspected: i.lastInspectedAt ? new Date(i.lastInspectedAt).toISOString() : "",
+    last_updated: i.lastUpdatedAt ? new Date(i.lastUpdatedAt).toISOString() : "",
+    active: i.active ? "true" : "false",
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Inventory");
+  const fnameBase = `${(client?.name || "Client").replace(/\s+/g, "_")}_${building.name.replace(/\s+/g, "_")}_Inventory`;
+  return xlsxResponse(wb, fnameBase);
 });
 
 app.get("*", async (c) => {

@@ -31,6 +31,13 @@ import {
   equipmentNotes as equipmentNotesTable,
   equipmentDocuments as equipmentDocumentsTable,
   dailyWeatherLogs,
+  clients as clientsTable,
+  asbestosBuildings as asbestosBuildingsTable,
+  asbestosInventoryItems as asbestosInventoryItemsTable,
+  asbestosInspections as asbestosInspectionsTable,
+  asbestosInspectionInventoryChanges as asbestosInspectionInventoryChangesTable,
+  asbestosInspectionSamples as asbestosInspectionSamplesTable,
+  asbestosInspectionDocuments as asbestosInspectionDocumentsTable,
   type Survey, 
   type InsertSurvey,
   type Observation,
@@ -80,7 +87,21 @@ import {
   type EquipmentNote,
   type EquipmentDocument,
   type DailyWeatherLog,
-  type InsertDailyWeatherLog
+  type InsertDailyWeatherLog,
+  type Client,
+  type InsertClient,
+  type AsbestosBuilding,
+  type InsertAsbestosBuilding,
+  type AsbestosInventoryItem,
+  type InsertAsbestosInventoryItem,
+  type AsbestosInspection,
+  type InsertAsbestosInspection,
+  type AsbestosInspectionInventoryChange,
+  type InsertAsbestosInspectionInventoryChange,
+  type AsbestosInspectionSample,
+  type InsertAsbestosInspectionSample,
+  type AsbestosInspectionDocument,
+  type InsertAsbestosInspectionDocument
 } from "@shared/schema";
 import { getDb } from "./db";
 import { eq, desc, or, and, sql } from "drizzle-orm";
@@ -316,6 +337,55 @@ export interface IStorage {
   getEquipmentDocument(id: string): Promise<EquipmentDocument | undefined>;
   createEquipmentDocument(doc: Partial<EquipmentDocument> & { organizationId: string; equipmentId: string; filename: string; originalName: string; mimeType: string; size: number }): Promise<EquipmentDocument>;
   deleteEquipmentDocument(id: string): Promise<boolean>;
+
+  // Asbestos Inspections (Client -> Building -> Inventory)
+  getClientsByOrg(organizationId: string): Promise<Client[]>;
+  getClientById(id: string): Promise<Client | undefined>;
+  createClient(client: Partial<InsertClient> & { organizationId: string; name: string; contactEmail: string }): Promise<Client>;
+
+  getAsbestosBuildings(organizationId: string, clientId?: string | null): Promise<AsbestosBuilding[]>;
+  getAsbestosBuildingById(id: string): Promise<AsbestosBuilding | undefined>;
+  createAsbestosBuilding(row: Partial<InsertAsbestosBuilding> & { organizationId: string; clientId: string; name: string }): Promise<AsbestosBuilding>;
+  updateAsbestosBuilding(id: string, patch: Partial<InsertAsbestosBuilding>): Promise<AsbestosBuilding | undefined>;
+
+  getAsbestosInventoryItems(organizationId: string, buildingId: string): Promise<AsbestosInventoryItem[]>;
+  getAsbestosInventoryItemById(id: string): Promise<AsbestosInventoryItem | undefined>;
+  createAsbestosInventoryItem(row: Partial<InsertAsbestosInventoryItem> & { organizationId: string; clientId: string; buildingId: string }): Promise<AsbestosInventoryItem>;
+  updateAsbestosInventoryItem(id: string, patch: Partial<InsertAsbestosInventoryItem>): Promise<AsbestosInventoryItem | undefined>;
+
+  getAsbestosInspections(organizationId: string, buildingId?: string | null): Promise<AsbestosInspection[]>;
+  getAsbestosInspectionById(id: string): Promise<AsbestosInspection | undefined>;
+  createAsbestosInspection(
+    row: Partial<InsertAsbestosInspection> & { organizationId: string; clientId: string; buildingId: string; inspectionDate: number }
+  ): Promise<AsbestosInspection>;
+  updateAsbestosInspection(id: string, patch: Partial<InsertAsbestosInspection>): Promise<AsbestosInspection | undefined>;
+
+  getAsbestosInspectionInventoryChanges(organizationId: string, inspectionId: string): Promise<AsbestosInspectionInventoryChange[]>;
+  createAsbestosInspectionInventoryChange(
+    row: Partial<InsertAsbestosInspectionInventoryChange> & { organizationId: string; inspectionId: string; fieldName: string }
+  ): Promise<AsbestosInspectionInventoryChange>;
+
+  getAsbestosInspectionSamples(organizationId: string, inspectionId: string): Promise<AsbestosInspectionSample[]>;
+  getAsbestosInspectionSampleById(id: string): Promise<AsbestosInspectionSample | undefined>;
+  createAsbestosInspectionSample(
+    row: Partial<InsertAsbestosInspectionSample> & { organizationId: string; inspectionId: string; sampleType: string }
+  ): Promise<AsbestosInspectionSample>;
+  updateAsbestosInspectionSample(id: string, patch: Partial<InsertAsbestosInspectionSample>): Promise<AsbestosInspectionSample | undefined>;
+  deleteAsbestosInspectionSample(id: string): Promise<boolean>;
+
+  getAsbestosInspectionDocuments(organizationId: string, inspectionId: string): Promise<AsbestosInspectionDocument[]>;
+  getAsbestosInspectionDocumentById(id: string): Promise<AsbestosInspectionDocument | undefined>;
+  createAsbestosInspectionDocument(
+    row: Partial<InsertAsbestosInspectionDocument> & {
+      organizationId: string;
+      inspectionId: string;
+      filename: string;
+      originalName: string;
+      mimeType: string;
+      size: number;
+    }
+  ): Promise<AsbestosInspectionDocument>;
+  deleteAsbestosInspectionDocument(id: string): Promise<boolean>;
 
   // Air monitoring documents
   getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]>;
@@ -1495,6 +1565,180 @@ export class DatabaseStorage implements IStorage {
     return didAffectRows(result);
   }
 
+  // Asbestos Inspections (Client -> Building -> Inventory)
+  async getClientsByOrg(organizationId: string): Promise<Client[]> {
+    return await db()
+      .select()
+      .from(clientsTable)
+      .where(eq(clientsTable.organizationId, organizationId))
+      .orderBy(desc(clientsTable.updatedAt));
+  }
+
+  async getClientById(id: string): Promise<Client | undefined> {
+    const [row] = await db().select().from(clientsTable).where(eq(clientsTable.id, id));
+    return row || undefined;
+  }
+
+  async createClient(client: any): Promise<Client> {
+    const [created] = await db().insert(clientsTable).values(client).returning();
+    return created;
+  }
+
+  async getAsbestosBuildings(organizationId: string, clientId?: string | null): Promise<AsbestosBuilding[]> {
+    const where = clientId
+      ? and(eq(asbestosBuildingsTable.organizationId, organizationId), eq(asbestosBuildingsTable.clientId, clientId))
+      : eq(asbestosBuildingsTable.organizationId, organizationId);
+    return await db()
+      .select()
+      .from(asbestosBuildingsTable)
+      .where(where as any)
+      .orderBy(desc(asbestosBuildingsTable.updatedAt));
+  }
+
+  async getAsbestosBuildingById(id: string): Promise<AsbestosBuilding | undefined> {
+    const [row] = await db().select().from(asbestosBuildingsTable).where(eq(asbestosBuildingsTable.buildingId, id));
+    return row || undefined;
+  }
+
+  async createAsbestosBuilding(row: any): Promise<AsbestosBuilding> {
+    const [created] = await db().insert(asbestosBuildingsTable).values(row).returning();
+    return created;
+  }
+
+  async updateAsbestosBuilding(id: string, patch: any): Promise<AsbestosBuilding | undefined> {
+    const [updated] = await db()
+      .update(asbestosBuildingsTable)
+      .set(patch)
+      .where(eq(asbestosBuildingsTable.buildingId, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async getAsbestosInventoryItems(organizationId: string, buildingId: string): Promise<AsbestosInventoryItem[]> {
+    return await db()
+      .select()
+      .from(asbestosInventoryItemsTable)
+      .where(and(eq(asbestosInventoryItemsTable.organizationId, organizationId), eq(asbestosInventoryItemsTable.buildingId, buildingId)))
+      .orderBy(desc(asbestosInventoryItemsTable.updatedAt));
+  }
+
+  async getAsbestosInventoryItemById(id: string): Promise<AsbestosInventoryItem | undefined> {
+    const [row] = await db().select().from(asbestosInventoryItemsTable).where(eq(asbestosInventoryItemsTable.itemId, id));
+    return row || undefined;
+  }
+
+  async createAsbestosInventoryItem(row: any): Promise<AsbestosInventoryItem> {
+    const [created] = await db().insert(asbestosInventoryItemsTable).values(row).returning();
+    return created;
+  }
+
+  async updateAsbestosInventoryItem(id: string, patch: any): Promise<AsbestosInventoryItem | undefined> {
+    const [updated] = await db()
+      .update(asbestosInventoryItemsTable)
+      .set(patch)
+      .where(eq(asbestosInventoryItemsTable.itemId, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async getAsbestosInspections(organizationId: string, buildingId?: string | null): Promise<AsbestosInspection[]> {
+    const where = buildingId
+      ? and(eq(asbestosInspectionsTable.organizationId, organizationId), eq(asbestosInspectionsTable.buildingId, buildingId))
+      : eq(asbestosInspectionsTable.organizationId, organizationId);
+    return await db()
+      .select()
+      .from(asbestosInspectionsTable)
+      .where(where as any)
+      .orderBy(desc(asbestosInspectionsTable.inspectionDate));
+  }
+
+  async getAsbestosInspectionById(id: string): Promise<AsbestosInspection | undefined> {
+    const [row] = await db().select().from(asbestosInspectionsTable).where(eq(asbestosInspectionsTable.inspectionId, id));
+    return row || undefined;
+  }
+
+  async createAsbestosInspection(row: any): Promise<AsbestosInspection> {
+    const [created] = await db().insert(asbestosInspectionsTable).values(row).returning();
+    return created;
+  }
+
+  async updateAsbestosInspection(id: string, patch: any): Promise<AsbestosInspection | undefined> {
+    const [updated] = await db()
+      .update(asbestosInspectionsTable)
+      .set(patch)
+      .where(eq(asbestosInspectionsTable.inspectionId, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async getAsbestosInspectionInventoryChanges(organizationId: string, inspectionId: string): Promise<AsbestosInspectionInventoryChange[]> {
+    return await db()
+      .select()
+      .from(asbestosInspectionInventoryChangesTable)
+      .where(and(eq(asbestosInspectionInventoryChangesTable.organizationId, organizationId), eq(asbestosInspectionInventoryChangesTable.inspectionId, inspectionId)))
+      .orderBy(desc(asbestosInspectionInventoryChangesTable.createdAt));
+  }
+
+  async createAsbestosInspectionInventoryChange(row: any): Promise<AsbestosInspectionInventoryChange> {
+    const [created] = await db().insert(asbestosInspectionInventoryChangesTable).values(row).returning();
+    return created;
+  }
+
+  async getAsbestosInspectionSamples(organizationId: string, inspectionId: string): Promise<AsbestosInspectionSample[]> {
+    return await db()
+      .select()
+      .from(asbestosInspectionSamplesTable)
+      .where(and(eq(asbestosInspectionSamplesTable.organizationId, organizationId), eq(asbestosInspectionSamplesTable.inspectionId, inspectionId)))
+      .orderBy(desc(asbestosInspectionSamplesTable.updatedAt));
+  }
+
+  async getAsbestosInspectionSampleById(id: string): Promise<AsbestosInspectionSample | undefined> {
+    const [row] = await db().select().from(asbestosInspectionSamplesTable).where(eq(asbestosInspectionSamplesTable.sampleId, id));
+    return row || undefined;
+  }
+
+  async createAsbestosInspectionSample(row: any): Promise<AsbestosInspectionSample> {
+    const [created] = await db().insert(asbestosInspectionSamplesTable).values(row).returning();
+    return created;
+  }
+
+  async updateAsbestosInspectionSample(id: string, patch: any): Promise<AsbestosInspectionSample | undefined> {
+    const [updated] = await db()
+      .update(asbestosInspectionSamplesTable)
+      .set(patch)
+      .where(eq(asbestosInspectionSamplesTable.sampleId, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteAsbestosInspectionSample(id: string): Promise<boolean> {
+    const result = await db().delete(asbestosInspectionSamplesTable).where(eq(asbestosInspectionSamplesTable.sampleId, id));
+    return didAffectRows(result);
+  }
+
+  async getAsbestosInspectionDocuments(organizationId: string, inspectionId: string): Promise<AsbestosInspectionDocument[]> {
+    return await db()
+      .select()
+      .from(asbestosInspectionDocumentsTable)
+      .where(and(eq(asbestosInspectionDocumentsTable.organizationId, organizationId), eq(asbestosInspectionDocumentsTable.inspectionId, inspectionId)))
+      .orderBy(desc(asbestosInspectionDocumentsTable.uploadedAt));
+  }
+
+  async getAsbestosInspectionDocumentById(id: string): Promise<AsbestosInspectionDocument | undefined> {
+    const [row] = await db().select().from(asbestosInspectionDocumentsTable).where(eq(asbestosInspectionDocumentsTable.documentId, id));
+    return row || undefined;
+  }
+
+  async createAsbestosInspectionDocument(row: any): Promise<AsbestosInspectionDocument> {
+    const [created] = await db().insert(asbestosInspectionDocumentsTable).values(row).returning();
+    return created;
+  }
+
+  async deleteAsbestosInspectionDocument(id: string): Promise<boolean> {
+    const result = await db().delete(asbestosInspectionDocumentsTable).where(eq(asbestosInspectionDocumentsTable.documentId, id));
+    return didAffectRows(result);
+  }
+
   async getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]> {
     return await db()
       .select()
@@ -1678,36 +1922,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Clients
-  private clients: any[] = [];
-
-  async getClients(): Promise<any[]> {
-    return this.clients.map(client => ({
-      ...client,
-      surveyCount: Math.floor(Math.random() * 10) + 1,
-      activeProjects: Math.floor(Math.random() * 3)
-    }));
-  }
-
-  async createClient(clientData: any): Promise<any> {
-    const client = { id: nanoid(), ...clientData, createdAt: new Date() };
-    this.clients.push(client);
-    return client;
-  }
-
-  async updateClient(id: string, updates: any): Promise<any> {
-    const index = this.clients.findIndex(c => c.id === id);
-    if (index === -1) throw new Error('Client not found');
-    this.clients[index] = { ...this.clients[index], ...updates, updatedAt: new Date() };
-    return this.clients[index];
-  }
-
-  async getClientSurveys(clientId: string): Promise<any[]> {
-    const allSurveys = await this.getSurveys();
-    return allSurveys.filter(survey => survey.clientName).map(survey => ({
-      ...survey,
-      clientAccess: true
-    }));
-  }
+  // Note: legacy in-memory client portal stubs were removed. Use the D1-backed `clients` table instead.
 
   // Messages
   private messages: any[] = [];

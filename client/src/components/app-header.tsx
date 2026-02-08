@@ -90,6 +90,7 @@ export function AppHeader() {
     { key: "dashboard", label: "Dashboard", href: "/" },
     { key: "surveys", label: "Surveys", href: "/surveys" },
     { key: "air-monitoring", label: "Air Monitoring", href: "/air-monitoring" },
+    { key: "inspections", label: "Inspections", href: "/inspections" },
     { key: "field-tools", label: "Field Tools", href: "/field-tools" },
     { key: "templates", label: "Templates", href: "/templates" },
   ];
@@ -121,14 +122,14 @@ export function AppHeader() {
             <BrandMark className="h-7 w-auto" title="AbateIQ" tone={markTone} />
           </div>
 
-          <nav className="hidden md:grid grid-cols-5 items-center min-w-0">
+          <nav className="hidden md:grid grid-flow-col auto-cols-fr items-center min-w-0">
             {navItems.map((item) => {
               const active = location === item.href || (item.href === "/" && location === "/");
               return (
                 <Link
                   key={item.key}
                   href={item.href}
-                  className={`h-16 px-3 flex items-center justify-center text-center text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
+                  className={`h-16 px-2 flex items-center justify-center text-center text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
                     active
                       ? "text-primary border-primary"
                       : "text-gray-500 dark:text-gray-400 border-transparent hover:text-gray-700 dark:hover:text-gray-300"
