@@ -20,30 +20,23 @@ export function AppFooter() {
             </p>
           </div>
           
-          <div className="flex items-center space-x-6">
-            <div className="flex items-center space-x-4 text-sm">
-              <Link href="/client-portal">
-                <span className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 cursor-pointer">
-                  Client Portal
-                </span>
-              </Link>
-              
-              {/* Admin-only link */}
-              {showAdminLink && (
-                <>
-                  <span className="text-gray-300 dark:text-gray-600">|</span>
-                  <Link href="/admin">
-                    <span className="flex items-center text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer font-medium" data-testid="footer-admin-link">
-                      <Shield className="h-3 w-3 mr-1" />
-                      Admin Dashboard
-                    </span>
-                  </Link>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </footer>
+	          <div className="flex items-center space-x-6">
+	            <div className="flex items-center space-x-4 text-sm">
+	              {/* Admin-only link */}
+	              {showAdminLink && (
+	                <>
+	                  <Link href="/admin">
+	                    <span className="flex items-center text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer font-medium" data-testid="footer-admin-link">
+	                      <Shield className="h-3 w-3 mr-1" />
+	                      Admin Dashboard
+	                    </span>
+	                  </Link>
+	                </>
+	              )}
+	            </div>
+	          </div>
+	        </div>
+	      </div>
+	    </footer>
   );
 }

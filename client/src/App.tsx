@@ -14,7 +14,6 @@ import SurveyDetail from "@/pages/survey-detail";
 import FieldTools from "@/pages/field-tools";
 import Templates from "@/pages/templates";
 import ReportBuilder from "@/pages/report-builder";
-import ClientPortal from "@/pages/client-portal";
 import Messaging from "@/pages/messaging";
 import AirMonitoring from "@/pages/air-monitoring-new";
 import AdvancedAirMonitoring from "@/pages/air-monitoring-advanced";
@@ -172,11 +171,6 @@ function Router() {
       <Route path="/report-builder">
         <Protected>
           <ReportBuilder />
-        </Protected>
-      </Route>
-      <Route path="/client-portal">
-        <Protected>
-          <ClientPortal />
         </Protected>
       </Route>
       <Route path="/messaging">

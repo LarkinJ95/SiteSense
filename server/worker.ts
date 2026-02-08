@@ -3662,15 +3662,15 @@ app.post("/api/air-samples", async (c) => {
 	    if (personId) {
 	      const person = await storage.getPersonnelById(personId);
 	      if (person && person.organizationId === organizationId) {
-	        // Auto-create a personnel assignment if one doesn't exist for this job.
-	        const existing = await storage.getPersonnelAssignmentByPersonJob(organizationId, personId, created.jobId);
-	        if (!existing) {
-	          const dateMs = (created as any).startTime ? Number((created as any).startTime) : null;
-	          const shiftDate = Number.isFinite(dateMs as any) ? new Date(dateMs as any).toISOString().slice(0, 10) : null;
-	          await storage.createPersonnelAssignment(organizationId, userId, {
-	            personId,
-	            jobId: created.jobId,
-	            shiftDate,
+		        // Auto-create a personnel assignment if one doesn't exist for this job.
+		        const existing = await storage.getPersonnelAssignmentByPersonJob(organizationId, personId, created.jobId);
+		        if (!existing) {
+		          const start = coerceDate((created as any).startTime);
+		          const shiftDate = start ? start.toISOString().slice(0, 10) : null;
+		          await storage.createPersonnelAssignment(organizationId, userId, {
+		            personId,
+		            jobId: created.jobId,
+		            shiftDate,
 	            roleOnJob: null,
 	            supervisorPersonId: null,
 	            supervisorName: null,
@@ -3686,13 +3686,14 @@ app.post("/api/air-samples", async (c) => {
 	            : parseNumeric((created as any).samplingDuration);
         const concentration = parseNumeric((created as any).result);
         const twa = computeTwa8hr(concentration, typeof durationMinutes === "number" ? durationMinutes : null);
-        const profileKey = (body.profileKey || "OSHA").toString();
-        const limitRow = await getExposureLimitFor(organizationId, profileKey, (created as any).analyte || "");
-        const flags = computeExposureFlags(twa, limitRow, 0.8);
-        const dateMs = (created as any).startTime ? Number((created as any).startTime) : null;
-        await storage.upsertExposureFromAirSample({
-          organizationId,
-          userId,
+	        const profileKey = (body.profileKey || "OSHA").toString();
+	        const limitRow = await getExposureLimitFor(organizationId, profileKey, (created as any).analyte || "");
+	        const flags = computeExposureFlags(twa, limitRow, 0.8);
+	        const start = coerceDate((created as any).startTime);
+	        const dateMs = start ? start.getTime() : null;
+	        await storage.upsertExposureFromAirSample({
+	          organizationId,
+	          userId,
           airSampleId: created.id,
           jobId: created.jobId,
           personId,
@@ -3807,18 +3808,18 @@ app.put("/api/air-samples/:id", async (c) => {
 		  try {
 	    const orgId = (access as any).job?.organizationId || null;
 	    const personId = (updated as any)?.personId ? String((updated as any).personId) : "";
-	    if (orgId && personId) {
-	      const person = await storage.getPersonnelById(personId);
-	      if (person && person.organizationId === orgId) {
-	        // Auto-create a personnel assignment if one doesn't exist for this job.
-	        const existing = await storage.getPersonnelAssignmentByPersonJob(orgId, personId, updated.jobId);
-	        if (!existing) {
-	          const dateMs = (updated as any).startTime ? Number((updated as any).startTime) : null;
-	          const shiftDate = Number.isFinite(dateMs as any) ? new Date(dateMs as any).toISOString().slice(0, 10) : null;
-	          await storage.createPersonnelAssignment(orgId, userId, {
-	            personId,
-	            jobId: updated.jobId,
-	            shiftDate,
+		    if (orgId && personId) {
+		      const person = await storage.getPersonnelById(personId);
+		      if (person && person.organizationId === orgId) {
+		        // Auto-create a personnel assignment if one doesn't exist for this job.
+		        const existing = await storage.getPersonnelAssignmentByPersonJob(orgId, personId, updated.jobId);
+		        if (!existing) {
+		          const start = coerceDate((updated as any).startTime);
+		          const shiftDate = start ? start.toISOString().slice(0, 10) : null;
+		          await storage.createPersonnelAssignment(orgId, userId, {
+		            personId,
+		            jobId: updated.jobId,
+		            shiftDate,
 	            roleOnJob: null,
 	            supervisorPersonId: null,
 	            supervisorName: null,
@@ -3834,13 +3835,14 @@ app.put("/api/air-samples/:id", async (c) => {
 	            : parseNumeric((updated as any).samplingDuration);
         const concentration = parseNumeric((updated as any).result);
         const twa = computeTwa8hr(concentration, typeof durationMinutes === "number" ? durationMinutes : null);
-        const profileKey = (body.profileKey || "OSHA").toString();
-        const limitRow = await getExposureLimitFor(orgId, profileKey, (updated as any).analyte || "");
-        const flags = computeExposureFlags(twa, limitRow, 0.8);
-        const dateMs = (updated as any).startTime ? Number((updated as any).startTime) : null;
-        await storage.upsertExposureFromAirSample({
-          organizationId: orgId,
-          userId,
+	        const profileKey = (body.profileKey || "OSHA").toString();
+	        const limitRow = await getExposureLimitFor(orgId, profileKey, (updated as any).analyte || "");
+	        const flags = computeExposureFlags(twa, limitRow, 0.8);
+	        const start = coerceDate((updated as any).startTime);
+	        const dateMs = start ? start.getTime() : null;
+	        await storage.upsertExposureFromAirSample({
+	          organizationId: orgId,
+	          userId,
           airSampleId: updated.id,
           jobId: updated.jobId,
           personId,
@@ -4046,8 +4048,18 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
     if (!m?.userId) continue;
     userLabelById.set(String(m.userId), String(m.name || m.email || m.userId));
   }
+
+  const orgPersonnel =
+    job.organizationId ? await storage.getPersonnelForOrg(job.organizationId, { includeInactive: true }) : [];
+  const personnelLabelById = new Map<string, string>();
+  for (const p of orgPersonnel as any[]) {
+    const id = String(p?.personId || "").trim();
+    if (!id) continue;
+    const label = `${String(p?.firstName || "")} ${String(p?.lastName || "")}`.trim() || id;
+    personnelLabelById.set(id, label);
+  }
   const pmRaw = String((job as any).projectManager || "");
-  const pmLabel = pmRaw ? userLabelById.get(pmRaw) || pmRaw : "";
+  const pmLabel = pmRaw ? personnelLabelById.get(pmRaw) || userLabelById.get(pmRaw) || pmRaw : "";
 
   const esc = (s: any) =>
     String(s ?? "")
@@ -4057,18 +4069,27 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
 
+  const fmtTimeOnly = (value: any) => {
+    const d = coerceDate(value);
+    if (!d) return "";
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+
   const sampleRows = samples
     .map((s: any) => {
-      const start = s.startTime ? new Date(s.startTime).toLocaleString() : "";
-      const end = s.endTime ? new Date(s.endTime).toLocaleString() : "";
+      const start = fmtTimeOnly(s.startTime);
+      const end = fmtTimeOnly(s.endTime);
       const typeLabel =
         s.sampleType === "other" && s.customSampleType ? toTitleCase(s.customSampleType) : toLabel(s.sampleType);
       const analyteLabel =
         s.analyte === "other" && s.customAnalyte ? toTitleCase(s.customAnalyte) : toLabel(s.analyte);
       const statusLabel = toLabel(s.status);
       const pumpSn = s.pumpId ? (pumpSnById.get(String(s.pumpId)) || "") : "";
-      const techRaw = String(s.collectedBy || "");
-      const techLabel = userLabelById.get(techRaw) || techRaw;
+      const techPersonId = String(s.personId || "").trim();
+      const techLabel =
+        (techPersonId ? personnelLabelById.get(techPersonId) : "") ||
+        userLabelById.get(String(s.collectedBy || "")) ||
+        String(s.collectedBy || "");
       const exceeds = Boolean(s.exceedsLimit);
       const rowClass = exceeds ? ` class="row-exceed"` : "";
       return `<tr${rowClass}>
@@ -4078,7 +4099,7 @@ app.get("/api/air-monitoring-jobs/:jobId/report", async (c) => {
         <td class="col-location">${esc(s.location)}</td>
         <td>${esc(pumpSn)}</td>
         <td>${esc(techLabel)}</td>
-        <td>${esc(s.flowRate)}</td>
+        <td>${esc(fmtUnit(s.flowRate, "LPM"))}</td>
         <td>${esc(s.samplingDuration)}</td>
         <td>${esc(start)}${end ? ` - ${esc(end)}` : ""}</td>
         <td>${esc(statusLabel)}</td>
