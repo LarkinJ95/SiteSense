@@ -4494,6 +4494,7 @@ const asbestosCreateInspectionSampleSchema = z.object({
   location: z.string().optional().nullable(),
   analyte: z.string().optional().nullable(),
   asbestosType: z.string().optional().nullable(),
+  samplerUserId: z.string().optional().nullable(),
   // Drizzle sqlite `numeric(...)` values are modeled as strings.
   asbestosPercent: z
     .preprocess((v) => {
@@ -4942,7 +4943,7 @@ app.get("/api/asbestos/buildings/:buildingId/samples", async (c) => {
   const enriched = (samples || []).map((s: any) => {
     const ins = inspectionById.get(String(s.inspectionId)) || null;
     const item = s.itemId ? itemById.get(String(s.itemId)) || null : null;
-    const collectorId = String(s.createdByUserId || "");
+    const collectorId = String(s.samplerUserId || s.createdByUserId || "");
     return {
       ...s,
       collector: collectorId ? userLabelById.get(collectorId) || collectorId : "",
@@ -5001,6 +5002,7 @@ app.post("/api/asbestos/buildings/:buildingId/samples", async (c) => {
       analyte: payload.analyte ?? null,
       asbestosType: payload.asbestosType ?? null,
       asbestosPercent: payload.asbestosPercent ?? null,
+      samplerUserId: payload.samplerUserId ?? null,
       lab: payload.lab ?? null,
       tat: payload.tat ?? null,
       coc: payload.coc ?? null,
@@ -5039,6 +5041,7 @@ app.get("/api/asbestos/buildings/:buildingId/samples/export", async (c) => {
     sample_type: s.sampleType,
     item_id: s.itemId || "",
     sample_number: s.sampleNumber || "",
+    sampler_user_id: s.samplerUserId || "",
     collected_at: s.collectedAt ? new Date(s.collectedAt).toISOString() : "",
     material: s.material || "",
     description: s.description || "",
@@ -5356,6 +5359,7 @@ app.post("/api/asbestos/inspections/:inspectionId/samples", async (c) => {
       analyte: payload.analyte ?? null,
       asbestosType: payload.asbestosType ?? null,
       asbestosPercent: payload.asbestosPercent ?? null,
+      samplerUserId: payload.samplerUserId ?? null,
       lab: payload.lab ?? null,
       tat: payload.tat ?? null,
       coc: payload.coc ?? null,
@@ -5397,6 +5401,7 @@ app.get("/api/asbestos/inspections/:inspectionId/samples/export", async (c) => {
       sample_type: s.sampleType,
       item_id: s.itemId || "",
       sample_number: s.sampleNumber || "",
+      sampler_user_id: s.samplerUserId || "",
       collected_at: s.collectedAt ? new Date(s.collectedAt).toISOString() : "",
       material: s.material || "",
       description: s.description || "",
@@ -5417,6 +5422,7 @@ app.get("/api/asbestos/inspections/:inspectionId/samples/export", async (c) => {
       sample_type: s.sampleType,
       item_id: s.itemId || "",
       sample_number: s.sampleNumber || "",
+      sampler_user_id: s.samplerUserId || "",
       collected_at: s.collectedAt ? new Date(s.collectedAt).toISOString() : "",
       material: s.material || "",
       description: s.description || "",
@@ -5440,6 +5446,7 @@ app.get("/api/asbestos/inspections/:inspectionId/samples/export", async (c) => {
       sample_type: s.sampleType,
       item_id: s.itemId || "",
       sample_number: s.sampleNumber || "",
+      sampler_user_id: s.samplerUserId || "",
       collected_at: s.collectedAt ? new Date(s.collectedAt).toISOString() : "",
       material: s.material || "",
       description: s.description || "",

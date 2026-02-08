@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,15 @@ export default function BuildingHub() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  const { data: inspectors = [] } = useQuery<any[]>({
+    queryKey: ["/api/inspectors"],
+    enabled: true,
+  });
+  const { data: me } = useQuery<any>({
+    queryKey: ["/api/me"],
+    enabled: true,
+  });
 
   const { data: hub, isLoading } = useQuery<HubResponse>({
     queryKey: id ? [`/api/asbestos/buildings/${id}/hub`] : ["__skip__hub__"],
@@ -458,6 +467,7 @@ export default function BuildingHub() {
   const [sampleInspectionId, setSampleInspectionId] = useState("");
   const [sampleForm, setSampleForm] = useState({
     itemId: "",
+    samplerUserId: "",
     sampleNumber: "",
     collectedAt: "",
     materialKind: "Drywall joint compound",
@@ -476,6 +486,13 @@ export default function BuildingHub() {
   });
   const [samplePhotos, setSamplePhotos] = useState<Array<{ id: string; file: File }>>([]);
 
+  useEffect(() => {
+    if (!sampleOpen) return;
+    const myId = me && typeof me === "object" ? String(me.id || "") : "";
+    if (!myId) return;
+    setSampleForm((prev) => (prev.samplerUserId ? prev : { ...prev, samplerUserId: myId }));
+  }, [sampleOpen, me]);
+
   const addBuildingSampleMutation = useMutation({
     mutationFn: async () => {
       if (!id) throw new Error("Missing buildingId");
@@ -493,6 +510,7 @@ export default function BuildingHub() {
         // Paint/Metals samples shouldn't be tied to inspections/items in this workflow.
         inspectionId: isPaintMetals ? null : (sampleInspectionId || null),
         itemId: isPaintMetals ? null : (sampleForm.itemId || null),
+        samplerUserId: sampleForm.samplerUserId || null,
         sampleNumber: sampleForm.sampleNumber.trim() || null,
         collectedAt: sampleForm.collectedAt || null,
         material: resolvedMaterial || null,
@@ -536,6 +554,7 @@ export default function BuildingHub() {
       setSampleInspectionId("");
       setSampleForm({
         itemId: "",
+        samplerUserId: "",
         sampleNumber: "",
         collectedAt: "",
         materialKind: "Drywall joint compound",
@@ -1675,6 +1694,26 @@ export default function BuildingHub() {
                 </div>
               </>
             ) : null}
+
+            <div className="space-y-2 md:col-span-3">
+              <Label>Sampler</Label>
+              <Select
+                value={sampleForm.samplerUserId || "__none__"}
+                onValueChange={(v) => setSampleForm({ ...sampleForm, samplerUserId: v === "__none__" ? "" : v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select sampler" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Select...</SelectItem>
+                  {(inspectors as any[]).map((u: any) => (
+                    <SelectItem key={u.userId} value={u.userId}>
+                      {u.name || u.email || u.userId}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <div className="space-y-2">
               <Label>Sample #</Label>

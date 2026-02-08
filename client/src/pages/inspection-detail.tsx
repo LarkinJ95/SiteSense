@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -87,6 +87,15 @@ export default function InspectionDetail() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  const { data: inspectors = [] } = useQuery<any[]>({
+    queryKey: ["/api/inspectors"],
+    enabled: true,
+  });
+  const { data: me } = useQuery<any>({
+    queryKey: ["/api/me"],
+    enabled: true,
+  });
 
   const { data, isLoading } = useQuery<InspectionDetailResponse>({
     queryKey: id ? [`/api/asbestos/inspections/${id}`] : ["__skip__inspection__"],
@@ -217,6 +226,7 @@ export default function InspectionDetail() {
   const [sampleForm, setSampleForm] = useState({
     sampleType: "acm",
     itemId: "",
+    samplerUserId: "",
     sampleNumber: "",
     collectedAt: "",
     material: "",
@@ -229,12 +239,20 @@ export default function InspectionDetail() {
     notes: "",
   });
 
+  useEffect(() => {
+    if (!sampleOpen) return;
+    const myId = me && typeof me === "object" ? String(me.id || "") : "";
+    if (!myId) return;
+    setSampleForm((prev) => (prev.samplerUserId ? prev : { ...prev, samplerUserId: myId }));
+  }, [sampleOpen, me]);
+
   const addSampleMutation = useMutation({
     mutationFn: async () => {
       if (!id) throw new Error("Missing inspection id");
       const payload: any = {
         sampleType: sampleForm.sampleType,
         itemId: sampleForm.itemId || null,
+        samplerUserId: sampleForm.samplerUserId || null,
         sampleNumber: sampleForm.sampleNumber.trim() || null,
         collectedAt: sampleForm.collectedAt || null,
         material: sampleForm.material.trim() || null,
@@ -256,6 +274,7 @@ export default function InspectionDetail() {
       setSampleForm({
         sampleType: "acm",
         itemId: "",
+        samplerUserId: "",
         sampleNumber: "",
         collectedAt: "",
         material: "",
@@ -519,6 +538,23 @@ export default function InspectionDetail() {
                         <SelectContent>
                           <SelectItem value="acm">ACM</SelectItem>
                           <SelectItem value="paint_metals">Paint/Metals</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Sampler</Label>
+                      <Select
+                        value={sampleForm.samplerUserId || "__none__"}
+                        onValueChange={(v) => setSampleForm({ ...sampleForm, samplerUserId: v === "__none__" ? "" : v })}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select sampler" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Select...</SelectItem>
+                          {(inspectors as any[]).map((u: any) => (
+                            <SelectItem key={u.userId} value={u.userId}>
+                              {u.name || u.email || u.userId}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
