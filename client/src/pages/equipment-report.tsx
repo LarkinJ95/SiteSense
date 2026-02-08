@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -88,10 +88,10 @@ export default function EquipmentReport() {
   const notes = Array.isArray(data.notes) ? data.notes : [];
   const documents = Array.isArray(data.documents) ? data.documents : [];
 
-  const assignedName = useMemo(() => {
+  const assignedName = (() => {
     const user = orgUsers.find((u) => u.userId === e.assignedToUserId);
     return user?.name || user?.email || e.assignedToUserId || "";
-  }, [orgUsers, e.assignedToUserId]);
+  })();
 
   return (
     <div className="report-root">
