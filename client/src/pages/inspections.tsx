@@ -377,7 +377,15 @@ export default function Inspections() {
                       </Link>
                     </TableCell>
                     <TableCell>{r.clientName || "—"}</TableCell>
-                    <TableCell>{r.buildingName || "—"}</TableCell>
+                    <TableCell>
+                      {r.buildingId ? (
+                        <Link href={`/buildings/${r.buildingId}`} className="text-primary underline">
+                          {r.buildingName || r.buildingId}
+                        </Link>
+                      ) : (
+                        (r.buildingName || "—")
+                      )}
+                    </TableCell>
                     <TableCell>{statusLabel(r.status)}</TableCell>
                     <TableCell className={r.overdue ? "text-red-600 font-medium" : ""}>{fmtDate(r.nextDueDate)}</TableCell>
                   </TableRow>

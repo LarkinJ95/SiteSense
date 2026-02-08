@@ -4325,7 +4325,7 @@ const asbestosCreateInspectionSchema = z.object({
 });
 
 const asbestosUpdateInventoryItemSchema = z.object({
-  inspectionId: z.string().min(1),
+  inspectionId: z.string().min(1).optional().nullable(),
   reason: z.string().min(1),
   patch: z.object({
     externalItemId: z.string().optional().nullable(),
@@ -4606,9 +4606,14 @@ app.put("/api/asbestos/inventory-items/:itemId", async (c) => {
   if (!body) return c.json({ message: "Invalid JSON" }, 400);
   try {
     const payload = asbestosUpdateInventoryItemSchema.parse(body);
-    const inspection = await storage.getAsbestosInspectionById(payload.inspectionId);
-    if (!inspection || inspection.organizationId !== orgId) return c.json({ message: "Inspection not found" }, 404);
-    if (inspection.buildingId !== item.buildingId) return c.json({ message: "Invalid inspection for item" }, 400);
+    const inspectionId = payload.inspectionId ? String(payload.inspectionId) : "";
+    const inspection = inspectionId ? await storage.getAsbestosInspectionById(inspectionId) : null;
+    if (inspection) {
+      if (inspection.organizationId !== orgId) return c.json({ message: "Inspection not found" }, 404);
+      if (inspection.buildingId !== item.buildingId) return c.json({ message: "Invalid inspection for item" }, 400);
+    } else if (inspectionId) {
+      return c.json({ message: "Inspection not found" }, 404);
+    }
 
     const patch: any = { ...payload.patch, lastUpdatedAt: new Date() };
     if (typeof patch.quantity === "string") {
@@ -4620,24 +4625,41 @@ app.put("/api/asbestos/inventory-items/:itemId", async (c) => {
 
     const keys = Object.keys(payload.patch || {});
     const changes = computeAuditChanges(item as any, updated as any, keys);
-    await Promise.all(
-      changes.map((ch) =>
-        storage.createAsbestosInspectionInventoryChange({
-          organizationId: orgId,
-          inspectionId: inspection.inspectionId,
-          itemId: item.itemId,
-          fieldName: ch.field,
-          oldValue: ch.from === null ? null : String(ch.from),
-          newValue: ch.to === null ? null : String(ch.to),
-          reason: payload.reason,
-          createdByUserId: userId,
-        } as any)
-      )
-    );
+    if (inspection) {
+      await Promise.all(
+        changes.map((ch) =>
+          storage.createAsbestosInspectionInventoryChange({
+            organizationId: orgId,
+            inspectionId: inspection.inspectionId,
+            itemId: item.itemId,
+            fieldName: ch.field,
+            oldValue: ch.from === null ? null : String(ch.from),
+            newValue: ch.to === null ? null : String(ch.to),
+            reason: payload.reason,
+            createdByUserId: userId,
+          } as any)
+        )
+      );
+    } else {
+      await Promise.all(
+        changes.map((ch) =>
+          storage.createBuildingInventoryChange({
+            organizationId: orgId,
+            buildingId: item.buildingId,
+            itemId: item.itemId,
+            fieldName: ch.field,
+            oldValue: ch.from === null ? null : String(ch.from),
+            newValue: ch.to === null ? null : String(ch.to),
+            reason: payload.reason,
+            createdByUserId: userId,
+          } as any)
+        )
+      );
+    }
 
     // Update last-inspected when an inspection updates inventory.
     try {
-      await storage.updateAsbestosInventoryItem(item.itemId, { lastInspectedAt: inspection.inspectionDate } as any);
+      if (inspection) await storage.updateAsbestosInventoryItem(item.itemId, { lastInspectedAt: inspection.inspectionDate } as any);
     } catch {
       // ignore
     }
@@ -4648,6 +4670,307 @@ app.put("/api/asbestos/inventory-items/:itemId", async (c) => {
     if (bad) return bad;
     throw error;
   }
+});
+
+app.get("/api/asbestos/buildings/:buildingId/hub", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const client = await storage.getClientById(building.clientId);
+  const [inventory, inspections] = await Promise.all([
+    storage.getAsbestosInventoryItems(orgId, building.buildingId),
+    storage.getAsbestosInspections(orgId, building.buildingId),
+  ]);
+  const sorted = (inspections || []).slice().sort((a: any, b: any) => {
+    const ad = a.inspectionDate ? new Date(a.inspectionDate).getTime() : 0;
+    const bd = b.inspectionDate ? new Date(b.inspectionDate).getTime() : 0;
+    return bd - ad;
+  });
+  const lastInspection = sorted[0] || null;
+  const lastInspectionMs = lastInspection?.inspectionDate ? new Date(lastInspection.inspectionDate).getTime() : null;
+  const nextDueMs = lastInspection?.nextDueDate ? new Date(lastInspection.nextDueDate).getTime() : null;
+  const overdue = typeof nextDueMs === "number" ? nextDueMs < Date.now() : false;
+  const missingInventoryBaseline = (inventory || []).length === 0;
+  return c.json({
+    building,
+    client,
+    lastInspection,
+    lastInspectionMs,
+    nextDueMs,
+    overdue,
+    missingInventoryBaseline,
+    inventoryCount: (inventory || []).length,
+  });
+});
+
+app.get("/api/asbestos/buildings/:buildingId/inventory/changes", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const itemId = (c.req.query("itemId") || "").toString().trim();
+  const rows = await storage.getBuildingInventoryChanges(orgId, building.buildingId, itemId || null);
+  return c.json(rows);
+});
+
+app.get("/api/asbestos/buildings/:buildingId/samples", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+
+  const type = (c.req.query("type") || "").toString().trim();
+  const sampleType = type === "acm" || type === "paint_metals" ? type : null;
+
+  const [samples, inspections, inventory] = await Promise.all([
+    storage.getInspectionSamplesForBuilding(orgId, building.buildingId, sampleType),
+    storage.getAsbestosInspections(orgId, building.buildingId),
+    storage.getAsbestosInventoryItems(orgId, building.buildingId),
+  ]);
+
+  const inspectionById = new Map<string, any>();
+  for (const ins of inspections || []) inspectionById.set(String((ins as any).inspectionId), ins);
+
+  const itemById = new Map<string, any>();
+  for (const it of inventory || []) itemById.set(String((it as any).itemId), it);
+
+  const orgMembers = await storage.getOrganizationMembersWithUsers(orgId);
+  const userLabelById = new Map<string, string>();
+  for (const m of orgMembers as any[]) {
+    if (!m?.userId) continue;
+    userLabelById.set(String(m.userId), String(m.name || m.email || m.userId));
+  }
+
+  const enriched = (samples || []).map((s: any) => {
+    const ins = inspectionById.get(String(s.inspectionId)) || null;
+    const item = s.itemId ? itemById.get(String(s.itemId)) || null : null;
+    const collectorId = String(s.createdByUserId || "");
+    return {
+      ...s,
+      collector: collectorId ? userLabelById.get(collectorId) || collectorId : "",
+      inspection: ins
+        ? {
+            inspectionId: ins.inspectionId,
+            inspectionDate: ins.inspectionDate,
+            status: ins.status,
+          }
+        : null,
+      item: item
+        ? {
+            itemId: item.itemId,
+            externalItemId: item.externalItemId,
+            material: item.material,
+            location: item.location,
+            category: item.category,
+          }
+        : null,
+    };
+  });
+
+  return c.json(enriched);
+});
+
+app.get("/api/asbestos/buildings/:buildingId/samples/export", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const client = await storage.getClientById(building.clientId);
+
+  const type = (c.req.query("type") || "").toString().trim();
+  const sampleType = type === "acm" || type === "paint_metals" ? type : null;
+  const rows = await storage.getInspectionSamplesForBuilding(orgId, building.buildingId, sampleType);
+
+  const wb = XLSX.utils.book_new();
+  const sheetRows = (rows || []).map((s: any) => ({
+    sample_id: s.sampleId,
+    inspection_id: s.inspectionId,
+    building_id: building.buildingId,
+    client_id: building.clientId,
+    sample_type: s.sampleType,
+    item_id: s.itemId || "",
+    sample_number: s.sampleNumber || "",
+    collected_at: s.collectedAt ? new Date(s.collectedAt).toISOString() : "",
+    material: s.material || "",
+    location: s.location || "",
+    lab: s.lab || "",
+    tat: s.tat || "",
+    coc: s.coc || "",
+    result: s.result || "",
+    result_unit: s.resultUnit || "",
+    notes: s.notes || "",
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetRows), "Samples");
+  const fnameBase = `${(client?.name || "Client").replace(/\s+/g, "_")}_${(building.name || "Building").replace(/\s+/g, "_")}_${sampleType || "Samples"}`;
+  return xlsxResponse(wb, fnameBase);
+});
+
+app.get("/api/asbestos/buildings/:buildingId/documents", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const docs = await storage.getBuildingDocuments(orgId, building.buildingId);
+  return c.json(docs.map((d: any) => ({ ...d, url: d.filename ? `/uploads/${d.filename}` : null })));
+});
+
+app.post("/api/asbestos/buildings/:buildingId/documents", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const form = await c.req.formData();
+  const file = form.get("document");
+  if (!(file instanceof File)) return c.json({ message: "No file uploaded" }, 400);
+  const docType = (form.get("docType") || "").toString().trim() || null;
+  const tagsRaw = (form.get("tags") || "").toString().trim();
+  const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : [];
+  const linkedEntityType = (form.get("linkedEntityType") || "").toString().trim() || null;
+  const linkedEntityId = (form.get("linkedEntityId") || "").toString().trim() || null;
+
+  const stored = await storeUpload(c.env.ABATEIQ_UPLOADS, file, { prefix: `buildings/${building.buildingId}` });
+  const created = await storage.createBuildingDocument({
+    organizationId: orgId,
+    clientId: building.clientId,
+    buildingId: building.buildingId,
+    filename: stored.key,
+    originalName: file.name || stored.key,
+    mimeType: file.type || "application/octet-stream",
+    size: typeof file.size === "number" ? file.size : 0,
+    docType,
+    tags,
+    uploadedByUserId: userId,
+    linkedEntityType,
+    linkedEntityId,
+  } as any);
+  return c.json({ ...created, url: `/uploads/${created.filename}` }, 201);
+});
+
+app.delete("/api/asbestos/building-documents/:documentId", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const doc = await storage.getBuildingDocumentById(c.req.param("documentId"));
+  if (!doc) return c.json({ message: "Not found" }, 404);
+  if ((doc as any).organizationId !== orgId) return c.json({ message: "No access" }, 403);
+  await storage.deleteBuildingDocument(doc.documentId);
+  try {
+    if (doc.filename) await c.env.ABATEIQ_UPLOADS.delete(doc.filename);
+  } catch {
+    // ignore
+  }
+  return c.body(null, 204);
+});
+
+app.get("/api/asbestos/buildings/:buildingId/abatement-projects", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const projects = await storage.getAbatementProjects(orgId, building.buildingId);
+  const withCounts = await Promise.all(
+    (projects || []).map(async (p: any) => ({
+      ...p,
+      linkedItemsCount: await storage.getAbatementProjectItemsCount(orgId, p.projectId),
+    }))
+  );
+  return c.json(withCounts);
+});
+
+app.post("/api/asbestos/buildings/:buildingId/abatement-projects", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const client = await storage.getClientById(building.clientId);
+  if (!client || (client as any).organizationId !== orgId) return c.json({ message: "Client not found" }, 404);
+  const body = await parseJsonBody<any>(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const projectName = (body.projectName || "").toString().trim();
+  if (!projectName) return c.json({ message: "projectName is required" }, 400);
+  const created = await storage.createAbatementProject({
+    organizationId: orgId,
+    clientId: building.clientId,
+    buildingId: building.buildingId,
+    projectName,
+    startDate: coerceDate(body.startDate) ?? null,
+    endDate: coerceDate(body.endDate) ?? null,
+    status: (body.status || "planned").toString(),
+    scopeSummary: (body.scopeSummary || "").toString().trim() || null,
+    crewLeadUserId: (body.crewLeadUserId || "").toString().trim() || null,
+    crewMembers: Array.isArray(body.crewMembers) ? body.crewMembers : [],
+    subcontractorOrg: (body.subcontractorOrg || "").toString().trim() || null,
+    disposalRefs: Array.isArray(body.disposalRefs) ? body.disposalRefs : [],
+  } as any);
+  return c.json(created, 201);
+});
+
+app.get("/api/asbestos/buildings/:buildingId/budget", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const budget = await storage.getBuildingBudget(orgId, building.buildingId);
+  return c.json(budget || null);
+});
+
+app.put("/api/asbestos/buildings/:buildingId/budget", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const building = await storage.getAsbestosBuildingById(c.req.param("buildingId"));
+  if (!building || building.organizationId !== orgId) return c.json({ message: "Not found" }, 404);
+  const body = await parseJsonBody<any>(c);
+  if (!body) return c.json({ message: "Invalid JSON" }, 400);
+  const reason = (body.reason || "").toString().trim();
+  if (!reason) return c.json({ message: "Reason is required" }, 400);
+  delete body.reason;
+
+  const existing = await storage.getBuildingBudget(orgId, building.buildingId);
+  const patch = stripUndefined({
+    estimated: body.estimated ?? undefined,
+    approved: body.approved ?? undefined,
+    committed: body.committed ?? undefined,
+    actual: body.actual ?? undefined,
+    lineItems: body.lineItems ?? undefined,
+    enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
+  } as any);
+
+  const saved = await storage.upsertBuildingBudget({
+    organizationId: orgId,
+    buildingId: building.buildingId,
+    ...(existing ? { budgetId: existing.budgetId } : {}),
+    ...patch,
+  } as any);
+
+  const changes = computeAuditChanges(existing as any, saved as any, Object.keys(patch || {}));
+  await storage.createBuildingBudgetChange({
+    organizationId: orgId,
+    budgetId: saved.budgetId,
+    reason,
+    changes,
+    createdByUserId: userId,
+  } as any);
+
+  return c.json(saved);
+});
+
+app.get("/api/asbestos/budgets/:budgetId/changes", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+  const rows = await storage.getBuildingBudgetChanges(orgId, c.req.param("budgetId"));
+  return c.json(rows);
 });
 
 app.get("/api/asbestos/inspections/:inspectionId/changes", async (c) => {

@@ -164,18 +164,22 @@ export default function Buildings() {
               </TableHeader>
               <TableBody>
                 {filtered.map((b) => (
-                  <TableRow key={b.buildingId}>
-                    <TableCell>{b.clientName || clientNameById.get(String(b.clientId)) || "—"}</TableCell>
-                    <TableCell className="font-medium">{b.name}</TableCell>
-                    <TableCell>{b.address || "—"}</TableCell>
-                    <TableCell className={b.overdue ? "text-red-600 font-medium" : ""}>{fmtDate(b.nextDueDate)}</TableCell>
-                    <TableCell>
-                      <Link className="text-primary underline" href={`/inspections`}>
-                        View
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                    <TableRow key={b.buildingId}>
+                      <TableCell>{b.clientName || clientNameById.get(String(b.clientId)) || "—"}</TableCell>
+                      <TableCell className="font-medium">
+                        <Link className="text-primary underline" href={`/buildings/${b.buildingId}`}>
+                          {b.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell>{b.address || "—"}</TableCell>
+                      <TableCell className={b.overdue ? "text-red-600 font-medium" : ""}>{fmtDate(b.nextDueDate)}</TableCell>
+                      <TableCell>
+                        <Link className="text-primary underline" href={`/buildings/${b.buildingId}`}>
+                          Open
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  ))}
               </TableBody>
             </Table>
           )}
@@ -184,4 +188,3 @@ export default function Buildings() {
     </div>
   );
 }
-

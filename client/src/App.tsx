@@ -28,6 +28,7 @@ import InspectionDetail from "@/pages/inspection-detail";
 import InspectionReport from "@/pages/inspection-report";
 import Clients from "@/pages/clients";
 import Buildings from "@/pages/buildings";
+import BuildingHub from "@/pages/building-hub";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
 import ForgotPassword from "@/pages/forgot-password";
@@ -156,6 +157,11 @@ function Router() {
       <Route path="/buildings">
         <Protected>
           <Buildings />
+        </Protected>
+      </Route>
+      <Route path="/buildings/:id">
+        <Protected>
+          <BuildingHub />
         </Protected>
       </Route>
       <Route path="/templates">

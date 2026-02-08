@@ -38,6 +38,12 @@ import {
   asbestosInspectionInventoryChanges as asbestosInspectionInventoryChangesTable,
   asbestosInspectionSamples as asbestosInspectionSamplesTable,
   asbestosInspectionDocuments as asbestosInspectionDocumentsTable,
+  buildingInventoryChanges as buildingInventoryChangesTable,
+  buildingDocuments as buildingDocumentsTable,
+  abatementProjects as abatementProjectsTable,
+  abatementProjectItems as abatementProjectItemsTable,
+  buildingBudgets as buildingBudgetsTable,
+  buildingBudgetChanges as buildingBudgetChangesTable,
   type Survey, 
   type InsertSurvey,
   type Observation,
@@ -101,7 +107,19 @@ import {
   type AsbestosInspectionSample,
   type InsertAsbestosInspectionSample,
   type AsbestosInspectionDocument,
-  type InsertAsbestosInspectionDocument
+  type InsertAsbestosInspectionDocument,
+  type BuildingInventoryChange,
+  type InsertBuildingInventoryChange,
+  type BuildingDocument,
+  type InsertBuildingDocument,
+  type AbatementProject,
+  type InsertAbatementProject,
+  type AbatementProjectItem,
+  type InsertAbatementProjectItem,
+  type BuildingBudget,
+  type InsertBuildingBudget,
+  type BuildingBudgetChange,
+  type InsertBuildingBudgetChange
 } from "@shared/schema";
 import { getDb } from "./db";
 import { eq, desc, or, and, sql } from "drizzle-orm";
@@ -386,6 +404,44 @@ export interface IStorage {
     }
   ): Promise<AsbestosInspectionDocument>;
   deleteAsbestosInspectionDocument(id: string): Promise<boolean>;
+
+  // Building hub
+  getBuildingInventoryChanges(organizationId: string, buildingId: string, itemId?: string | null): Promise<BuildingInventoryChange[]>;
+  createBuildingInventoryChange(
+    row: Partial<InsertBuildingInventoryChange> & { organizationId: string; buildingId: string; itemId: string; fieldName: string }
+  ): Promise<BuildingInventoryChange>;
+
+  getBuildingDocuments(organizationId: string, buildingId: string): Promise<BuildingDocument[]>;
+  getBuildingDocumentById(id: string): Promise<BuildingDocument | undefined>;
+  createBuildingDocument(
+    row: Partial<InsertBuildingDocument> & {
+      organizationId: string;
+      clientId: string;
+      buildingId: string;
+      filename: string;
+      originalName: string;
+      mimeType: string;
+      size: number;
+    }
+  ): Promise<BuildingDocument>;
+  deleteBuildingDocument(id: string): Promise<boolean>;
+
+  getAbatementProjects(organizationId: string, buildingId: string): Promise<AbatementProject[]>;
+  createAbatementProject(
+    row: Partial<InsertAbatementProject> & { organizationId: string; clientId: string; buildingId: string; projectName: string }
+  ): Promise<AbatementProject>;
+  updateAbatementProject(id: string, patch: Partial<InsertAbatementProject>): Promise<AbatementProject | undefined>;
+  getAbatementProjectItemsCount(organizationId: string, projectId: string): Promise<number>;
+  linkAbatementProjectItem(
+    row: Partial<InsertAbatementProjectItem> & { organizationId: string; projectId: string; itemId: string }
+  ): Promise<AbatementProjectItem>;
+
+  getBuildingBudget(organizationId: string, buildingId: string): Promise<BuildingBudget | undefined>;
+  upsertBuildingBudget(row: Partial<InsertBuildingBudget> & { organizationId: string; buildingId: string }): Promise<BuildingBudget>;
+  createBuildingBudgetChange(row: Partial<InsertBuildingBudgetChange> & { organizationId: string; budgetId: string }): Promise<BuildingBudgetChange>;
+  getBuildingBudgetChanges(organizationId: string, budgetId: string): Promise<BuildingBudgetChange[]>;
+
+  getInspectionSamplesForBuilding(organizationId: string, buildingId: string, sampleType?: string | null): Promise<AsbestosInspectionSample[]>;
 
   // Air monitoring documents
   getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]>;
@@ -1737,6 +1793,144 @@ export class DatabaseStorage implements IStorage {
   async deleteAsbestosInspectionDocument(id: string): Promise<boolean> {
     const result = await db().delete(asbestosInspectionDocumentsTable).where(eq(asbestosInspectionDocumentsTable.documentId, id));
     return didAffectRows(result);
+  }
+
+  // Building hub
+  async getBuildingInventoryChanges(organizationId: string, buildingId: string, itemId?: string | null): Promise<BuildingInventoryChange[]> {
+    const where = itemId
+      ? and(
+          eq(buildingInventoryChangesTable.organizationId, organizationId),
+          eq(buildingInventoryChangesTable.buildingId, buildingId),
+          eq(buildingInventoryChangesTable.itemId, itemId)
+        )
+      : and(eq(buildingInventoryChangesTable.organizationId, organizationId), eq(buildingInventoryChangesTable.buildingId, buildingId));
+    return await db()
+      .select()
+      .from(buildingInventoryChangesTable)
+      .where(where as any)
+      .orderBy(desc(buildingInventoryChangesTable.createdAt));
+  }
+
+  async createBuildingInventoryChange(row: any): Promise<BuildingInventoryChange> {
+    const [created] = await db().insert(buildingInventoryChangesTable).values(row).returning();
+    return created;
+  }
+
+  async getBuildingDocuments(organizationId: string, buildingId: string): Promise<BuildingDocument[]> {
+    return await db()
+      .select()
+      .from(buildingDocumentsTable)
+      .where(and(eq(buildingDocumentsTable.organizationId, organizationId), eq(buildingDocumentsTable.buildingId, buildingId)))
+      .orderBy(desc(buildingDocumentsTable.uploadedAt));
+  }
+
+  async getBuildingDocumentById(id: string): Promise<BuildingDocument | undefined> {
+    const [row] = await db().select().from(buildingDocumentsTable).where(eq(buildingDocumentsTable.documentId, id));
+    return row || undefined;
+  }
+
+  async createBuildingDocument(row: any): Promise<BuildingDocument> {
+    const [created] = await db().insert(buildingDocumentsTable).values(row).returning();
+    return created;
+  }
+
+  async deleteBuildingDocument(id: string): Promise<boolean> {
+    const result = await db().delete(buildingDocumentsTable).where(eq(buildingDocumentsTable.documentId, id));
+    return didAffectRows(result);
+  }
+
+  async getAbatementProjects(organizationId: string, buildingId: string): Promise<AbatementProject[]> {
+    return await db()
+      .select()
+      .from(abatementProjectsTable)
+      .where(and(eq(abatementProjectsTable.organizationId, organizationId), eq(abatementProjectsTable.buildingId, buildingId)))
+      .orderBy(desc(abatementProjectsTable.updatedAt));
+  }
+
+  async createAbatementProject(row: any): Promise<AbatementProject> {
+    const [created] = await db().insert(abatementProjectsTable).values(row).returning();
+    return created;
+  }
+
+  async updateAbatementProject(id: string, patch: any): Promise<AbatementProject | undefined> {
+    const [updated] = await db()
+      .update(abatementProjectsTable)
+      .set(patch)
+      .where(eq(abatementProjectsTable.projectId, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async getAbatementProjectItemsCount(organizationId: string, projectId: string): Promise<number> {
+    const rows = await db()
+      .select({ count: sql<number>`count(*)` })
+      .from(abatementProjectItemsTable)
+      .where(and(eq(abatementProjectItemsTable.organizationId, organizationId), eq(abatementProjectItemsTable.projectId, projectId)));
+    return rows?.[0]?.count ?? 0;
+  }
+
+  async linkAbatementProjectItem(row: any): Promise<AbatementProjectItem> {
+    const [created] = await db().insert(abatementProjectItemsTable).values(row).returning();
+    return created;
+  }
+
+  async getBuildingBudget(organizationId: string, buildingId: string): Promise<BuildingBudget | undefined> {
+    const [row] = await db()
+      .select()
+      .from(buildingBudgetsTable)
+      .where(and(eq(buildingBudgetsTable.organizationId, organizationId), eq(buildingBudgetsTable.buildingId, buildingId)))
+      .orderBy(desc(buildingBudgetsTable.updatedAt));
+    return row || undefined;
+  }
+
+  async upsertBuildingBudget(row: any): Promise<BuildingBudget> {
+    const existing = await this.getBuildingBudget(row.organizationId, row.buildingId);
+    if (!existing) {
+      const [created] = await db().insert(buildingBudgetsTable).values(row).returning();
+      return created;
+    }
+    const [updated] = await db()
+      .update(buildingBudgetsTable)
+      .set({ ...row, updatedAt: new Date() })
+      .where(eq(buildingBudgetsTable.budgetId, existing.budgetId))
+      .returning();
+    return updated || existing;
+  }
+
+  async createBuildingBudgetChange(row: any): Promise<BuildingBudgetChange> {
+    const [created] = await db().insert(buildingBudgetChangesTable).values(row).returning();
+    return created;
+  }
+
+  async getBuildingBudgetChanges(organizationId: string, budgetId: string): Promise<BuildingBudgetChange[]> {
+    return await db()
+      .select()
+      .from(buildingBudgetChangesTable)
+      .where(and(eq(buildingBudgetChangesTable.organizationId, organizationId), eq(buildingBudgetChangesTable.budgetId, budgetId)))
+      .orderBy(desc(buildingBudgetChangesTable.createdAt));
+  }
+
+  async getInspectionSamplesForBuilding(organizationId: string, buildingId: string, sampleType?: string | null): Promise<AsbestosInspectionSample[]> {
+    const where =
+      sampleType && sampleType.trim()
+        ? and(
+            eq(asbestosInspectionsTable.organizationId, organizationId),
+            eq(asbestosInspectionsTable.buildingId, buildingId),
+            eq(asbestosInspectionSamplesTable.sampleType, sampleType.trim())
+          )
+        : and(eq(asbestosInspectionsTable.organizationId, organizationId), eq(asbestosInspectionsTable.buildingId, buildingId));
+
+    // Join samples -> inspections so we can filter by building.
+    const rows = await db()
+      .select({
+        sample: asbestosInspectionSamplesTable,
+      })
+      .from(asbestosInspectionSamplesTable)
+      .innerJoin(asbestosInspectionsTable, eq(asbestosInspectionSamplesTable.inspectionId, asbestosInspectionsTable.inspectionId))
+      .where(where as any)
+      .orderBy(desc(asbestosInspectionSamplesTable.updatedAt));
+
+    return rows.map((r: any) => r.sample);
   }
 
   async getAirMonitoringDocuments(jobId: string): Promise<AirMonitoringDocument[]> {

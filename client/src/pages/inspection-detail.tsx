@@ -314,6 +314,13 @@ export default function InspectionDetail() {
             <div className="text-sm text-muted-foreground">
               Inspection ID <span className="font-mono">{inspection.inspectionId}</span>
             </div>
+            {building?.buildingId ? (
+              <div className="text-sm">
+                <Link className="text-primary underline" href={`/buildings/${building.buildingId}`}>
+                  Open Building Hub
+                </Link>
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-2">
