@@ -1458,12 +1458,15 @@ export default function BuildingHub() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2 md:col-span-3">
               <Label>Inspection (optional)</Label>
-              <Select value={sampleInspectionId} onValueChange={(v) => setSampleInspectionId(v)}>
+              <Select
+                value={sampleInspectionId || "__none__"}
+                onValueChange={(v) => setSampleInspectionId(v === "__none__" ? "" : v)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="__none__">None</SelectItem>
                   {(inspections as any[]).map((ins: any) => (
                     <SelectItem key={ins.inspectionId} value={ins.inspectionId}>
                       {fmtDate(ins.inspectionDate)}{ins.status ? ` · ${ins.status}` : ""}
