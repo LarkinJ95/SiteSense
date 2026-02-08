@@ -1020,7 +1020,7 @@ export default function BuildingHub() {
                   </Button>
                 </DialogTrigger>
                 <DialogContent
-                  className="max-w-2xl w-[calc(100vw-2rem)] sm:w-full top-6 translate-y-0 max-h-[calc(100dvh-3rem)] overflow-hidden flex flex-col"
+                  className="!max-w-2xl !w-[calc(100vw-2rem)] sm:!w-full !top-6 !translate-y-0 !max-h-[calc(100dvh-3rem)] overflow-hidden grid grid-rows-[auto,1fr,auto]"
                 >
                   <DialogHeader>
                     <DialogTitle>Create Log Entry</DialogTitle>
