@@ -1019,12 +1019,12 @@ export default function BuildingHub() {
                     New Log Entry
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-2xl">
+                <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
                   <DialogHeader>
                     <DialogTitle>Create Log Entry</DialogTitle>
                     <DialogDescription>Tracks abatement/repair work at this building.</DialogDescription>
                   </DialogHeader>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto pr-2 flex-1">
                     <div className="space-y-2 md:col-span-2">
                       <Label>Associated Inventory Item (optional)</Label>
                       <Select
@@ -1124,7 +1124,7 @@ export default function BuildingHub() {
                       <Textarea value={logForm.notes} onChange={(e) => setLogForm({ ...logForm, notes: e.target.value })} />
                     </div>
                   </div>
-                  <div className="pt-2 flex justify-end gap-2">
+                  <div className="pt-2 flex justify-end gap-2 shrink-0 border-t">
                     <Button variant="outline" onClick={() => setLogOpen(false)}>Cancel</Button>
                     <Button onClick={() => createLogMutation.mutate()} disabled={createLogMutation.isPending}>
                       Save
