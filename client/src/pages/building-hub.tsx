@@ -78,6 +78,23 @@ export default function BuildingHub() {
     enabled: !!id,
   });
 
+  const latestSampleNumberByItemId = useMemo(() => {
+    const map = new Map<string, { collectedAt: number; value: string }>();
+    const all = ([] as any[]).concat(acmSamples || [], pmSamples || []);
+    for (const s of all) {
+      const itemId = String(s?.itemId || "").trim();
+      if (!itemId) continue;
+      const collectedAt = s?.collectedAt ? new Date(s.collectedAt).getTime() : 0;
+      const value = String(s?.sampleNumber || s?.sampleId || "").trim();
+      if (!value) continue;
+      const prev = map.get(itemId);
+      if (!prev || collectedAt >= prev.collectedAt) {
+        map.set(itemId, { collectedAt, value });
+      }
+    }
+    return new Map(Array.from(map.entries()).map(([k, v]) => [k, v.value]));
+  }, [acmSamples, pmSamples]);
+
   const { data: documents = [] } = useQuery<any[]>({
     queryKey: id ? [`/api/asbestos/buildings/${id}/documents`] : ["__skip__bdocs__"],
     enabled: !!id,
@@ -364,6 +381,7 @@ export default function BuildingHub() {
     cost: "",
     notes: "",
   });
+  const [logDocs, setLogDocs] = useState<Array<{ id: string; file: File; docType: string }>>([]);
 
   const createLogMutation = useMutation({
     mutationFn: async () => {
@@ -387,11 +405,30 @@ export default function BuildingHub() {
         notes: logForm.notes.trim() || null,
       };
       const res = await apiRequest("POST", `/api/asbestos/buildings/${id}/abatement-logs`, payload);
-      return await res.json();
+      const created = await res.json();
+
+      // Optional: upload any attached docs and link them to this log entry.
+      for (const d of logDocs) {
+        const form = new FormData();
+        form.append("document", d.file);
+        form.append("docType", d.docType || "Abatement");
+        form.append("tags", "abatement,repair-log");
+        form.append("linkedEntityType", "abatement_repair_log");
+        form.append("linkedEntityId", String(created?.logId || ""));
+        const up = await fetch(`/api/asbestos/buildings/${id}/documents`, {
+          method: "POST",
+          body: form,
+          credentials: "include",
+        });
+        if (!up.ok) throw new Error(await up.text());
+      }
+
+      return created;
     },
     onSuccess: () => {
       if (!id) return;
       queryClient.invalidateQueries({ queryKey: [`/api/asbestos/buildings/${id}/abatement-logs`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/asbestos/buildings/${id}/documents`] });
       setLogOpen(false);
       setLogForm({
         itemId: "",
@@ -410,6 +447,7 @@ export default function BuildingHub() {
         cost: "",
         notes: "",
       });
+      setLogDocs([]);
       toast({ title: "Saved", description: "Log entry added." });
     },
     onError: (err: any) => toast({ title: "Failed", description: err?.message || "Unable to add log entry.", variant: "destructive" }),
@@ -1012,7 +1050,15 @@ export default function BuildingHub() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Abatement/Repair Log</CardTitle>
-              <Dialog open={logOpen} onOpenChange={setLogOpen}>
+              <Dialog
+                open={logOpen}
+                onOpenChange={(open) => {
+                  setLogOpen(open);
+                  if (!open) {
+                    setLogDocs([]);
+                  }
+                }}
+              >
                 <DialogTrigger asChild>
                   <Button variant="secondary">
                     <Plus className="h-4 w-4 mr-2" />
@@ -1029,23 +1075,30 @@ export default function BuildingHub() {
 
                   <div className="px-6 pb-6 overflow-y-auto min-h-0 flex-1">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2 md:col-span-2">
-                        <Label>Associated Inventory Item (optional)</Label>
-                        <Select
-                          value={logForm.itemId || "__none__"}
-                          onValueChange={(v) => {
-                            const nextId = v === "__none__" ? "" : v;
-                            const found = (inventory as any[]).find((it: any) => String(it?.itemId) === String(nextId));
-                            const ext = found ? String(found.externalItemId || "").trim() : "";
-                            setLogForm((prev) => ({
-                              ...prev,
-                              itemId: nextId,
-                              associatedItemNumber: prev.associatedItemNumber.trim() ? prev.associatedItemNumber : ext,
-                            }));
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="None" />
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Associated Inventory Item (optional)</Label>
+                      <Select
+                        value={logForm.itemId || "__none__"}
+                        onValueChange={(v) => {
+                          const nextId = v === "__none__" ? "" : v;
+                          const found = (inventory as any[]).find((it: any) => String(it?.itemId) === String(nextId));
+                          const ext = found ? String(found.externalItemId || "").trim() : "";
+                          const material = found ? String(found.material || "").trim() : "";
+                          const loc = found ? String(found.location || "").trim() : "";
+                          const sampleNo = nextId ? (latestSampleNumberByItemId.get(String(nextId)) || "") : "";
+                          setLogForm((prev) => ({
+                            ...prev,
+                            itemId: nextId,
+                            // Auto-populate on selection, but remain editable afterwards.
+                            associatedItemNumber: nextId ? (ext || prev.associatedItemNumber) : prev.associatedItemNumber,
+                            associatedSampleNumber: nextId ? (sampleNo || prev.associatedSampleNumber) : prev.associatedSampleNumber,
+                            materialDescription: nextId ? (material || prev.materialDescription) : prev.materialDescription,
+                            location: nextId ? (loc || prev.location) : prev.location,
+                          }));
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="None" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="__none__">None</SelectItem>
@@ -1124,20 +1177,82 @@ export default function BuildingHub() {
                         <Input value={logForm.cost} onChange={(e) => setLogForm({ ...logForm, cost: e.target.value })} placeholder="e.g., 2500" />
                       </div>
                       <div className="space-y-2 md:col-span-2">
-                        <Label>Notes</Label>
-                        <Textarea value={logForm.notes} onChange={(e) => setLogForm({ ...logForm, notes: e.target.value })} />
+                      <Label>Notes</Label>
+                      <Textarea value={logForm.notes} onChange={(e) => setLogForm({ ...logForm, notes: e.target.value })} />
+                    </div>
+
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Documents (Manifests, Removal Forms, etc.)</Label>
+                      <div className="flex flex-col gap-2">
+                        <input
+                          type="file"
+                          multiple
+                          onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                            if (!files.length) return;
+                            setLogDocs((prev) => [
+                              ...prev,
+                              ...files.map((file) => ({
+                                id: crypto.randomUUID(),
+                                file,
+                                docType: "Manifest",
+                              })),
+                            ]);
+                            e.currentTarget.value = "";
+                          }}
+                        />
+                        {logDocs.length ? (
+                          <div className="border rounded-md p-3 space-y-2">
+                            {logDocs.map((d) => (
+                              <div key={d.id} className="flex flex-col md:flex-row md:items-center gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium truncate">{d.file.name}</div>
+                                  <div className="text-xs text-muted-foreground">{Math.round((d.file.size || 0) / 1024)} KB</div>
+                                </div>
+                                <Select
+                                  value={d.docType}
+                                  onValueChange={(v) =>
+                                    setLogDocs((prev) => prev.map((x) => (x.id === d.id ? { ...x, docType: v } : x)))
+                                  }
+                                >
+                                  <SelectTrigger className="w-full md:w-48">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Manifest">Manifest</SelectItem>
+                                    <SelectItem value="Removal Form">Removal Form</SelectItem>
+                                    <SelectItem value="Clearance">Clearance</SelectItem>
+                                    <SelectItem value="Other">Other</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => setLogDocs((prev) => prev.filter((x) => x.id !== d.id))}
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-muted-foreground">
+                            Optional. Uploads will be saved to Building Documents and linked to this log entry after you click Save.
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  <div className="px-6 py-4 border-t bg-background flex justify-end gap-2 shrink-0">
-                    <Button variant="outline" onClick={() => setLogOpen(false)}>Cancel</Button>
-                    <Button onClick={() => createLogMutation.mutate()} disabled={createLogMutation.isPending}>
-                      Save
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
+                <div className="px-6 py-4 border-t bg-background flex justify-end gap-2 shrink-0">
+                  <Button variant="outline" onClick={() => setLogOpen(false)}>Cancel</Button>
+                  <Button onClick={() => createLogMutation.mutate()} disabled={createLogMutation.isPending}>
+                    Save
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
             </CardHeader>
             <CardContent>
               {abatementLogs.length === 0 ? (
