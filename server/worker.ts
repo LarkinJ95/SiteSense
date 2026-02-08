@@ -4398,6 +4398,44 @@ app.get("/api/asbestos/clients/:clientId/buildings", async (c) => {
   return c.json(buildings);
 });
 
+app.get("/api/asbestos/buildings", async (c) => {
+  const userId = c.get("user")?.sub;
+  if (!userId) return c.json({ message: "Not authenticated" }, 401);
+  const orgId = await getOrgIdForUserOrThrow(userId);
+
+  const [buildings, clients, inspections] = await Promise.all([
+    storage.getAsbestosBuildings(orgId, null),
+    storage.getClientsByOrg(orgId),
+    storage.getAsbestosInspections(orgId, null),
+  ]);
+
+  const clientNameById = new Map<string, string>();
+  for (const cl of clients || []) clientNameById.set(String(cl.id), String((cl as any).name || ""));
+
+  // Pick the latest nextDueDate per building if present.
+  const nextDueByBuilding = new Map<string, number>();
+  for (const ins of inspections || []) {
+    const bid = String((ins as any).buildingId || "");
+    if (!bid) continue;
+    const next = (ins as any).nextDueDate ? new Date((ins as any).nextDueDate).getTime() : NaN;
+    if (!Number.isFinite(next)) continue;
+    const prev = nextDueByBuilding.get(bid);
+    if (!prev || next > prev) nextDueByBuilding.set(bid, next);
+  }
+
+  const enriched = (buildings || []).map((b: any) => {
+    const next = nextDueByBuilding.get(String(b.buildingId));
+    return {
+      ...b,
+      clientName: clientNameById.get(String(b.clientId)) || "",
+      nextDueDate: next ? new Date(next) : null,
+      overdue: typeof next === "number" ? next < Date.now() : false,
+    };
+  });
+
+  return c.json(enriched);
+});
+
 app.post("/api/asbestos/clients/:clientId/buildings", async (c) => {
   const userId = c.get("user")?.sub;
   if (!userId) return c.json({ message: "Not authenticated" }, 401);

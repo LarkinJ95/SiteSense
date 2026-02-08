@@ -57,7 +57,7 @@ const statusLabel = (value?: string | null) => {
 };
 
 export default function Inspections() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { toast } = useToast();
   const { data: session } = authClient.useSession();
 
@@ -336,6 +336,18 @@ export default function Inspections() {
         </Dialog>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <Button asChild variant={location.startsWith("/clients") ? "secondary" : "ghost"} size="sm">
+          <Link href="/clients">Clients</Link>
+        </Button>
+        <Button asChild variant={location.startsWith("/buildings") ? "secondary" : "ghost"} size="sm">
+          <Link href="/buildings">Buildings</Link>
+        </Button>
+        <Button asChild variant="secondary" size="sm">
+          <Link href="/inspections">Inspections</Link>
+        </Button>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle>Recent Inspections</CardTitle>
@@ -378,4 +390,3 @@ export default function Inspections() {
     </div>
   );
 }
-

@@ -26,6 +26,8 @@ import PersonnelDetail from "@/pages/personnel-detail";
 import Inspections from "@/pages/inspections";
 import InspectionDetail from "@/pages/inspection-detail";
 import InspectionReport from "@/pages/inspection-report";
+import Clients from "@/pages/clients";
+import Buildings from "@/pages/buildings";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
 import ForgotPassword from "@/pages/forgot-password";
@@ -144,6 +146,16 @@ function Router() {
       <Route path="/inspections/:id/report">
         <Protected>
           <InspectionReport />
+        </Protected>
+      </Route>
+      <Route path="/clients">
+        <Protected>
+          <Clients />
+        </Protected>
+      </Route>
+      <Route path="/buildings">
+        <Protected>
+          <Buildings />
         </Protected>
       </Route>
       <Route path="/templates">
