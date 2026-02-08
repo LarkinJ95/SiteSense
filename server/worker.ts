@@ -318,6 +318,12 @@ const normalizeAirSampleBody = (body: any) => {
   if ("startTime" in normalized) normalized.startTime = coerceDate(normalized.startTime) ?? normalized.startTime;
   if ("endTime" in normalized) normalized.endTime = coerceDate(normalized.endTime) ?? normalized.endTime;
   if ("labReportDate" in normalized) normalized.labReportDate = coerceDate(normalized.labReportDate) ?? normalized.labReportDate;
+
+  // Normalize common empty-string ids to null so we don't persist invalid foreign keys like "".
+  for (const key of ["personId", "personnelId", "pumpId", "jobId", "surveyId", "labId"] as const) {
+    if (!(key in normalized)) continue;
+    if (typeof normalized[key] === "string" && !normalized[key].trim()) normalized[key] = null;
+  }
   return normalized;
 };
 
@@ -3232,21 +3238,47 @@ app.get("/api/personnel", async (c) => {
   if (compact) return c.json(rows);
 
   // Lightweight stats for the list view.
-  const allExposures = await Promise.all(
-    rows.map((p: any) => storage.getExposureRecordsForPerson(orgId, p.personId, {}))
-  );
+  const statsRows = await storage.getAirSampleStatsByPerson(orgId);
+  const statsByPerson = new Map<string, { lastJobDate: number | null; jobCount: number; sampleCount: number }>();
+  for (const r of statsRows as any[]) {
+    if (!r?.personId) continue;
+    statsByPerson.set(String(r.personId), {
+      lastJobDate: r.lastJobDate ?? null,
+      jobCount: Number(r.jobCount || 0),
+      sampleCount: Number(r.sampleCount || 0),
+    });
+  }
+
+  // Also consider legacy/unlinked samples that only have `monitorWornBy` populated (no `personId`).
+  const nameStatsRows = await storage.getAirSampleStatsByMonitorName(orgId);
+  const statsByMonitorName = new Map<string, { lastJobDate: number | null; jobCount: number; sampleCount: number }>();
+  for (const r of nameStatsRows as any[]) {
+    const key = String(r?.monitorName || "").trim().toLowerCase();
+    if (!key) continue;
+    statsByMonitorName.set(key, {
+      lastJobDate: r.lastJobDate ?? null,
+      jobCount: Number(r.jobCount || 0),
+      sampleCount: Number(r.sampleCount || 0),
+    });
+  }
+
   const payload = rows.map((p: any, idx: number) => {
-    const exposures = allExposures[idx] || [];
-    const lastExposure = exposures.find((e: any) => e.date) || null;
-    const lastFlag = exposures.find((e: any) => e.exceedanceFlag || e.nearMissFlag) || null;
-    const jobIds = new Set(exposures.map((e: any) => e.jobId).filter(Boolean));
+    const st = statsByPerson.get(String(p.personId)) || { lastJobDate: null, jobCount: 0, sampleCount: 0 };
+    const nameKey = `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.trim().toLowerCase();
+    const ns = nameKey ? statsByMonitorName.get(nameKey) : null;
+    const merged = {
+      // Prefer explicit `personId` linkage. If absent, fall back to monitorWornBy-based counts.
+      sampleCount: st.sampleCount || ns?.sampleCount || 0,
+      jobCount: st.jobCount || ns?.jobCount || 0,
+      lastJobDate: Math.max(st.lastJobDate || 0, ns?.lastJobDate || 0) || null,
+    };
     return {
       ...p,
       stats: {
-        lastJobDate: lastExposure?.date ?? null,
-        jobCount: jobIds.size,
-        sampleCount: exposures.length,
-        lastExposureFlag: lastFlag ? (lastFlag.exceedanceFlag ? "exceedance" : "near_miss") : null,
+        lastJobDate: merged.lastJobDate,
+        jobCount: merged.jobCount,
+        sampleCount: merged.sampleCount,
+        lastExposureFlag: null,
       },
     };
   });
@@ -3424,11 +3456,84 @@ app.get("/api/personnel/:id/exposures", async (c) => {
     from = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 12, now.getUTCDate());
   }
 
+  const fullName = `${String((person as any).firstName || "").trim()} ${String((person as any).lastName || "").trim()}`.trim();
   const records = await storage.getExposureRecordsForPerson(person.organizationId, person.personId, { from, analyte: analyte || null });
+
+  // Self-heal: if exposure records are missing (historical samples created before exposure backfill),
+  // upsert exposure snapshots for any air samples linked to this person.
+  try {
+    // If prior samples were created with only monitorWornBy populated (no personId),
+    // link them to this person by exact full-name match so exposures can be generated.
+    if (fullName) {
+      const orphans = await storage.getAirSamplesForMonitorNameInOrg(person.organizationId, fullName);
+      for (const s of orphans as any[]) {
+        if (!s?.id) continue;
+        await storage.updateAirSample(String(s.id), { personId: person.personId } as any);
+      }
+    }
+
+    const samples = await storage.getAirSamplesForPersonInOrg(person.organizationId, person.personId);
+    if (samples.length) {
+      const existingAll = await storage.getExposureRecordsForPerson(person.organizationId, person.personId, {});
+      const existingSampleIds = new Set(
+        (existingAll || []).map((r: any) => (r?.airSampleId ? String(r.airSampleId) : "")).filter(Boolean)
+      );
+      const fromMs = typeof from === "number" && Number.isFinite(from) ? from : null;
+      const candidates = fromMs
+        ? samples.filter((s: any) => (typeof s.startTime === "number" ? s.startTime >= fromMs : true))
+        : samples;
+
+      for (const s of candidates as any[]) {
+        if (!s?.id) continue;
+        if (existingSampleIds.has(String(s.id))) continue;
+        const durationMinutes =
+          typeof s.samplingDuration === "number" ? s.samplingDuration : parseNumeric(s.samplingDuration);
+        const concentration = parseNumeric(s.result);
+        const twa = computeTwa8hr(concentration, typeof durationMinutes === "number" ? durationMinutes : null);
+        const profileKey = "OSHA";
+        const limitRow = await getExposureLimitFor(person.organizationId, profileKey, s.analyte || "");
+        const flags = computeExposureFlags(twa, limitRow, 0.8);
+        const start = coerceDate(s.startTime);
+        const dateMs = start ? start.getTime() : null;
+        await storage.upsertExposureFromAirSample({
+          organizationId: person.organizationId,
+          userId,
+          airSampleId: String(s.id),
+          jobId: String(s.jobId),
+          personId: person.personId,
+          dateMs: Number.isFinite(dateMs as any) ? dateMs : null,
+          analyte: s.analyte || "unknown",
+          durationMinutes: typeof durationMinutes === "number" ? durationMinutes : null,
+          concentration: concentration === null ? null : concentration.toString(),
+          units: s.resultUnit || null,
+          method: s.analysisMethod || s.samplingMethod || null,
+          sampleType: s.sampleType || null,
+          taskActivity: s.fieldNotes || null,
+          ppeLevel: null,
+          profileKey,
+          twa8hr: twa === null ? null : twa.toString(),
+          limitType: flags.limitType,
+          limitValue: flags.limitValue === null ? null : flags.limitValue.toString(),
+          percentOfLimit: flags.percentOfLimit === null ? null : flags.percentOfLimit.toString(),
+          exceedanceFlag: flags.exceedanceFlag,
+          nearMissFlag: flags.nearMissFlag,
+          sourceRefs: {
+            airSampleId: String(s.id),
+            labReportFilename: s.labReportFilename || null,
+          },
+        });
+      }
+    }
+  } catch (e) {
+    console.error("Exposure backfill failed:", e);
+  }
+
+  // Re-fetch after any backfill
+  const recordsFinal = await storage.getExposureRecordsForPerson(person.organizationId, person.personId, { from, analyte: analyte || null });
 
   // Summary by analyte (max/avg TWA, counts)
   const byAnalyte: Record<string, any> = {};
-  for (const r of records) {
+  for (const r of recordsFinal) {
     const key = (r.analyte || "unknown").toString();
     const twa = parseNumeric((r as any).twa8hr);
     if (!byAnalyte[key]) {
@@ -3453,7 +3558,7 @@ app.get("/api/personnel/:id/exposures", async (c) => {
     nearMisses: row.nearMisses,
   }));
 
-  return c.json({ records, summary });
+  return c.json({ records: recordsFinal, summary });
 });
 
 app.get("/api/exposure-limits", async (c) => {

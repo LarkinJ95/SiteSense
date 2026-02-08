@@ -39,6 +39,16 @@ const airSampleFormSchema = insertAirSampleSchema.extend({
   uncertainty: z.string().optional(),
   regulatoryLimit: z.string().optional(),
   labReportDate: z.string().optional(),
+}).superRefine((data: any, ctx) => {
+  const type = String(data?.sampleType || "").trim().toLowerCase();
+  const pid = typeof data?.personId === "string" ? data.personId.trim() : "";
+  if ((type === "personal" || type === "excursion") && !pid) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["personId"],
+      message: "Personnel is required for personal samples.",
+    });
+  }
 });
 
 type AirSampleFormData = z.infer<typeof airSampleFormSchema>;
@@ -1360,6 +1370,9 @@ function AirSampleForm({ jobId, jobNumber, existingSamples, personnel, equipment
     }
     if (submitData.pumpId === "") {
       submitData.pumpId = undefined;
+    }
+    if ((submitData as any).personId === "") {
+      (submitData as any).personId = undefined;
     }
     onSubmit(submitData);
   };

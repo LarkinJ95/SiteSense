@@ -240,6 +240,16 @@ export interface IStorage {
     sourceRefs?: any;
   }): Promise<ExposureRecord>;
 
+  // Air-sample based personnel stats/backfill helpers
+  getAirSamplesForPersonInOrg(organizationId: string, personId: string): Promise<AirSample[]>;
+  getAirSampleStatsByPerson(
+    organizationId: string
+  ): Promise<Array<{ personId: string; sampleCount: number; jobCount: number; lastJobDate: number | null }>>;
+  getAirSamplesForMonitorNameInOrg(organizationId: string, monitorName: string): Promise<AirSample[]>;
+  getAirSampleStatsByMonitorName(
+    organizationId: string
+  ): Promise<Array<{ monitorName: string; sampleCount: number; jobCount: number; lastJobDate: number | null }>>;
+
   // Password auth (D1-backed)
   getAuthUserByEmail(email: string): Promise<AuthUserRow | undefined>;
   getAuthUserById(userId: string): Promise<AuthUserRow | undefined>;
@@ -1023,6 +1033,107 @@ export class DatabaseStorage implements IStorage {
       .values({ ...values, createdByUserId: params.userId } as any)
       .returning();
     return created;
+  }
+
+  async getAirSamplesForPersonInOrg(organizationId: string, personId: string): Promise<AirSample[]> {
+    const pid = (personId || "").trim();
+    if (!organizationId || !pid) return [];
+    const rows = await db()
+      .select({ sample: airSamples })
+      .from(airSamples)
+      .innerJoin(airMonitoringJobs, eq(airSamples.jobId, airMonitoringJobs.id))
+      .where(
+        and(
+          eq(airMonitoringJobs.organizationId, organizationId),
+          eq(airSamples.personId, pid),
+          sql`trim(${airSamples.personId}) != ''`
+        )
+      )
+      .orderBy(desc(airSamples.startTime));
+    return rows.map((r: any) => r.sample);
+  }
+
+  async getAirSampleStatsByPerson(
+    organizationId: string
+  ): Promise<Array<{ personId: string; sampleCount: number; jobCount: number; lastJobDate: number | null }>> {
+    if (!organizationId) return [];
+
+    const rows = await db()
+      .select({
+        personId: airSamples.personId,
+        sampleCount: sql<number>`count(1)`,
+        jobCount: sql<number>`count(distinct ${airSamples.jobId})`,
+        lastJobDate: sql<number | null>`max(${airSamples.startTime})`,
+      })
+      .from(airSamples)
+      .innerJoin(airMonitoringJobs, eq(airSamples.jobId, airMonitoringJobs.id))
+      .where(
+        and(
+          eq(airMonitoringJobs.organizationId, organizationId),
+          sql`${airSamples.personId} is not null`,
+          sql`trim(${airSamples.personId}) != ''`
+        )
+      )
+      .groupBy(airSamples.personId);
+
+    return (rows as any[]).map((r: any) => ({
+      personId: String(r.personId || ""),
+      sampleCount: Number(r.sampleCount || 0),
+      jobCount: Number(r.jobCount || 0),
+      lastJobDate: r.lastJobDate === null || r.lastJobDate === undefined ? null : Number(r.lastJobDate),
+    }));
+  }
+
+  async getAirSamplesForMonitorNameInOrg(organizationId: string, monitorName: string): Promise<AirSample[]> {
+    const name = (monitorName || "").trim().toLowerCase();
+    if (!organizationId || !name) return [];
+    const rows = await db()
+      .select({ sample: airSamples })
+      .from(airSamples)
+      .innerJoin(airMonitoringJobs, eq(airSamples.jobId, airMonitoringJobs.id))
+      .where(
+        and(
+          eq(airMonitoringJobs.organizationId, organizationId),
+          sql`lower(trim(coalesce(${airSamples.monitorWornBy}, ''))) = ${name}`,
+          or(sql`${airSamples.personId} is null`, sql`trim(${airSamples.personId}) = ''`),
+          or(eq(airSamples.sampleType, "personal"), eq(airSamples.sampleType, "excursion"))
+        )
+      )
+      .orderBy(desc(airSamples.startTime));
+    return rows.map((r: any) => r.sample);
+  }
+
+  async getAirSampleStatsByMonitorName(
+    organizationId: string
+  ): Promise<Array<{ monitorName: string; sampleCount: number; jobCount: number; lastJobDate: number | null }>> {
+    if (!organizationId) return [];
+    const rows = await db()
+      .select({
+        monitorName: airSamples.monitorWornBy,
+        sampleCount: sql<number>`count(1)`,
+        jobCount: sql<number>`count(distinct ${airSamples.jobId})`,
+        lastJobDate: sql<number | null>`max(${airSamples.startTime})`,
+      })
+      .from(airSamples)
+      .innerJoin(airMonitoringJobs, eq(airSamples.jobId, airMonitoringJobs.id))
+      .where(
+        and(
+          eq(airMonitoringJobs.organizationId, organizationId),
+          or(sql`${airSamples.personId} is null`, sql`trim(${airSamples.personId}) = ''`),
+          sql`${airSamples.monitorWornBy} is not null`,
+          sql`trim(${airSamples.monitorWornBy}) != ''`,
+          sql`lower(trim(${airSamples.monitorWornBy})) != 'n/a'`,
+          or(eq(airSamples.sampleType, "personal"), eq(airSamples.sampleType, "excursion"))
+        )
+      )
+      .groupBy(airSamples.monitorWornBy);
+
+    return (rows as any[]).map((r: any) => ({
+      monitorName: String(r.monitorName || ""),
+      sampleCount: Number(r.sampleCount || 0),
+      jobCount: Number(r.jobCount || 0),
+      lastJobDate: r.lastJobDate === null || r.lastJobDate === undefined ? null : Number(r.lastJobDate),
+    }));
   }
 
   // Password auth (D1-backed)
