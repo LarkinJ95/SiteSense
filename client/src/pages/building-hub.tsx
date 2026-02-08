@@ -1019,114 +1019,118 @@ export default function BuildingHub() {
                     New Log Entry
                   </Button>
                 </DialogTrigger>
-                <DialogContent
-                  className="!max-w-2xl !w-[calc(100vw-2rem)] sm:!w-full !top-6 !translate-y-0 !max-h-[calc(100dvh-3rem)] overflow-hidden grid grid-rows-[auto,1fr,auto]"
-                >
-                  <DialogHeader>
-                    <DialogTitle>Create Log Entry</DialogTitle>
-                    <DialogDescription>Tracks abatement/repair work at this building.</DialogDescription>
-                  </DialogHeader>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto pr-2 flex-1 min-h-0">
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Associated Inventory Item (optional)</Label>
-                      <Select
-                        value={logForm.itemId || "__none__"}
-                        onValueChange={(v) => {
-                          const nextId = v === "__none__" ? "" : v;
-                          const found = (inventory as any[]).find((it: any) => String(it?.itemId) === String(nextId));
-                          const ext = found ? String(found.externalItemId || "").trim() : "";
-                          setLogForm((prev) => ({
-                            ...prev,
-                            itemId: nextId,
-                            associatedItemNumber: prev.associatedItemNumber.trim() ? prev.associatedItemNumber : ext,
-                          }));
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="None" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">None</SelectItem>
-                          {(inventory as any[]).map((i: any) => (
-                            <SelectItem key={i.itemId} value={i.itemId}>
-                              {itemLabelById.get(i.itemId) || i.itemId}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Associated Item #</Label>
-                      <Input value={logForm.associatedItemNumber} onChange={(e) => setLogForm({ ...logForm, associatedItemNumber: e.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Associated Sample #</Label>
-                      <Input value={logForm.associatedSampleNumber} onChange={(e) => setLogForm({ ...logForm, associatedSampleNumber: e.target.value })} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Material Description</Label>
-                      <Input value={logForm.materialDescription} onChange={(e) => setLogForm({ ...logForm, materialDescription: e.target.value })} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Location</Label>
-                      <Input value={logForm.location} onChange={(e) => setLogForm({ ...logForm, location: e.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Abatement Date</Label>
-                      <Input type="date" value={logForm.abatementDate} onChange={(e) => setLogForm({ ...logForm, abatementDate: e.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Contractor</Label>
-                      <Input value={logForm.contractor} onChange={(e) => setLogForm({ ...logForm, contractor: e.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Method</Label>
-                      <Select value={logForm.methodKind || "__none__"} onValueChange={(v) => setLogForm({ ...logForm, methodKind: v === "__none__" ? "" : (v as any) })}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">—</SelectItem>
-                          <SelectItem value="Encapsulation">Encapsulation</SelectItem>
-                          <SelectItem value="Enclosure">Enclosure</SelectItem>
-                          <SelectItem value="Removal">Removal</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {logForm.methodKind === "Other" ? (
-                        <Input
-                          placeholder="Fill in method"
-                          value={logForm.methodOther}
-                          onChange={(e) => setLogForm({ ...logForm, methodOther: e.target.value })}
-                        />
-                      ) : null}
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Waste Shipment ID</Label>
-                      <Input value={logForm.wasteShipmentId} onChange={(e) => setLogForm({ ...logForm, wasteShipmentId: e.target.value })} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Disposal Site</Label>
-                      <Input value={logForm.disposalSite} onChange={(e) => setLogForm({ ...logForm, disposalSite: e.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Clearance Date</Label>
-                      <Input type="date" value={logForm.clearanceDate} onChange={(e) => setLogForm({ ...logForm, clearanceDate: e.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Clearance Result</Label>
-                      <Input value={logForm.clearanceResult} onChange={(e) => setLogForm({ ...logForm, clearanceResult: e.target.value })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Cost</Label>
-                      <Input value={logForm.cost} onChange={(e) => setLogForm({ ...logForm, cost: e.target.value })} placeholder="e.g., 2500" />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Notes</Label>
-                      <Textarea value={logForm.notes} onChange={(e) => setLogForm({ ...logForm, notes: e.target.value })} />
+                <DialogContent className="max-w-2xl w-[calc(100vw-2rem)] sm:w-full p-0 overflow-hidden flex flex-col gap-0">
+                  <div className="p-6 pb-4">
+                    <DialogHeader>
+                      <DialogTitle>Create Log Entry</DialogTitle>
+                      <DialogDescription>Tracks abatement/repair work at this building.</DialogDescription>
+                    </DialogHeader>
+                  </div>
+
+                  <div className="px-6 pb-6 overflow-y-auto min-h-0 flex-1">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2 md:col-span-2">
+                        <Label>Associated Inventory Item (optional)</Label>
+                        <Select
+                          value={logForm.itemId || "__none__"}
+                          onValueChange={(v) => {
+                            const nextId = v === "__none__" ? "" : v;
+                            const found = (inventory as any[]).find((it: any) => String(it?.itemId) === String(nextId));
+                            const ext = found ? String(found.externalItemId || "").trim() : "";
+                            setLogForm((prev) => ({
+                              ...prev,
+                              itemId: nextId,
+                              associatedItemNumber: prev.associatedItemNumber.trim() ? prev.associatedItemNumber : ext,
+                            }));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="None" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">None</SelectItem>
+                            {(inventory as any[]).map((i: any) => (
+                              <SelectItem key={i.itemId} value={i.itemId}>
+                                {itemLabelById.get(i.itemId) || i.itemId}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Associated Item #</Label>
+                        <Input value={logForm.associatedItemNumber} onChange={(e) => setLogForm({ ...logForm, associatedItemNumber: e.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Associated Sample #</Label>
+                        <Input value={logForm.associatedSampleNumber} onChange={(e) => setLogForm({ ...logForm, associatedSampleNumber: e.target.value })} />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label>Material Description</Label>
+                        <Input value={logForm.materialDescription} onChange={(e) => setLogForm({ ...logForm, materialDescription: e.target.value })} />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label>Location</Label>
+                        <Input value={logForm.location} onChange={(e) => setLogForm({ ...logForm, location: e.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Abatement Date</Label>
+                        <Input type="date" value={logForm.abatementDate} onChange={(e) => setLogForm({ ...logForm, abatementDate: e.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Contractor</Label>
+                        <Input value={logForm.contractor} onChange={(e) => setLogForm({ ...logForm, contractor: e.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Method</Label>
+                        <Select value={logForm.methodKind || "__none__"} onValueChange={(v) => setLogForm({ ...logForm, methodKind: v === "__none__" ? "" : (v as any) })}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">—</SelectItem>
+                            <SelectItem value="Encapsulation">Encapsulation</SelectItem>
+                            <SelectItem value="Enclosure">Enclosure</SelectItem>
+                            <SelectItem value="Removal">Removal</SelectItem>
+                            <SelectItem value="Other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {logForm.methodKind === "Other" ? (
+                          <Input
+                            placeholder="Fill in method"
+                            value={logForm.methodOther}
+                            onChange={(e) => setLogForm({ ...logForm, methodOther: e.target.value })}
+                          />
+                        ) : null}
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Waste Shipment ID</Label>
+                        <Input value={logForm.wasteShipmentId} onChange={(e) => setLogForm({ ...logForm, wasteShipmentId: e.target.value })} />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label>Disposal Site</Label>
+                        <Input value={logForm.disposalSite} onChange={(e) => setLogForm({ ...logForm, disposalSite: e.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Clearance Date</Label>
+                        <Input type="date" value={logForm.clearanceDate} onChange={(e) => setLogForm({ ...logForm, clearanceDate: e.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Clearance Result</Label>
+                        <Input value={logForm.clearanceResult} onChange={(e) => setLogForm({ ...logForm, clearanceResult: e.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Cost</Label>
+                        <Input value={logForm.cost} onChange={(e) => setLogForm({ ...logForm, cost: e.target.value })} placeholder="e.g., 2500" />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label>Notes</Label>
+                        <Textarea value={logForm.notes} onChange={(e) => setLogForm({ ...logForm, notes: e.target.value })} />
+                      </div>
                     </div>
                   </div>
-                  <div className="pt-3 flex justify-end gap-2 shrink-0 border-t">
+
+                  <div className="px-6 py-4 border-t bg-background flex justify-end gap-2 shrink-0">
                     <Button variant="outline" onClick={() => setLogOpen(false)}>Cancel</Button>
                     <Button onClick={() => createLogMutation.mutate()} disabled={createLogMutation.isPending}>
                       Save

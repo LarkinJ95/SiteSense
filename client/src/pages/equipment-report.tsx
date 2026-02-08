@@ -52,6 +52,7 @@ export default function EquipmentReport() {
 
   const { data, isLoading, error } = useQuery<ReportData>({
     queryKey: [`/api/equipment/${id}/report-data`],
+    enabled: Boolean(id),
   });
 
   const { data: orgUsers = [] } = useQuery<OrgUser[]>({
@@ -76,7 +77,14 @@ export default function EquipmentReport() {
   }, [shouldAutoPrint, data]);
 
   if (error) {
-    return <div className="p-6">Unable to load report.</div>;
+    const message = (error as any)?.message ? String((error as any).message) : String(error);
+    return (
+      <div className="p-6 space-y-3">
+        <div className="text-lg font-semibold">Unable to load report.</div>
+        <div className="text-sm text-muted-foreground">Equipment ID: {fmt(id)}</div>
+        <pre className="text-xs whitespace-pre-wrap rounded-md border bg-muted/30 p-3">{message}</pre>
+      </div>
+    );
   }
   if (isLoading || !data) {
     return <div className="p-6">Loading report...</div>;
