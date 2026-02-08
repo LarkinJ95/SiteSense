@@ -462,6 +462,7 @@ export default function BuildingHub() {
     collectedAt: "",
     material: "",
     location: "",
+    analyte: "Lead (Pb)",
     lab: "",
     tat: "",
     coc: "",
@@ -469,31 +470,55 @@ export default function BuildingHub() {
     resultUnit: "",
     notes: "",
   });
+  const [samplePhotos, setSamplePhotos] = useState<Array<{ id: string; file: File }>>([]);
 
   const addBuildingSampleMutation = useMutation({
     mutationFn: async () => {
       if (!id) throw new Error("Missing buildingId");
+      const isPaintMetals = sampleType === "paint_metals";
+      const normalizedResultUnit = isPaintMetals ? "mg/kg" : sampleForm.resultUnit.trim();
       const payload: any = {
         sampleType,
-        inspectionId: sampleInspectionId || null,
-        itemId: sampleForm.itemId || null,
+        // Paint/Metals samples shouldn't be tied to inspections/items in this workflow.
+        inspectionId: isPaintMetals ? null : (sampleInspectionId || null),
+        itemId: isPaintMetals ? null : (sampleForm.itemId || null),
         sampleNumber: sampleForm.sampleNumber.trim() || null,
         collectedAt: sampleForm.collectedAt || null,
         material: sampleForm.material.trim() || null,
         location: sampleForm.location.trim() || null,
+        analyte: isPaintMetals ? sampleForm.analyte.trim() || null : null,
         lab: sampleForm.lab.trim() || null,
         tat: sampleForm.tat.trim() || null,
-        coc: sampleForm.coc.trim() || null,
+        coc: isPaintMetals ? null : (sampleForm.coc.trim() || null),
         result: sampleForm.result.trim() || null,
-        resultUnit: sampleForm.resultUnit.trim() || null,
+        resultUnit: normalizedResultUnit || null,
         notes: sampleForm.notes.trim() || null,
       };
       const res = await apiRequest("POST", `/api/asbestos/buildings/${id}/samples`, payload);
-      return await res.json();
+      const created = await res.json();
+
+      // Optional: upload photos as building documents linked to the created sample.
+      for (const p of samplePhotos) {
+        const form = new FormData();
+        form.append("document", p.file);
+        form.append("docType", "Sample Photo");
+        form.append("tags", isPaintMetals ? "sample-photo,paint-metals" : "sample-photo,acm");
+        form.append("linkedEntityType", "asbestos_building_sample");
+        form.append("linkedEntityId", String(created?.sampleId || ""));
+        const up = await fetch(`/api/asbestos/buildings/${id}/documents`, {
+          method: "POST",
+          body: form,
+          credentials: "include",
+        });
+        if (!up.ok) throw new Error(await up.text());
+      }
+
+      return created;
     },
     onSuccess: () => {
       if (!id) return;
       queryClient.invalidateQueries({ queryKey: [`/api/asbestos/buildings/${id}/samples?type=${sampleType}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/asbestos/buildings/${id}/documents`] });
       setSampleOpen(false);
       setSampleInspectionId("");
       setSampleForm({
@@ -502,6 +527,7 @@ export default function BuildingHub() {
         collectedAt: "",
         material: "",
         location: "",
+        analyte: "Lead (Pb)",
         lab: "",
         tat: "",
         coc: "",
@@ -509,6 +535,7 @@ export default function BuildingHub() {
         resultUnit: "",
         notes: "",
       });
+      setSamplePhotos([]);
       toast({ title: "Saved", description: "Sample added." });
     },
     onError: (err: any) => toast({ title: "Failed", description: err?.message || "Unable to add sample.", variant: "destructive" }),
@@ -1014,6 +1041,7 @@ export default function BuildingHub() {
                       <TableHead>Collector</TableHead>
                       <TableHead>Location</TableHead>
                       <TableHead>Substrate</TableHead>
+                      <TableHead>Analyte</TableHead>
                       <TableHead>Result</TableHead>
                       <TableHead>Item</TableHead>
                       <TableHead>Inspection</TableHead>
@@ -1026,6 +1054,7 @@ export default function BuildingHub() {
                         <TableCell>{s.collector || "—"}</TableCell>
                         <TableCell>{s.location || "—"}</TableCell>
                         <TableCell>{s.material || "—"}</TableCell>
+                        <TableCell>{s.analyte || "—"}</TableCell>
                         <TableCell>{(s.result || "").toString()} {s.resultUnit || ""}</TableCell>
                         <TableCell className="font-mono text-xs">{s.item?.externalItemId || s.itemId || "—"}</TableCell>
                         <TableCell>
@@ -1574,45 +1603,53 @@ export default function BuildingHub() {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>{sampleType === "acm" ? "Add ACM Sample" : "Add Paint/Metals Sample"}</DialogTitle>
-            <DialogDescription>Log a building sample. Optionally link it to an Inspection and/or Inventory Item.</DialogDescription>
+            <DialogDescription>
+              {sampleType === "acm"
+                ? "Log a building sample. Optionally link it to an Inspection and/or Inventory Item."
+                : "Log a paint/metals sample. Results are recorded in mg/kg with % by weight auto-calculated."}
+            </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2 md:col-span-3">
-              <Label>Inspection (optional)</Label>
-              <Select
-                value={sampleInspectionId || "__none__"}
-                onValueChange={(v) => setSampleInspectionId(v === "__none__" ? "" : v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {(inspections as any[]).map((ins: any) => (
-                    <SelectItem key={ins.inspectionId} value={ins.inspectionId}>
-                      {fmtDate(ins.inspectionDate)}{ins.status ? ` · ${ins.status}` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {sampleType === "acm" ? (
+              <>
+                <div className="space-y-2 md:col-span-3">
+                  <Label>Inspection (optional)</Label>
+                  <Select
+                    value={sampleInspectionId || "__none__"}
+                    onValueChange={(v) => setSampleInspectionId(v === "__none__" ? "" : v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">None</SelectItem>
+                      {(inspections as any[]).map((ins: any) => (
+                        <SelectItem key={ins.inspectionId} value={ins.inspectionId}>
+                          {fmtDate(ins.inspectionDate)}{ins.status ? ` · ${ins.status}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <div className="space-y-2 md:col-span-3">
-              <Label>Inventory Item (optional)</Label>
-              <Select value={sampleForm.itemId} onValueChange={(v) => setSampleForm({ ...sampleForm, itemId: v === "__none__" ? "" : v })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select an item" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {(inventory as any[]).map((i: any) => (
-                    <SelectItem key={i.itemId} value={i.itemId}>
-                      {itemLabelById.get(i.itemId) || i.itemId}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                <div className="space-y-2 md:col-span-3">
+                  <Label>Inventory Item (optional)</Label>
+                  <Select value={sampleForm.itemId} onValueChange={(v) => setSampleForm({ ...sampleForm, itemId: v === "__none__" ? "" : v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select an item" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">None</SelectItem>
+                      {(inventory as any[]).map((i: any) => (
+                        <SelectItem key={i.itemId} value={i.itemId}>
+                          {itemLabelById.get(i.itemId) || i.itemId}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            ) : null}
 
             <div className="space-y-2">
               <Label>Sample #</Label>
@@ -1630,6 +1667,28 @@ export default function BuildingHub() {
               <Label>Location</Label>
               <Input value={sampleForm.location} onChange={(e) => setSampleForm({ ...sampleForm, location: e.target.value })} />
             </div>
+            {sampleType === "paint_metals" ? (
+              <div className="space-y-2">
+                <Label>Analyte</Label>
+                <Select value={sampleForm.analyte} onValueChange={(v) => setSampleForm({ ...sampleForm, analyte: v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select analyte" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Lead (Pb)">Lead (Pb)</SelectItem>
+                    <SelectItem value="Cadmium (Cd)">Cadmium (Cd)</SelectItem>
+                    <SelectItem value="Chromium (Cr)">Chromium (Cr)</SelectItem>
+                    <SelectItem value="Arsenic (As)">Arsenic (As)</SelectItem>
+                    <SelectItem value="Mercury (Hg)">Mercury (Hg)</SelectItem>
+                    <SelectItem value="Nickel (Ni)">Nickel (Ni)</SelectItem>
+                    <SelectItem value="Selenium (Se)">Selenium (Se)</SelectItem>
+                    <SelectItem value="Silver (Ag)">Silver (Ag)</SelectItem>
+                    <SelectItem value="Barium (Ba)">Barium (Ba)</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label>Lab</Label>
               <Input value={sampleForm.lab} onChange={(e) => setSampleForm({ ...sampleForm, lab: e.target.value })} />
@@ -1638,18 +1697,84 @@ export default function BuildingHub() {
               <Label>TAT</Label>
               <Input value={sampleForm.tat} onChange={(e) => setSampleForm({ ...sampleForm, tat: e.target.value })} />
             </div>
+            {sampleType === "acm" ? (
+              <div className="space-y-2">
+                <Label>CoC</Label>
+                <Input value={sampleForm.coc} onChange={(e) => setSampleForm({ ...sampleForm, coc: e.target.value })} />
+              </div>
+            ) : null}
             <div className="space-y-2">
-              <Label>CoC</Label>
-              <Input value={sampleForm.coc} onChange={(e) => setSampleForm({ ...sampleForm, coc: e.target.value })} />
+              <Label>{sampleType === "paint_metals" ? "Result (mg/kg)" : "Result"}</Label>
+              <Input
+                inputMode="decimal"
+                value={sampleForm.result}
+                onChange={(e) => setSampleForm({ ...sampleForm, result: e.target.value })}
+                placeholder={sampleType === "paint_metals" ? "e.g., 2500" : ""}
+              />
             </div>
-            <div className="space-y-2">
-              <Label>Result</Label>
-              <Input value={sampleForm.result} onChange={(e) => setSampleForm({ ...sampleForm, result: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>Units</Label>
-              <Input value={sampleForm.resultUnit} onChange={(e) => setSampleForm({ ...sampleForm, resultUnit: e.target.value })} />
-            </div>
+            {sampleType === "paint_metals" ? (
+              <div className="space-y-2">
+                <Label>% by weight</Label>
+                <Input
+                  value={(() => {
+                    const n = Number(sampleForm.result);
+                    if (!Number.isFinite(n)) return "";
+                    return (n / 10000).toFixed(4);
+                  })()}
+                  readOnly
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Units</Label>
+                <Input value={sampleForm.resultUnit} onChange={(e) => setSampleForm({ ...sampleForm, resultUnit: e.target.value })} />
+              </div>
+            )}
+
+            {sampleType === "paint_metals" ? (
+              <div className="space-y-2 md:col-span-3">
+                <Label>Photos</Label>
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      if (!files.length) return;
+                      setSamplePhotos((prev) => [
+                        ...prev,
+                        ...files.map((file) => ({ id: crypto.randomUUID(), file })),
+                      ]);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                  {samplePhotos.length ? (
+                    <div className="border rounded-md p-3 space-y-2">
+                      {samplePhotos.map((p) => (
+                        <div key={p.id} className="flex items-center gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">{p.file.name}</div>
+                            <div className="text-xs text-muted-foreground">{Math.round((p.file.size || 0) / 1024)} KB</div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setSamplePhotos((prev) => prev.filter((x) => x.id !== p.id))}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground">
+                      Optional. Photos will be saved to Building Documents and linked to this sample after Save.
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
             <div className="space-y-2 md:col-span-3">
               <Label>Notes</Label>
               <Textarea value={sampleForm.notes} onChange={(e) => setSampleForm({ ...sampleForm, notes: e.target.value })} />
