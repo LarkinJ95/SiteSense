@@ -6,12 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { ArrowLeft, Download, FileText, Plus, Upload } from "lucide-react";
+import { ArrowLeft, ArrowUpDown, ChevronDown, ChevronUp, Download, FileText, Plus, Upload } from "lucide-react";
 
 type HubResponse = {
   building: any;
@@ -35,6 +36,12 @@ const fmtDateTime = (value: any) => {
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
 };
+
+const INV_CATEGORY_OPTIONS = ["TSI", "Surfacing", "Misc", "Other"] as const;
+const INV_CONDITION_OPTIONS = ["Good", "Fair", "Poor", "Damaged", "Unknown"] as const;
+const INV_STATUS_OPTIONS = ["Existing", "Removed", "Encapsulated", "Repaired", "Unknown"] as const;
+const INV_UOM_OPTIONS = ["LF", "SF", "EA", "CY", "SY", "TON", "Other"] as const;
+const INV_ACM_KIND_OPTIONS = ["Sample #", "PACM", "Suspect", "None"] as const;
 
 export default function BuildingHub() {
   const { id } = useParams();
@@ -90,6 +97,22 @@ export default function BuildingHub() {
   });
 
   const [invFilters, setInvFilters] = useState({ q: "", status: "", category: "", acmStatus: "", condition: "" });
+  const [invSort, setInvSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "", dir: "asc" });
+
+  const itemLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const i of inventory as any[]) {
+      const itemId = String(i?.itemId || "").trim();
+      if (!itemId) continue;
+      const ext = String(i?.externalItemId || "").trim();
+      const material = String(i?.material || "").trim();
+      const loc = String(i?.location || "").trim();
+      const label = `${ext || itemId}${material ? ` · ${material}` : ""}${loc ? ` (${loc})` : ""}`.trim();
+      map.set(itemId, label || itemId);
+    }
+    return map;
+  }, [inventory]);
+
   const filteredInventory = useMemo(() => {
     const q = invFilters.q.trim().toLowerCase();
     return (inventory || []).filter((i: any) => {
@@ -103,28 +126,97 @@ export default function BuildingHub() {
     });
   }, [inventory, invFilters]);
 
+  const sortedInventory = useMemo(() => {
+    const key = invSort.key;
+    if (!key) return filteredInventory;
+    const dir = invSort.dir === "asc" ? 1 : -1;
+    const dateValue = (v: any) => {
+      if (!v) return 0;
+      const d = new Date(v);
+      return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+    };
+    const strValue = (v: any) => String(v ?? "").trim().toLowerCase();
+    const numValue = (v: any) => {
+      if (v === null || v === undefined || v === "") return Number.NEGATIVE_INFINITY;
+      const n = typeof v === "number" ? v : Number(v);
+      return Number.isFinite(n) ? n : Number.NEGATIVE_INFINITY;
+    };
+    const get = (i: any) => {
+      switch (key) {
+        case "item":
+          return strValue(i.externalItemId || i.itemId);
+        case "material":
+          return strValue(i.material);
+        case "location":
+          return strValue(i.location);
+        case "category":
+          return strValue(i.category);
+        case "acmStatus":
+          return strValue(i.acmStatus);
+        case "condition":
+          return strValue(i.condition);
+        case "status":
+          return strValue(i.status);
+        case "lastInspectedAt":
+          return dateValue(i.lastInspectedAt);
+        case "updatedAt":
+          return dateValue(i.lastUpdatedAt || i.updatedAt);
+        case "quantity":
+          return numValue(i.quantity);
+        default:
+          return strValue((i as any)[key]);
+      }
+    };
+
+    return [...filteredInventory].sort((a: any, b: any) => {
+      const av = get(a);
+      const bv = get(b);
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [filteredInventory, invSort]);
+
+  const toggleInvSort = (key: string) => {
+    setInvSort((prev) => {
+      if (prev.key !== key) return { key, dir: "asc" };
+      return { key, dir: prev.dir === "asc" ? "desc" : "asc" };
+    });
+  };
+
+  const SortIcon = ({ k }: { k: string }) => {
+    if (invSort.key !== k) return <ArrowUpDown className="h-3.5 w-3.5 opacity-60" />;
+    return invSort.dir === "asc" ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />;
+  };
+
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [addItemForm, setAddItemForm] = useState({
     externalItemId: "",
     material: "",
     location: "",
     category: "",
-    acmStatus: "",
-    condition: "",
+    acmKind: "None",
+    acmSampleNumber: "",
+    condition: "Unknown",
     quantity: "",
     uom: "",
-    status: "",
+    status: "Existing",
   });
 
   const addItemMutation = useMutation({
     mutationFn: async () => {
       if (!id) throw new Error("Missing buildingId");
+      const acmStatusRaw =
+        addItemForm.acmKind === "Sample #"
+          ? addItemForm.acmSampleNumber.trim()
+          : addItemForm.acmKind === "None"
+            ? ""
+            : addItemForm.acmKind;
       const res = await apiRequest("POST", `/api/asbestos/buildings/${id}/inventory`, {
         externalItemId: addItemForm.externalItemId.trim() || null,
         material: addItemForm.material.trim() || null,
         location: addItemForm.location.trim() || null,
         category: addItemForm.category.trim() || null,
-        acmStatus: addItemForm.acmStatus.trim() || null,
+        acmStatus: acmStatusRaw || null,
         condition: addItemForm.condition.trim() || null,
         quantity: addItemForm.quantity.trim() || null,
         uom: addItemForm.uom.trim() || null,
@@ -142,11 +234,12 @@ export default function BuildingHub() {
         material: "",
         location: "",
         category: "",
-        acmStatus: "",
-        condition: "",
+        acmKind: "None",
+        acmSampleNumber: "",
+        condition: "Unknown",
         quantity: "",
         uom: "",
-        status: "",
+        status: "Existing",
       });
       toast({ title: "Saved", description: "Inventory item added." });
     },
@@ -156,13 +249,26 @@ export default function BuildingHub() {
   const [editOpen, setEditOpen] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
   const [editReason, setEditReason] = useState("");
-  const [editPatch, setEditPatch] = useState({ condition: "", status: "", quantity: "", uom: "", acmStatus: "" });
+  const [editPatch, setEditPatch] = useState({
+    condition: "Unknown",
+    status: "Existing",
+    quantity: "",
+    uom: "",
+    acmKind: "None",
+    acmSampleNumber: "",
+  });
 
   const updateItemMutation = useMutation({
     mutationFn: async () => {
       if (!editItem) throw new Error("No item selected");
       const reason = editReason.trim();
       if (!reason) throw new Error("Reason is required");
+      const acmStatusRaw =
+        editPatch.acmKind === "Sample #"
+          ? editPatch.acmSampleNumber.trim()
+          : editPatch.acmKind === "None"
+            ? ""
+            : editPatch.acmKind;
       const res = await apiRequest("PUT", `/api/asbestos/inventory-items/${editItem.itemId}`, {
         reason,
         patch: {
@@ -170,7 +276,7 @@ export default function BuildingHub() {
           status: editPatch.status.trim() || null,
           quantity: editPatch.quantity.trim() || null,
           uom: editPatch.uom.trim() || null,
-          acmStatus: editPatch.acmStatus.trim() || null,
+          acmStatus: acmStatusRaw || null,
         },
       });
       return await res.json();
@@ -236,6 +342,79 @@ export default function BuildingHub() {
       toast({ title: "Project created" });
     },
     onError: (err: any) => toast({ title: "Failed", description: err?.message || "Unable to create project.", variant: "destructive" }),
+  });
+
+  const getLatestInspectionId = () => {
+    let bestId = "";
+    let bestMs = -Infinity;
+    for (const ins of inspections as any[]) {
+      const ms = ins?.inspectionDate ? new Date(ins.inspectionDate).getTime() : NaN;
+      if (!Number.isFinite(ms)) continue;
+      if (ms > bestMs) {
+        bestMs = ms;
+        bestId = String(ins.inspectionId || "");
+      }
+    }
+    return bestId || String((inspections as any[])?.[0]?.inspectionId || "");
+  };
+
+  const [sampleOpen, setSampleOpen] = useState(false);
+  const [sampleType, setSampleType] = useState<"acm" | "paint_metals">("acm");
+  const [sampleInspectionId, setSampleInspectionId] = useState("");
+  const [sampleForm, setSampleForm] = useState({
+    itemId: "",
+    sampleNumber: "",
+    collectedAt: "",
+    material: "",
+    location: "",
+    lab: "",
+    tat: "",
+    coc: "",
+    result: "",
+    resultUnit: "",
+    notes: "",
+  });
+
+  const addBuildingSampleMutation = useMutation({
+    mutationFn: async () => {
+      if (!sampleInspectionId) throw new Error("Select an inspection");
+      const payload: any = {
+        sampleType,
+        itemId: sampleForm.itemId || null,
+        sampleNumber: sampleForm.sampleNumber.trim() || null,
+        collectedAt: sampleForm.collectedAt || null,
+        material: sampleForm.material.trim() || null,
+        location: sampleForm.location.trim() || null,
+        lab: sampleForm.lab.trim() || null,
+        tat: sampleForm.tat.trim() || null,
+        coc: sampleForm.coc.trim() || null,
+        result: sampleForm.result.trim() || null,
+        resultUnit: sampleForm.resultUnit.trim() || null,
+        notes: sampleForm.notes.trim() || null,
+      };
+      const res = await apiRequest("POST", `/api/asbestos/inspections/${sampleInspectionId}/samples`, payload);
+      return await res.json();
+    },
+    onSuccess: () => {
+      if (!id) return;
+      queryClient.invalidateQueries({ queryKey: [`/api/asbestos/buildings/${id}/samples?type=${sampleType}`] });
+      setSampleOpen(false);
+      setSampleForm({
+        itemId: "",
+        sampleNumber: "",
+        collectedAt: "",
+        material: "",
+        location: "",
+        lab: "",
+        tat: "",
+        coc: "",
+        result: "",
+        resultUnit: "",
+        notes: "",
+      });
+      toast({ title: "Saved", description: "Sample added." });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err?.message || "Unable to add sample.", variant: "destructive" }),
   });
 
   const [budgetReason, setBudgetReason] = useState("");
@@ -344,44 +523,108 @@ export default function BuildingHub() {
                       <DialogTitle>Add Inventory Item</DialogTitle>
                       <DialogDescription>Creates a new item in the building inventory baseline.</DialogDescription>
                     </DialogHeader>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                        <Label>Item ID (external)</Label>
-                        <Input value={addItemForm.externalItemId} onChange={(e) => setAddItemForm({ ...addItemForm, externalItemId: e.target.value })} />
-                      </div>
-                      <div className="space-y-2 md:col-span-2">
-                        <Label>Material / Description</Label>
-                        <Input value={addItemForm.material} onChange={(e) => setAddItemForm({ ...addItemForm, material: e.target.value })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Location</Label>
-                        <Input value={addItemForm.location} onChange={(e) => setAddItemForm({ ...addItemForm, location: e.target.value })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Category</Label>
-                        <Input value={addItemForm.category} onChange={(e) => setAddItemForm({ ...addItemForm, category: e.target.value })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>ACM/PACM/Suspect</Label>
-                        <Input value={addItemForm.acmStatus} onChange={(e) => setAddItemForm({ ...addItemForm, acmStatus: e.target.value })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Condition</Label>
-                        <Input value={addItemForm.condition} onChange={(e) => setAddItemForm({ ...addItemForm, condition: e.target.value })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Status</Label>
-                        <Input value={addItemForm.status} onChange={(e) => setAddItemForm({ ...addItemForm, status: e.target.value })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Quantity</Label>
-                        <Input value={addItemForm.quantity} onChange={(e) => setAddItemForm({ ...addItemForm, quantity: e.target.value })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>UOM</Label>
-                        <Input value={addItemForm.uom} onChange={(e) => setAddItemForm({ ...addItemForm, uom: e.target.value })} />
-                      </div>
-                    </div>
+	                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+	                    <div className="space-y-2">
+	                      <Label>Item ID (external)</Label>
+	                      <Input value={addItemForm.externalItemId} onChange={(e) => setAddItemForm({ ...addItemForm, externalItemId: e.target.value })} />
+	                    </div>
+	                    <div className="space-y-2 md:col-span-2">
+	                      <Label>Material / Description</Label>
+	                      <Input value={addItemForm.material} onChange={(e) => setAddItemForm({ ...addItemForm, material: e.target.value })} />
+	                    </div>
+	                    <div className="space-y-2">
+	                      <Label>Location</Label>
+	                      <Input value={addItemForm.location} onChange={(e) => setAddItemForm({ ...addItemForm, location: e.target.value })} />
+	                    </div>
+	                    <div className="space-y-2">
+	                      <Label>Category</Label>
+	                      <Select value={addItemForm.category || ""} onValueChange={(v) => setAddItemForm({ ...addItemForm, category: v === "__none__" ? "" : v })}>
+	                        <SelectTrigger>
+	                          <SelectValue placeholder="Select category" />
+	                        </SelectTrigger>
+	                        <SelectContent>
+	                          <SelectItem value="__none__">—</SelectItem>
+	                          {INV_CATEGORY_OPTIONS.map((o) => (
+	                            <SelectItem key={o} value={o}>
+	                              {o}
+	                            </SelectItem>
+	                          ))}
+	                        </SelectContent>
+	                      </Select>
+	                    </div>
+	                    <div className="space-y-2">
+	                      <Label>Sample # / PACM</Label>
+	                      <Select value={addItemForm.acmKind} onValueChange={(v) => setAddItemForm({ ...addItemForm, acmKind: v as any })}>
+	                        <SelectTrigger>
+	                          <SelectValue />
+	                        </SelectTrigger>
+	                        <SelectContent>
+	                          {INV_ACM_KIND_OPTIONS.map((o) => (
+	                            <SelectItem key={o} value={o}>
+	                              {o}
+	                            </SelectItem>
+	                          ))}
+	                        </SelectContent>
+	                      </Select>
+	                      {addItemForm.acmKind === "Sample #" ? (
+	                        <Input
+	                          placeholder="Enter sample number"
+	                          value={addItemForm.acmSampleNumber}
+	                          onChange={(e) => setAddItemForm({ ...addItemForm, acmSampleNumber: e.target.value })}
+	                        />
+	                      ) : null}
+	                    </div>
+	                    <div className="space-y-2">
+	                      <Label>Condition</Label>
+	                      <Select value={addItemForm.condition} onValueChange={(v) => setAddItemForm({ ...addItemForm, condition: v })}>
+	                        <SelectTrigger>
+	                          <SelectValue />
+	                        </SelectTrigger>
+	                        <SelectContent>
+	                          {INV_CONDITION_OPTIONS.map((o) => (
+	                            <SelectItem key={o} value={o}>
+	                              {o}
+	                            </SelectItem>
+	                          ))}
+	                        </SelectContent>
+	                      </Select>
+	                    </div>
+	                    <div className="space-y-2">
+	                      <Label>Status</Label>
+	                      <Select value={addItemForm.status} onValueChange={(v) => setAddItemForm({ ...addItemForm, status: v })}>
+	                        <SelectTrigger>
+	                          <SelectValue />
+	                        </SelectTrigger>
+	                        <SelectContent>
+	                          {INV_STATUS_OPTIONS.map((o) => (
+	                            <SelectItem key={o} value={o}>
+	                              {o}
+	                            </SelectItem>
+	                          ))}
+	                        </SelectContent>
+	                      </Select>
+	                    </div>
+	                    <div className="space-y-2">
+	                      <Label>Quantity</Label>
+	                      <Input value={addItemForm.quantity} onChange={(e) => setAddItemForm({ ...addItemForm, quantity: e.target.value })} />
+	                    </div>
+	                    <div className="space-y-2">
+	                      <Label>UOM</Label>
+	                      <Select value={addItemForm.uom || ""} onValueChange={(v) => setAddItemForm({ ...addItemForm, uom: v === "__none__" ? "" : v })}>
+	                        <SelectTrigger>
+	                          <SelectValue placeholder="Select UOM" />
+	                        </SelectTrigger>
+	                        <SelectContent>
+	                          <SelectItem value="__none__">—</SelectItem>
+	                          {INV_UOM_OPTIONS.map((o) => (
+	                            <SelectItem key={o} value={o}>
+	                              {o}
+	                            </SelectItem>
+	                          ))}
+	                        </SelectContent>
+	                      </Select>
+	                    </div>
+	                  </div>
                     <div className="pt-2 flex justify-end gap-2">
                       <Button variant="outline" onClick={() => setAddItemOpen(false)}>Cancel</Button>
                       <Button onClick={() => addItemMutation.mutate()} disabled={addItemMutation.isPending}>Save</Button>
@@ -404,53 +647,94 @@ export default function BuildingHub() {
                 <Input placeholder="Condition" value={invFilters.condition} onChange={(e) => setInvFilters({ ...invFilters, condition: e.target.value })} />
               </div>
 
-              {filteredInventory.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground">No records.</div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Item ID</TableHead>
-                      <TableHead>Material</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>ACM/PACM</TableHead>
-                      <TableHead>Condition</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Last Inspected</TableHead>
-                      <TableHead>Updated</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredInventory.map((i: any) => (
-                      <TableRow key={i.itemId}>
-                        <TableCell className="font-mono text-xs">{i.externalItemId || i.itemId}</TableCell>
-                        <TableCell>{i.material || "—"}</TableCell>
-                        <TableCell>{i.location || "—"}</TableCell>
-                        <TableCell>{i.category || "—"}</TableCell>
-                        <TableCell>{i.acmStatus || "—"}</TableCell>
+	              {sortedInventory.length === 0 ? (
+	                <div className="py-8 text-center text-muted-foreground">No records.</div>
+	              ) : (
+	                <Table>
+	                  <TableHeader>
+	                    <TableRow>
+	                      <TableHead>
+	                        <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleInvSort("item")}>
+	                          Item ID <SortIcon k="item" />
+	                        </button>
+	                      </TableHead>
+	                      <TableHead>
+	                        <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleInvSort("material")}>
+	                          Material <SortIcon k="material" />
+	                        </button>
+	                      </TableHead>
+	                      <TableHead>
+	                        <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleInvSort("location")}>
+	                          Location <SortIcon k="location" />
+	                        </button>
+	                      </TableHead>
+	                      <TableHead>
+	                        <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleInvSort("category")}>
+	                          Category <SortIcon k="category" />
+	                        </button>
+	                      </TableHead>
+	                      <TableHead>
+	                        <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleInvSort("acmStatus")}>
+	                          Sample #/PACM <SortIcon k="acmStatus" />
+	                        </button>
+	                      </TableHead>
+	                      <TableHead>
+	                        <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleInvSort("condition")}>
+	                          Condition <SortIcon k="condition" />
+	                        </button>
+	                      </TableHead>
+	                      <TableHead>
+	                        <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleInvSort("status")}>
+	                          Status <SortIcon k="status" />
+	                        </button>
+	                      </TableHead>
+	                      <TableHead>
+	                        <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleInvSort("lastInspectedAt")}>
+	                          Last Inspected <SortIcon k="lastInspectedAt" />
+	                        </button>
+	                      </TableHead>
+	                      <TableHead>
+	                        <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleInvSort("updatedAt")}>
+	                          Updated <SortIcon k="updatedAt" />
+	                        </button>
+	                      </TableHead>
+	                      <TableHead className="text-right">Actions</TableHead>
+	                    </TableRow>
+	                  </TableHeader>
+	                  <TableBody>
+	                    {sortedInventory.map((i: any) => (
+	                      <TableRow key={i.itemId}>
+	                        <TableCell className="font-mono text-xs">{i.externalItemId || i.itemId}</TableCell>
+	                        <TableCell>{i.material || "—"}</TableCell>
+	                        <TableCell>{i.location || "—"}</TableCell>
+	                        <TableCell>{i.category || "—"}</TableCell>
+	                        <TableCell>{i.acmStatus || "—"}</TableCell>
                         <TableCell>{i.condition || "—"}</TableCell>
                         <TableCell>{i.status || "—"}</TableCell>
                         <TableCell>{fmtDate(i.lastInspectedAt)}</TableCell>
                         <TableCell>{fmtDate(i.lastUpdatedAt || i.updatedAt)}</TableCell>
                         <TableCell className="text-right">
                           <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setEditItem(i);
-                              setEditPatch({
-                                condition: i.condition || "",
-                                status: i.status || "",
-                                quantity: i.quantity ? String(i.quantity) : "",
-                                uom: i.uom || "",
-                                acmStatus: i.acmStatus || "",
-                              });
-                              setEditReason("");
-                              setEditOpen(true);
-                            }}
-                          >
+	                            variant="ghost"
+	                            size="sm"
+	                            onClick={() => {
+	                              const raw = String(i.acmStatus || "").trim();
+	                              const known = INV_ACM_KIND_OPTIONS.includes(raw as any);
+	                              const acmKind = raw ? (known ? raw : "Sample #") : "None";
+	                              const acmSampleNumber = raw && !known ? raw : "";
+	                              setEditItem(i);
+	                              setEditPatch({
+	                                condition: i.condition || "Unknown",
+	                                status: i.status || "Existing",
+	                                quantity: i.quantity ? String(i.quantity) : "",
+	                                uom: i.uom || "",
+	                                acmKind,
+	                                acmSampleNumber,
+	                              });
+	                              setEditReason("");
+	                              setEditOpen(true);
+	                            }}
+	                          >
                             Edit
                           </Button>
                         </TableCell>
@@ -516,19 +800,39 @@ export default function BuildingHub() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="acm" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>ACM Sample History</CardTitle>
-              <Button variant="outline" onClick={() => window.open(`/api/asbestos/buildings/${id}/samples/export?type=acm`, "_blank")}>
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {acmSamples.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground">No records.</div>
-              ) : (
+	        <TabsContent value="acm" className="space-y-4">
+	          <Card>
+	            <CardHeader className="flex flex-row items-center justify-between">
+	              <CardTitle>ACM Sample History</CardTitle>
+	              <div className="flex items-center gap-2">
+	                <Button
+	                  variant="secondary"
+	                  onClick={() => {
+	                    setSampleType("acm");
+	                    setSampleInspectionId(getLatestInspectionId());
+	                    setSampleOpen(true);
+	                  }}
+	                  disabled={!inspections.length}
+	                  title={!inspections.length ? "Create an inspection first" : ""}
+	                >
+	                  <Plus className="h-4 w-4 mr-2" />
+	                  Add Sample
+	                </Button>
+	                <Button variant="outline" onClick={() => window.open(`/api/asbestos/buildings/${id}/samples/export?type=acm`, "_blank")}>
+	                  <Download className="h-4 w-4 mr-2" />
+	                  Export
+	                </Button>
+	              </div>
+	            </CardHeader>
+	            <CardContent>
+	              {!inspections.length ? (
+	                <div className="mb-4 rounded-md border p-3 text-sm text-muted-foreground">
+	                  Samples are logged under an Inspection. Create an inspection first to add samples for this building.
+	                </div>
+	              ) : null}
+	              {acmSamples.length === 0 ? (
+	                <div className="py-8 text-center text-muted-foreground">No records.</div>
+	              ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -568,19 +872,39 @@ export default function BuildingHub() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="paint" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Paint/Metals Sample History</CardTitle>
-              <Button variant="outline" onClick={() => window.open(`/api/asbestos/buildings/${id}/samples/export?type=paint_metals`, "_blank")}>
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {pmSamples.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground">No records.</div>
-              ) : (
+	        <TabsContent value="paint" className="space-y-4">
+	          <Card>
+	            <CardHeader className="flex flex-row items-center justify-between">
+	              <CardTitle>Paint/Metals Sample History</CardTitle>
+	              <div className="flex items-center gap-2">
+	                <Button
+	                  variant="secondary"
+	                  onClick={() => {
+	                    setSampleType("paint_metals");
+	                    setSampleInspectionId(getLatestInspectionId());
+	                    setSampleOpen(true);
+	                  }}
+	                  disabled={!inspections.length}
+	                  title={!inspections.length ? "Create an inspection first" : ""}
+	                >
+	                  <Plus className="h-4 w-4 mr-2" />
+	                  Add Sample
+	                </Button>
+	                <Button variant="outline" onClick={() => window.open(`/api/asbestos/buildings/${id}/samples/export?type=paint_metals`, "_blank")}>
+	                  <Download className="h-4 w-4 mr-2" />
+	                  Export
+	                </Button>
+	              </div>
+	            </CardHeader>
+	            <CardContent>
+	              {!inspections.length ? (
+	                <div className="mb-4 rounded-md border p-3 text-sm text-muted-foreground">
+	                  Samples are logged under an Inspection. Create an inspection first to add samples for this building.
+	                </div>
+	              ) : null}
+	              {pmSamples.length === 0 ? (
+	                <div className="py-8 text-center text-muted-foreground">No records.</div>
+	              ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -847,41 +1171,182 @@ export default function BuildingHub() {
             <DialogTitle>Edit Inventory Item</DialogTitle>
             <DialogDescription>Edits require a reason and are saved to the building audit trail.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <Label>Reason</Label>
-              <Textarea value={editReason} onChange={(e) => setEditReason(e.target.value)} placeholder="Why is this change needed?" />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>ACM/PACM</Label>
-                <Input value={editPatch.acmStatus} onChange={(e) => setEditPatch({ ...editPatch, acmStatus: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Condition</Label>
-                <Input value={editPatch.condition} onChange={(e) => setEditPatch({ ...editPatch, condition: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Input value={editPatch.status} onChange={(e) => setEditPatch({ ...editPatch, status: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Quantity</Label>
-                <Input value={editPatch.quantity} onChange={(e) => setEditPatch({ ...editPatch, quantity: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>UOM</Label>
-                <Input value={editPatch.uom} onChange={(e) => setEditPatch({ ...editPatch, uom: e.target.value })} />
-              </div>
-            </div>
-          </div>
+	          <div className="space-y-3">
+	            <div className="space-y-2">
+	              <Label>Reason</Label>
+	              <Textarea value={editReason} onChange={(e) => setEditReason(e.target.value)} placeholder="Why is this change needed?" />
+	            </div>
+	            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+	              <div className="space-y-2">
+	                <Label>Sample # / PACM</Label>
+	                <Select value={editPatch.acmKind} onValueChange={(v) => setEditPatch({ ...editPatch, acmKind: v as any })}>
+	                  <SelectTrigger>
+	                    <SelectValue />
+	                  </SelectTrigger>
+	                  <SelectContent>
+	                    {INV_ACM_KIND_OPTIONS.map((o) => (
+	                      <SelectItem key={o} value={o}>
+	                        {o}
+	                      </SelectItem>
+	                    ))}
+	                  </SelectContent>
+	                </Select>
+	                {editPatch.acmKind === "Sample #" ? (
+	                  <Input
+	                    placeholder="Enter sample number"
+	                    value={editPatch.acmSampleNumber}
+	                    onChange={(e) => setEditPatch({ ...editPatch, acmSampleNumber: e.target.value })}
+	                  />
+	                ) : null}
+	              </div>
+	              <div className="space-y-2">
+	                <Label>Condition</Label>
+	                <Select value={editPatch.condition} onValueChange={(v) => setEditPatch({ ...editPatch, condition: v })}>
+	                  <SelectTrigger>
+	                    <SelectValue />
+	                  </SelectTrigger>
+	                  <SelectContent>
+	                    {INV_CONDITION_OPTIONS.map((o) => (
+	                      <SelectItem key={o} value={o}>
+	                        {o}
+	                      </SelectItem>
+	                    ))}
+	                  </SelectContent>
+	                </Select>
+	              </div>
+	              <div className="space-y-2">
+	                <Label>Status</Label>
+	                <Select value={editPatch.status} onValueChange={(v) => setEditPatch({ ...editPatch, status: v })}>
+	                  <SelectTrigger>
+	                    <SelectValue />
+	                  </SelectTrigger>
+	                  <SelectContent>
+	                    {INV_STATUS_OPTIONS.map((o) => (
+	                      <SelectItem key={o} value={o}>
+	                        {o}
+	                      </SelectItem>
+	                    ))}
+	                  </SelectContent>
+	                </Select>
+	              </div>
+	              <div className="space-y-2">
+	                <Label>Quantity</Label>
+	                <Input value={editPatch.quantity} onChange={(e) => setEditPatch({ ...editPatch, quantity: e.target.value })} />
+	              </div>
+	              <div className="space-y-2">
+	                <Label>UOM</Label>
+	                <Select value={editPatch.uom || ""} onValueChange={(v) => setEditPatch({ ...editPatch, uom: v === "__none__" ? "" : v })}>
+	                  <SelectTrigger>
+	                    <SelectValue placeholder="Select UOM" />
+	                  </SelectTrigger>
+	                  <SelectContent>
+	                    <SelectItem value="__none__">—</SelectItem>
+	                    {INV_UOM_OPTIONS.map((o) => (
+	                      <SelectItem key={o} value={o}>
+	                        {o}
+	                      </SelectItem>
+	                    ))}
+	                  </SelectContent>
+	                </Select>
+	              </div>
+	            </div>
+	          </div>
           <div className="pt-2 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
             <Button onClick={() => updateItemMutation.mutate()} disabled={!editReason.trim() || updateItemMutation.isPending}>Save</Button>
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={sampleOpen} onOpenChange={setSampleOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{sampleType === "acm" ? "Add ACM Sample" : "Add Paint/Metals Sample"}</DialogTitle>
+            <DialogDescription>Samples are stored under an Inspection and will appear in this building’s history.</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2 md:col-span-3">
+              <Label>Inspection (required)</Label>
+              <Select value={sampleInspectionId} onValueChange={(v) => setSampleInspectionId(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an inspection" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(inspections as any[]).map((ins: any) => (
+                    <SelectItem key={ins.inspectionId} value={ins.inspectionId}>
+                      {fmtDate(ins.inspectionDate)}{ins.status ? ` · ${ins.status}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2 md:col-span-3">
+              <Label>Inventory Item (optional)</Label>
+              <Select value={sampleForm.itemId} onValueChange={(v) => setSampleForm({ ...sampleForm, itemId: v === "__none__" ? "" : v })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an item" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {(inventory as any[]).map((i: any) => (
+                    <SelectItem key={i.itemId} value={i.itemId}>
+                      {itemLabelById.get(i.itemId) || i.itemId}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Sample #</Label>
+              <Input value={sampleForm.sampleNumber} onChange={(e) => setSampleForm({ ...sampleForm, sampleNumber: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Collected At</Label>
+              <Input type="datetime-local" value={sampleForm.collectedAt} onChange={(e) => setSampleForm({ ...sampleForm, collectedAt: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>{sampleType === "paint_metals" ? "Substrate" : "Material"}</Label>
+              <Input value={sampleForm.material} onChange={(e) => setSampleForm({ ...sampleForm, material: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Input value={sampleForm.location} onChange={(e) => setSampleForm({ ...sampleForm, location: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Lab</Label>
+              <Input value={sampleForm.lab} onChange={(e) => setSampleForm({ ...sampleForm, lab: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>TAT</Label>
+              <Input value={sampleForm.tat} onChange={(e) => setSampleForm({ ...sampleForm, tat: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>CoC</Label>
+              <Input value={sampleForm.coc} onChange={(e) => setSampleForm({ ...sampleForm, coc: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Result</Label>
+              <Input value={sampleForm.result} onChange={(e) => setSampleForm({ ...sampleForm, result: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Units</Label>
+              <Input value={sampleForm.resultUnit} onChange={(e) => setSampleForm({ ...sampleForm, resultUnit: e.target.value })} />
+            </div>
+            <div className="space-y-2 md:col-span-3">
+              <Label>Notes</Label>
+              <Textarea value={sampleForm.notes} onChange={(e) => setSampleForm({ ...sampleForm, notes: e.target.value })} />
+            </div>
+          </div>
+          <div className="pt-2 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setSampleOpen(false)}>Cancel</Button>
+            <Button onClick={() => addBuildingSampleMutation.mutate()} disabled={!sampleInspectionId || addBuildingSampleMutation.isPending}>
+              Save Sample
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
