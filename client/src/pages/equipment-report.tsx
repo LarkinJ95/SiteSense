@@ -107,7 +107,7 @@ export default function EquipmentReport() {
         .report-root {
           max-width: 8.5in;
           margin: 0 auto;
-          padding: 24px;
+          padding: 18px;
           color: #111827;
           background: white;
         }
@@ -152,7 +152,7 @@ export default function EquipmentReport() {
           word-break: break-word;
         }
         .section {
-          margin-top: 18px;
+          margin-top: 12px;
         }
         .section-title {
           font-size: 14px;
@@ -203,10 +203,7 @@ export default function EquipmentReport() {
         .no-print {
           display: inline-flex;
         }
-        @page {
-          size: Letter;
-          margin: 0.5in;
-        }
+        @page { size: Letter; margin: 0.35in; }
         @media print {
           header, footer, nav {
             display: none !important;
@@ -218,6 +215,11 @@ export default function EquipmentReport() {
           }
           .no-print {
             display: none !important;
+          }
+          /* Don't force extra blank pages; allow the browser to paginate naturally. */
+          .break-before {
+            break-before: auto;
+            page-break-before: auto;
           }
           table thead {
             display: table-header-group;
@@ -260,7 +262,7 @@ export default function EquipmentReport() {
         </div>
       </div>
 
-      <div className="section break-before">
+      <div className="section">
         <div className="section-title">Calibration History</div>
         {calibration.length === 0 ? (
           <div className="muted">No records</div>
@@ -309,7 +311,7 @@ export default function EquipmentReport() {
         )}
       </div>
 
-      <div className="section break-before">
+      <div className="section">
         <div className="section-title">Job / Usage History</div>
         {usage.length === 0 ? (
           <div className="muted">No records</div>
@@ -347,7 +349,7 @@ export default function EquipmentReport() {
         )}
       </div>
 
-      <div className="section break-before">
+      <div className="section">
         <div className="section-title">Equipment Notes</div>
         {notes.length === 0 ? (
           <div className="muted">No records</div>
@@ -370,7 +372,7 @@ export default function EquipmentReport() {
         )}
       </div>
 
-      <div className="section break-before">
+      <div className="section">
         <div className="section-title">Attachments / Documents</div>
         {documents.length === 0 ? (
           <div className="muted">No records</div>
