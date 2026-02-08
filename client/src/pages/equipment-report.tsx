@@ -40,6 +40,13 @@ const fmtDateMaybe = (value?: string | null) => {
   return value;
 };
 
+const noteTypeLabel = (value?: string | null) => {
+  const raw = (value || "").toString().trim();
+  if (!raw) return "";
+  const cleaned = raw.replace(/[_-]+/g, " ").trim().toLowerCase();
+  return cleaned ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1) : "";
+};
+
 export default function EquipmentReport() {
   const { id } = useParams();
 
@@ -345,7 +352,7 @@ export default function EquipmentReport() {
                     {fmtDateTime(n.createdAt)} · {fmt(n.author?.name)}{n.author?.email ? ` (${n.author.email})` : ""}
                   </div>
                   <div>
-                    {n.noteType ? `Type: ${n.noteType}` : ""}{n.visibility ? ` · ${n.visibility}` : ""}
+                    {n.noteType ? `Type: ${noteTypeLabel(n.noteType)}` : ""}{n.visibility ? ` · ${n.visibility}` : ""}
                   </div>
                 </div>
                 <div className="note-body">{fmt(n.noteText)}</div>

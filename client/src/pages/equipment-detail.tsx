@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { ArrowLeft, CalendarClock, ClipboardList, Edit, Link2, MapPin, Plus, Printer, ShieldCheck, Trash2, User as UserIcon, Wrench } from "lucide-react";
+import { ArrowLeft, CalendarClock, ClipboardList, Edit, FileText, Link2, MapPin, Plus, ShieldCheck, Trash2, User as UserIcon, Wrench } from "lucide-react";
 
 const METHOD_STANDARD_OPTIONS = [
   "Primary Standard (DryCal/Defender)",
@@ -131,6 +131,13 @@ const toDateTimeLocal = (ms?: number | null) => {
   const hh = pad(d.getHours());
   const mi = pad(d.getMinutes());
   return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+};
+
+const noteTypeLabel = (value?: string | null) => {
+  const raw = (value || "").toString().trim();
+  if (!raw) return "Note";
+  const cleaned = raw.replace(/[_-]+/g, " ").trim().toLowerCase();
+  return cleaned ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1) : "Note";
 };
 
 export default function EquipmentDetail() {
@@ -549,10 +556,10 @@ export default function EquipmentDetail() {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={() => window.open(`/equipment/${id}/report?print=1`, "_blank")}
+            onClick={() => window.open(`/equipment/${id}/report`, "_blank")}
           >
-            <Printer className="h-4 w-4 mr-2" />
-            Print Report
+            <FileText className="h-4 w-4 mr-2" />
+            Generate HTML Report
           </Button>
           <Dialog open={calOpen} onOpenChange={setCalOpen}>
             <DialogTrigger asChild>
@@ -1282,7 +1289,7 @@ export default function EquipmentDetail() {
                   {notes.map((n) => (
                     <div key={n.noteId} className="border rounded-lg p-3">
                       <div className="flex items-center justify-between">
-                        <div className="text-sm font-medium">{n.noteType || "note"}</div>
+                        <div className="text-sm font-medium">{noteTypeLabel(n.noteType)}</div>
                         <div className="text-xs text-gray-500">
                           {n.createdAt ? new Date(n.createdAt).toLocaleString() : ""} · {n.createdByUserId.slice(0, 8)}
                         </div>
