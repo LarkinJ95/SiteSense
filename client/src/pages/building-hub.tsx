@@ -469,7 +469,6 @@ export default function BuildingHub() {
     asbestosType: "Chrysotile",
     asbestosPercent: "",
     lab: "",
-    tat: "",
     coc: "",
     result: "",
     resultUnit: "",
@@ -503,7 +502,6 @@ export default function BuildingHub() {
         asbestosType: isAcm ? (sampleForm.asbestosType.trim() || null) : null,
         asbestosPercent: isAcm ? (sampleForm.asbestosPercent.trim() || null) : null,
         lab: sampleForm.lab.trim() || null,
-        tat: sampleForm.tat.trim() || null,
         coc: null,
         result: isAcm ? null : (sampleForm.result.trim() || null),
         resultUnit: isAcm ? null : (normalizedResultUnit || null),
@@ -549,7 +547,6 @@ export default function BuildingHub() {
         asbestosType: "Chrysotile",
         asbestosPercent: "",
         lab: "",
-        tat: "",
         coc: "",
         result: "",
         resultUnit: "",
@@ -1752,10 +1749,6 @@ export default function BuildingHub() {
             <div className="space-y-2">
               <Label>Lab</Label>
               <Input value={sampleForm.lab} onChange={(e) => setSampleForm({ ...sampleForm, lab: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>TAT</Label>
-              <Input value={sampleForm.tat} onChange={(e) => setSampleForm({ ...sampleForm, tat: e.target.value })} />
             </div>
             {sampleType === "acm" ? (
               <div className="space-y-2">
